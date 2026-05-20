@@ -59,6 +59,14 @@ type CellContainer struct {
 	SourceContainer string
 }
 
+func (c *CellContainer) Rename(name string) error {
+	if name == "" {
+		return errors.New("container name is required")
+	}
+	c.ContainerName = name
+	return nil
+}
+
 type Session struct {
 	Name    string
 	Windows []SessionWindow
@@ -117,6 +125,18 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 			Windows: windows,
 		},
 	}, nil
+}
+
+func (c *Cell) RenameContainer(role string, name string) error {
+	service, ok := c.Containers.Services[role]
+	if !ok {
+		return fmt.Errorf("container service role %q not found", role)
+	}
+	if err := service.Rename(name); err != nil {
+		return err
+	}
+	c.Containers.Services[role] = service
+	return nil
 }
 
 type CellUniquenessChecker struct{}

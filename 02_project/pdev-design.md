@@ -170,6 +170,8 @@ usecase は port interface を定義し、それらを使って手順を組み�
 
 Domain Service は外部 I/O を行わない。たとえば `CellUniquenessChecker` は既存 cell 一覧を引数で受け取り、重複判定だけを行う。既存 state を読む処理は usecase port の `CellStatePort` 実装が担当する。
 
+Entity の値は通常、entity のメソッドで変更する。子 entity を変更する場合は、aggregate root である `Cell` のメソッドから子 entity のメソッドを呼び出し、整合性を保つ。Go のフィールドは公開してよいが、domain 内の変更経路はメソッドとして表現し、テストで固定する。
+
 方針は「状態モデルは明示的に持つが、実装は薄く保つ」。create と remove を確実に行うために必要な状態は持つが、重い orchestration system にはしない。
 
 ## 作成フロー

@@ -57,3 +57,39 @@ func Test同じIssueのCellは重複として扱う(t *testing.T) {
 		t.Fatal("重複しているのにエラーが返らなかった")
 	}
 }
+
+func TestAggregateRootから子Entityのメソッドを呼び出してコンテナ名を変更する(t *testing.T) {
+	cell, err := NewCellFactory().NewCell("cell-1", "123", Template{
+		Name: "webapp",
+		Containers: ContainerTemplate{
+			Services: map[string]ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}, "myapp")
+	if err != nil {
+		t.Fatalf("Cell作成でエラーが返った: %v", err)
+	}
+
+	err = cell.RenameContainer("web", "pdev-myapp-123-web-renamed")
+
+	if err != nil {
+		t.Fatalf("コンテナ名変更でエラーが返った: %v", err)
+	}
+	if got := cell.Containers.Services["web"].ContainerName; got != "pdev-myapp-123-web-renamed" {
+		t.Fatalf("webコンテナ名 = %q, want %q", got, "pdev-myapp-123-web-renamed")
+	}
+}
+
+func Test存在しないServiceRoleのコンテナ名変更は失敗する(t *testing.T) {
+	cell, err := NewCellFactory().NewCell("cell-1", "123", Template{Name: "webapp"}, "myapp")
+	if err != nil {
+		t.Fatalf("Cell作成でエラーが返った: %v", err)
+	}
+
+	err = cell.RenameContainer("web", "new-name")
+
+	if err == nil {
+		t.Fatal("存在しないservice roleなのにエラーが返らなかった")
+	}
+}
