@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/shige1114/paradev/internal/domain"
 )
 
 func TestYAML設定からProjectとTemplateを読み込める(t *testing.T) {
@@ -50,5 +52,62 @@ templates:
 	}
 	if template.Session.Windows[0].Command != "nvim ." {
 		t.Fatalf("session command = %q, want %q", template.Session.Windows[0].Command, "nvim .")
+	}
+}
+
+func TestYAML設定を保存できる(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	adapter := YAMLConfigAdapter{Path: configPath}
+
+	err := adapter.SaveConfig(context.Background(), domain.Config{
+		Project: domain.ProjectConfig{Name: "paradev"},
+		Templates: map[string]domain.Template{
+			"default": {
+				Name: "default",
+				Repository: domain.RepositoryTemplate{
+					BranchPrefix: "feat/",
+					Base:         "main",
+				},
+				Containers: domain.ContainerTemplate{
+					Services: map[string]domain.ContainerServiceTemplate{
+						"web": {SourceContainer: "myapp-web"},
+					},
+				},
+				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("設定保存でエラーが返った: %v", err)
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("保存した設定を読めなかった: %v", err)
+	}
+	want := `project:
+    name: paradev
+templates:
+    default:
+        repository:
+            branchPrefix: feat/
+            base: main
+        containers:
+            services:
+                web:
+                    sourceContainer: myapp-web
+        session:
+            windows: []
+`
+	if string(data) != want {
+		t.Fatalf("保存内容 =\n%s\nwant =\n%s", string(data), want)
+	}
+	info, err := os.Stat(filepath.Join(dir, ".pdev"))
+	if err != nil {
+		t.Fatalf(".pdev directoryが作られていない: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatal(".pdev がdirectoryではない")
 	}
 }

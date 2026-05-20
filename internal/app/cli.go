@@ -18,6 +18,7 @@ import (
 type CommandKind string
 
 const (
+	CommandInit   CommandKind = "init"
 	CommandCreate CommandKind = "create"
 	CommandRemove CommandKind = "remove"
 )
@@ -35,6 +36,11 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{}, errors.New("command is required")
 	}
 	switch args[0] {
+	case "init":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: pdev init")
+		}
+		return Command{Kind: CommandInit}, nil
 	case "create":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
 			return Command{}, errors.New("usage: pdev create <issue> --template <template>")
@@ -63,6 +69,10 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	sessionAdapter := session.TmuxAdapter{Runner: runner}
 
 	switch cmd.Kind {
+	case CommandInit:
+		uc := usecase.InitProjectUseCase{Config: configAdapter}
+		_, err := uc.Execute(ctx)
+		return err
 	case CommandCreate:
 		uc := usecase.CreateCellUseCase{
 			Config:     configAdapter,

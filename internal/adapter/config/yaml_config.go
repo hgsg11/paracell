@@ -2,7 +2,9 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
+	"path/filepath"
 
 	"github.com/shige1114/paradev/internal/domain"
 	"gopkg.in/yaml.v3"
@@ -48,4 +50,39 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 		Project:   domain.ProjectConfig{Name: raw.Project.Name},
 		Templates: templates,
 	}, nil
+}
+
+func (a YAMLConfigAdapter) ConfigExists(ctx context.Context) (bool, error) {
+	_ = ctx
+	_, err := os.Stat(a.Path)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Config) error {
+	_ = ctx
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(a.Path), ".pdev"), 0o755); err != nil {
+		return err
+	}
+	raw := yamlConfig{
+		Templates: make(map[string]yamlTemplate, len(cfg.Templates)),
+	}
+	raw.Project.Name = cfg.Project.Name
+	for name, template := range cfg.Templates {
+		raw.Templates[name] = yamlTemplate{
+			Repository: template.Repository,
+			Containers: template.Containers,
+			Session:    template.Session,
+		}
+	}
+	data, err := yaml.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(a.Path, data, 0o644)
 }
