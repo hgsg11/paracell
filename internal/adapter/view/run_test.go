@@ -15,7 +15,7 @@ type fakeProgram struct {
 
 func (p fakeProgram) Run() (tea.Model, error) {
 	model := p.model.(Model)
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	if cmd != nil {
 		msg := cmd()
 		updated, _ = updated.(Model).Update(msg)
@@ -26,7 +26,7 @@ func (p fakeProgram) Run() (tea.Model, error) {
 	return updated, nil
 }
 
-func TestRunはEnter成功で結果を返す(t *testing.T) {
+func TestRunはl成功で結果を返す(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -55,7 +55,7 @@ func TestRunはEnter成功で結果を返す(t *testing.T) {
 	}
 }
 
-func TestRunはEnter失敗後もエラーを表示して継続できる(t *testing.T) {
+func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -87,7 +87,7 @@ func TestRunはEnter失敗後もエラーを表示して継続できる(t *testi
 	}
 }
 
-func TestRunはlでDone結果を返す(t *testing.T) {
+func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -96,7 +96,7 @@ func TestRunはlでDone結果を返す(t *testing.T) {
 		_ = opts
 		got = model.(Model)
 		return programFunc(func() (tea.Model, error) {
-			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil {
 				updated, _ = updated.(Model).Update(cmd())
 			}

@@ -19,7 +19,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) 
 		return domain.Config{}, err
 	}
 	if exists {
-		return domain.Config{}, errors.New(".pdev.yml already exists")
+		return domain.Config{}, errors.New("paracell.yaml already exists")
 	}
 	cfg := domain.Config{
 		Project: domain.ProjectConfig{Name: ""},

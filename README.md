@@ -4,7 +4,7 @@
 
 Each cell is made from:
 
-- a git worktree under `.pdev/cells/<cell>/source`
+- a git worktree under `.paracell/cells/<cell>/source`
 - container processes based on the configured template
 - a detached tmux session
 
@@ -21,9 +21,9 @@ paracell remove <cell> --force
 
 ## Files
 
-- `.pdev.yml`: project configuration and templates
-- `.pdev/state.json`: created cell state
-- `.pdev/`: runtime data for the project
+- `paracell.yaml`: project configuration and templates
+- `.paracell/state.json`: created cell state
+- `.paracell/`: runtime data for the project
 
 ## Example Config
 
@@ -60,6 +60,11 @@ Template commands can use:
 
 ## Notes
 
-- `paracell init` generates a default `.pdev.yml`.
-- `paracell ls` reads the stored state and does not require `.pdev.yml`.
+- `paracell init` generates a default `paracell.yaml`.
+- `paracell ls` reads the stored state and does not require `paracell.yaml`.
 - `paracell create` copies configured files into the cell source before starting containers.
+
+## Release
+
+- GitHub Releases are generated with GoReleaser from the `v*` tag workflow in `.github/workflows/release.yml`.
+- Local release dry-runs can use `goreleaser release --clean --snapshot --skip=publish`.

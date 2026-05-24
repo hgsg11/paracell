@@ -40,12 +40,12 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := domain.Cell{Session: domain.Session{Name: "pdev-myapp-123"}}
+	cell := domain.Cell{Session: domain.Session{Name: "paracell-myapp-123"}}
 
 	if err := adapter.EnterSession(context.Background(), cell); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux attach-session -t pdev-myapp-123"}
+	want := []string{"tmux attach-session -t paracell-myapp-123"}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -55,12 +55,12 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := domain.Cell{Session: domain.Session{Name: "pdev-myapp-123"}}
+	cell := domain.Cell{Session: domain.Session{Name: "paracell-myapp-123"}}
 
 	if err := adapter.EnterSession(context.Background(), cell); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux switch-client -t pdev-myapp-123"}
+	want := []string{"tmux switch-client -t paracell-myapp-123"}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -70,14 +70,14 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
 	cell := domain.Cell{
-		Source:  domain.Source{Path: ".pdev/cells/123/source"},
-		Session: domain.Session{Name: "pdev-myapp-123"},
+		Source:  domain.Source{Path: ".paracell/cells/123/source"},
+		Session: domain.Session{Name: "paracell-myapp-123"},
 	}
 
 	if err := adapter.CreateSession(context.Background(), cell); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux new-session -d -s pdev-myapp-123 -c .pdev/cells/123/source"}
+	want := []string{"tmux new-session -d -s paracell-myapp-123 -c .paracell/cells/123/source"}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -87,9 +87,9 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
 	cell := domain.Cell{
-		Source: domain.Source{Path: ".pdev/cells/123/source"},
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
 		Session: domain.Session{
-			Name: "pdev-myapp-123",
+			Name: "paracell-myapp-123",
 			Windows: []domain.SessionWindow{
 				{Name: "editor"},
 				{Name: "server"},
@@ -101,8 +101,8 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux new-session -d -s pdev-myapp-123 -n editor -c .pdev/cells/123/source",
-		"tmux new-window -t pdev-myapp-123 -n server -c .pdev/cells/123/source",
+		"tmux new-session -d -s paracell-myapp-123 -n editor -c .paracell/cells/123/source",
+		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -113,9 +113,9 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
 	cell := domain.Cell{
-		Source: domain.Source{Path: ".pdev/cells/123/source"},
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
 		Session: domain.Session{
-			Name: "pdev-myapp-123",
+			Name: "paracell-myapp-123",
 			Windows: []domain.SessionWindow{
 				{Name: "editor", Command: "nvim ."},
 				{Name: "server"},
@@ -128,11 +128,11 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux new-session -d -s pdev-myapp-123 -n editor -c .pdev/cells/123/source",
-		"tmux send-keys -t pdev-myapp-123:editor nvim . Enter",
-		"tmux new-window -t pdev-myapp-123 -n server -c .pdev/cells/123/source",
-		"tmux new-window -t pdev-myapp-123 -n test -c .pdev/cells/123/source",
-		"tmux send-keys -t pdev-myapp-123:test go test ./... Enter",
+		"tmux new-session -d -s paracell-myapp-123 -n editor -c .paracell/cells/123/source",
+		"tmux send-keys -t paracell-myapp-123:editor nvim . Enter",
+		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
+		"tmux new-window -t paracell-myapp-123 -n test -c .paracell/cells/123/source",
+		"tmux send-keys -t paracell-myapp-123:test go test ./... Enter",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)

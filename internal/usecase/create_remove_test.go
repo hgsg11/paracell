@@ -138,7 +138,7 @@ func TestRemoveCellはDoneでないCellを削除しない(t *testing.T) {
 	}
 }
 
-func TestMarkCellDoneはStateのCellをDoneにして返す(t *testing.T) {
+func TestMarkCellDoneはStateのCellのDoneを切り替える(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
@@ -155,6 +155,17 @@ func TestMarkCellDoneはStateのCellをDoneにして返す(t *testing.T) {
 	}
 	if !ports.cells[0].IsDone() {
 		t.Fatal("stateのcellがdoneになっていない")
+	}
+
+	cell, err = uc.Execute(ctx, MarkCellDoneInput{Cell: "123"})
+	if err != nil {
+		t.Fatalf("MarkCellDoneの解除でエラーが返った: %v", err)
+	}
+	if cell.IsDone() {
+		t.Fatal("IsDone = true, want false")
+	}
+	if ports.cells[0].IsDone() {
+		t.Fatal("stateのcellがdoneのままになっている")
 	}
 }
 

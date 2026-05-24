@@ -1,7 +1,6 @@
 package view
 
 import (
-	"fmt"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -82,7 +81,7 @@ func TestModelはqで終了する(t *testing.T) {
 	}
 }
 
-func TestModelはEnterで選択中Cellを返す(t *testing.T) {
+func TestModelはlで選択中Cellを返す(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 		{ID: "cell-2", Name: "456", Template: "webapp"},
@@ -90,9 +89,9 @@ func TestModelはEnterで選択中Cellを返す(t *testing.T) {
 	model.Selected = 1
 	model.Enter = func(cell domain.Cell) error { return nil }
 
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	if cmd == nil {
-		t.Fatal("enterでコマンドが返らなかった")
+		t.Fatal("lでコマンドが返らなかった")
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
@@ -103,31 +102,37 @@ func TestModelはEnterで選択中Cellを返す(t *testing.T) {
 		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
 	}
 	if nextCmd == nil {
-		t.Fatal("enter成功で終了コマンドが返らなかった")
+		t.Fatal("l成功で終了コマンドが返らなかった")
 	}
 }
 
-func TestModelはEnter失敗でエラーを保持する(t *testing.T) {
+func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
-	model.Enter = func(cell domain.Cell) error {
-		return fmt.Errorf("attach failed")
+	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
+		if cell.Name != "123" {
+			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
+		}
+		if err := cell.MarkDone(); err != nil {
+			t.Fatalf("MarkDoneでエラーが返った: %v", err)
+		}
+		return cell, nil
 	}
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("enterでコマンドが返らなかった")
+		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if got.Error != "attach failed" {
-		t.Fatalf("error = %q, want %q", got.Error, "attach failed")
+	if !got.Cells[0].IsDone() {
+		t.Fatal("IsDone = false, want true")
 	}
-	if got.Quitting {
-		t.Fatal("Quitting = true, want false")
+	if got.Result.Action != ActionNone {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionNone)
 	}
 	if nextCmd != nil {
-		t.Fatal("enter失敗で終了コマンドが返った")
+		t.Fatal("Enterで終了コマンドが返った")
 	}
 }
 
@@ -199,26 +204,29 @@ func TestModelはdのあと別キーなら削除待機を解除する(t *testing
 	}
 }
 
-func TestModelはlで選択中CellをDoneにする(t *testing.T) {
+func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 	model := NewModel([]domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+			if err := cell.MarkDone(); err != nil {
+				t.Fatalf("MarkDoneでエラーが返った: %v", err)
+			}
+			return cell
+		}(),
 	})
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
 		if cell.Name != "123" {
-			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
+			t.Fatalf("toggle cell = %#v, want name %q", cell, "123")
 		}
-		if err := cell.MarkDone(); err != nil {
-			t.Fatalf("MarkDoneでエラーが返った: %v", err)
-		}
-		return cell, nil
+		return domain.Cell{ID: cell.ID, Name: cell.Name, Template: cell.Template}, nil
 	}
 
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("lでコマンドが返らなかった")
+		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, _ := next.(Model).Update(cmd())
-	if !updated.(Model).Cells[0].IsDone() {
-		t.Fatal("IsDone = false, want true")
+	if updated.(Model).Cells[0].IsDone() {
+		t.Fatal("IsDone = true, want false")
 	}
 }

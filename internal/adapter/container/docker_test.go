@@ -10,9 +10,9 @@ import (
 
 func TestDockerRun引数を組み立てられる(t *testing.T) {
 	spec := RunSpec{
-		Name:       "pdev-myapp-123-web",
+		Name:       "paracell-myapp-123-web",
 		Image:      "nginx:latest",
-		Network:    "pdev-myapp-123",
+		Network:    "paracell-myapp-123",
 		Env:        []string{"APP_ENV=dev"},
 		Entrypoint: []string{"/docker-entrypoint.sh"},
 		Command:    []string{"nginx", "-g", "daemon off;"},
@@ -25,8 +25,8 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 
 	want := []string{
 		"run", "-d",
-		"--name", "pdev-myapp-123-web",
-		"--network", "pdev-myapp-123",
+		"--name", "paracell-myapp-123-web",
+		"--network", "paracell-myapp-123",
 		"-e", "APP_ENV=dev",
 		"--entrypoint", "/docker-entrypoint.sh",
 		"-w", "/app",
@@ -50,11 +50,11 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	cell := domain.Cell{
 		Name: "123",
 		Source: domain.Source{
-			Path: "/project/.pdev/cells/123/source",
+			Path: "/project/.paracell/cells/123/source",
 		},
 		Containers: domain.Containers{
 			Services: map[string]domain.CellContainer{
-				"web": {ContainerName: "pdev-myapp-123-web", SourceContainer: "myapp-web"},
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
 			},
 		},
 	}
@@ -75,7 +75,7 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
 	}
 	wantRunCalls := []string{
-		"docker run -d --name pdev-myapp-123-web --network myapp_default -e APP_ENV=dev -e PATH=/usr/bin -v /project/.pdev/cells/123/source:/app -v /project/.pdev/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network myapp_default -e APP_ENV=dev -e PATH=/usr/bin -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)

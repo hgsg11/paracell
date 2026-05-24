@@ -33,17 +33,17 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.Branch != "feat/123" {
 		t.Fatalf("ブランチ名 = %q, want %q", cell.Branch, "feat/123")
 	}
-	if cell.Source.Path != ".pdev/cells/123/source" {
-		t.Fatalf("source path = %q, want %q", cell.Source.Path, ".pdev/cells/123/source")
+	if cell.Source.Path != ".paracell/cells/123/source" {
+		t.Fatalf("source path = %q, want %q", cell.Source.Path, ".paracell/cells/123/source")
 	}
-	if cell.Containers.Network != "pdev-myapp-123" {
-		t.Fatalf("Docker network名 = %q, want %q", cell.Containers.Network, "pdev-myapp-123")
+	if cell.Containers.Network != "paracell-myapp-123" {
+		t.Fatalf("Docker network名 = %q, want %q", cell.Containers.Network, "paracell-myapp-123")
 	}
-	if got := cell.Containers.Services["web"].ContainerName; got != "pdev-myapp-123-web" {
-		t.Fatalf("webコンテナ名 = %q, want %q", got, "pdev-myapp-123-web")
+	if got := cell.Containers.Services["web"].ContainerName; got != "paracell-myapp-123-web" {
+		t.Fatalf("webコンテナ名 = %q, want %q", got, "paracell-myapp-123-web")
 	}
-	if cell.Session.Name != "pdev-myapp-123" {
-		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "pdev-myapp-123")
+	if cell.Session.Name != "paracell-myapp-123" {
+		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "paracell-myapp-123")
 	}
 	if len(cell.Session.Windows) != 1 || cell.Session.Windows[0].Command != "nvim {{.issue}}" {
 		t.Fatalf("session windows = %#v, want command %q", cell.Session.Windows, "nvim {{.issue}}")
@@ -77,13 +77,13 @@ func TestAggregateRootから子Entityのメソッドを呼び出してコンテ�
 		t.Fatalf("Cell作成でエラーが返った: %v", err)
 	}
 
-	err = cell.RenameContainer("web", "pdev-myapp-123-web-renamed")
+	err = cell.RenameContainer("web", "paracell-myapp-123-web-renamed")
 
 	if err != nil {
 		t.Fatalf("コンテナ名変更でエラーが返った: %v", err)
 	}
-	if got := cell.Containers.Services["web"].ContainerName; got != "pdev-myapp-123-web-renamed" {
-		t.Fatalf("webコンテナ名 = %q, want %q", got, "pdev-myapp-123-web-renamed")
+	if got := cell.Containers.Services["web"].ContainerName; got != "paracell-myapp-123-web-renamed" {
+		t.Fatalf("webコンテナ名 = %q, want %q", got, "paracell-myapp-123-web-renamed")
 	}
 }
 
@@ -111,6 +111,19 @@ func TestCellはMarkDoneできる(t *testing.T) {
 	}
 	if !cell.CanDelete() {
 		t.Fatal("CanDelete = false, want true")
+	}
+}
+
+func TestCellはDone状態を切り替えられる(t *testing.T) {
+	cell := Cell{}
+
+	cell.ToggleDone()
+	if !cell.IsDone() {
+		t.Fatal("IsDone = false, want true")
+	}
+	cell.ToggleDone()
+	if cell.IsDone() {
+		t.Fatal("IsDone = true, want false")
 	}
 }
 

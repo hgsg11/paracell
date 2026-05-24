@@ -149,7 +149,7 @@ func (a YAMLConfigAdapter) ConfigExists(ctx context.Context) (bool, error) {
 
 func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Config) error {
 	_ = ctx
-	if err := os.MkdirAll(filepath.Join(filepath.Dir(a.Path), ".pdev"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(a.Path), ".paracell"), 0o755); err != nil {
 		return err
 	}
 	raw := yamlConfig{

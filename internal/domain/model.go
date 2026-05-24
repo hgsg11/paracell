@@ -155,7 +155,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		return Cell{}, errors.New("template name is required")
 	}
 	name := issue
-	prefix := fmt.Sprintf("pdev-%s-%s", project, name)
+	prefix := fmt.Sprintf("paracell-%s-%s", project, name)
 	services := make(map[string]CellContainer, len(template.Containers.Services))
 	for role, service := range template.Containers.Services {
 		services[role] = CellContainer{
@@ -175,7 +175,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		Template: template.Name,
 		Branch:   template.Repository.BranchPrefix + issue,
 		Source: Source{
-			Path: fmt.Sprintf(".pdev/cells/%s/source", name),
+			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
 		},
 		Containers: Containers{
 			Network:  prefix,
@@ -207,6 +207,10 @@ func (c *Cell) MarkDone() error {
 	}
 	c.done = true
 	return nil
+}
+
+func (c *Cell) ToggleDone() {
+	c.done = !c.done
 }
 
 func (c Cell) IsDone() bool {

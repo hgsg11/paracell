@@ -11,7 +11,7 @@ import (
 
 func TestYAML設定からProjectとTemplateを読み込める(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -76,7 +76,7 @@ templates:
 
 func TestYAML設定を保存できる(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	adapter := YAMLConfigAdapter{Path: configPath}
 
 	err := adapter.SaveConfig(context.Background(), domain.Config{
@@ -134,18 +134,18 @@ templates:
 	if string(data) != want {
 		t.Fatalf("保存内容 =\n%s\nwant =\n%s", string(data), want)
 	}
-	info, err := os.Stat(filepath.Join(dir, ".pdev"))
+	info, err := os.Stat(filepath.Join(dir, ".paracell"))
 	if err != nil {
-		t.Fatalf(".pdev directoryが作られていない: %v", err)
+		t.Fatalf(".paracell directoryが作られていない: %v", err)
 	}
 	if !info.IsDir() {
-		t.Fatal(".pdev がdirectoryではない")
+		t.Fatal(".paracell がdirectoryではない")
 	}
 }
 
 func TestYAML設定はProvidersがない場合に失敗する(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 templates:
@@ -175,7 +175,7 @@ templates:
 
 func TestYAML設定は未対応Providerの場合に失敗する(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -209,7 +209,7 @@ templates:
 
 func TestYAML設定はContainerProviderがない場合も読み込める(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -242,7 +242,7 @@ templates:
 
 func TestYAML設定はContainerProviderが空文字でも読み込める(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -276,7 +276,7 @@ templates:
 
 func TestYAML設定は未対応ContainerProviderの場合に失敗する(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:

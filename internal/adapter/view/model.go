@@ -77,7 +77,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			m.AwaitingDelete = true
 			return m, nil
-		case "l":
+		case "enter":
 			if len(m.Cells) == 0 {
 				m.Error = "no cells available"
 				return m, nil
@@ -91,11 +91,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				updated, err := markDone(cell)
 				return markDoneResultMsg{cell: updated, err: err}
 			}
-		case "q":
-			m.Quitting = true
-			m.Result = Result{Action: ActionQuit}
-			return m, tea.Quit
-		case "enter":
+		case "l":
 			if len(m.Cells) == 0 {
 				m.Error = "no cells available"
 				return m, nil
@@ -108,6 +104,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return enterResultMsg{cell: cell, err: enter(cell)}
 			}
+		case "q":
+			m.Quitting = true
+			m.Result = Result{Action: ActionQuit}
+			return m, tea.Quit
 		}
 	case enterResultMsg:
 		if msg.err != nil {

@@ -9,7 +9,7 @@ import (
 )
 
 func TestStateが存在しない場合は空のCell一覧を返す(t *testing.T) {
-	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".pdev", "state.json")}
+	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.json")}
 
 	cells, err := store.LoadCells(context.Background())
 
@@ -22,7 +22,7 @@ func TestStateが存在しない場合は空のCell一覧を返す(t *testing.T)
 }
 
 func TestCellを保存して読み戻せる(t *testing.T) {
-	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".pdev", "state.json")}
+	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.json")}
 	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
 	if err := cell.MarkDone(); err != nil {
 		t.Fatalf("Cellをdoneにできなかった: %v", err)

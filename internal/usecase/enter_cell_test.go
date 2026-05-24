@@ -11,7 +11,7 @@ import (
 func TestEnterCellはSessionにEnterを依頼する(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
-	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "webapp", Session: domain.Session{Name: "pdev-myapp-123"}}
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "webapp", Session: domain.Session{Name: "paracell-myapp-123"}}
 
 	uc := EnterCellUseCase{
 		Config:         ports,

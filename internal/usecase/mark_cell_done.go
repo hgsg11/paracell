@@ -22,9 +22,7 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 	}
 	for i, cell := range cells {
 		if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
-			if err := cell.MarkDone(); err != nil {
-				return domain.Cell{}, err
-			}
+			cell.ToggleDone()
 			cells[i] = cell
 			if err := u.State.SaveCells(ctx, cells); err != nil {
 				return domain.Cell{}, err

@@ -20,7 +20,7 @@ func TestCopyAdapterはTemplateFilesをSource内の同じ相対Pathへコピー�
 	if err := os.WriteFile(filepath.Join(root, "apps", "web", ".env.local"), []byte("PORT=3000\n"), 0o644); err != nil {
 		t.Fatalf("nested source fileを書けなかった: %v", err)
 	}
-	cellSource := filepath.Join(root, ".pdev", "cells", "123", "source")
+	cellSource := filepath.Join(root, ".paracell", "cells", "123", "source")
 	adapter := CopyAdapter{Root: root}
 
 	err := adapter.CopyFiles(context.Background(), domain.Cell{Source: domain.Source{Path: cellSource}}, domain.Template{

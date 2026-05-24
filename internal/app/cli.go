@@ -107,8 +107,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		return err
 	}
 	runner := system.OSCommandRunner{Dir: workdir}
-	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, ".pdev.yml")}
-	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".pdev", "state.json")}
+	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, "paracell.yaml")}
+	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
 
 	switch cmd.Kind {
 	case CommandInit:

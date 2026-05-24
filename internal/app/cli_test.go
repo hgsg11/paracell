@@ -94,7 +94,7 @@ func TestRemoveコマンドを解析できる(t *testing.T) {
 
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{Name: "123", Template: "default"},
 		{Name: "456", Template: "webapp"},
@@ -129,7 +129,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".pdev", "state.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, ".paracell", "state.json")); !os.IsNotExist(err) {
 		t.Fatalf("state.json existence error = %v, want not exist", err)
 	}
 }
@@ -151,7 +151,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 
 func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 		{ID: "cell-2", Name: "456", Template: "webapp"},
@@ -209,13 +209,13 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 
 func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -276,13 +276,13 @@ templates: {}
 
 func TestRunはViewでddしたCellをDelete処理に渡す(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -340,7 +340,7 @@ templates: {}
 
 func TestRunはCreateでProvidersがない設定をエラーにする(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 templates:
@@ -369,7 +369,7 @@ templates:
 
 func TestRunはCreateでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -403,7 +403,7 @@ templates:
 
 func TestRunはRemoveでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, ".pdev.yml")
+	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
   name: myapp
 providers:
@@ -414,7 +414,7 @@ templates: {}
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{
 			ID:    "cell-1",
@@ -424,12 +424,12 @@ templates: {}
 				Path: filepath.Join(dir, "missing-source"),
 			},
 			Containers: domain.Containers{
-				Network: "pdev-myapp-123",
+				Network: "paracell-myapp-123",
 				Services: map[string]domain.CellContainer{
-					"web": {ContainerName: "pdev-myapp-123-web"},
+					"web": {ContainerName: "paracell-myapp-123-web"},
 				},
 			},
-			Session: domain.Session{Name: "pdev-myapp-123"},
+			Session: domain.Session{Name: "paracell-myapp-123"},
 		},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
