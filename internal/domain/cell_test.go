@@ -45,8 +45,8 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.Session.Name != "pdev-myapp-123" {
 		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "pdev-myapp-123")
 	}
-	if len(cell.Session.Windows) != 1 || cell.Session.Windows[0].Command != "nvim 123" {
-		t.Fatalf("session windows = %#v, want command %q", cell.Session.Windows, "nvim 123")
+	if len(cell.Session.Windows) != 1 || cell.Session.Windows[0].Command != "nvim {{.issue}}" {
+		t.Fatalf("session windows = %#v, want command %q", cell.Session.Windows, "nvim {{.issue}}")
 	}
 	if cell.IsDone() {
 		t.Fatal("IsDone = true, want false")

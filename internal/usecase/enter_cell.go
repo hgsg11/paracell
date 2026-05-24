@@ -16,7 +16,7 @@ type EnterCellUseCase struct {
 }
 
 func (u EnterCellUseCase) Execute(ctx context.Context, input EnterCellInput) (domain.Cell, error) {
-	cfg, err := u.Config.Load(ctx)
+	cfg, err := u.Config.Load(ctx, nil)
 	if err != nil {
 		return domain.Cell{}, err
 	}

@@ -42,7 +42,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	cfg, err := loader.Load(context.Background())
+	cfg, err := loader.Load(context.Background(), nil)
 
 	if err != nil {
 		t.Fatalf("設定読み込みでエラーが返った: %v", err)
@@ -163,7 +163,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	_, err := loader.Load(context.Background())
+	_, err := loader.Load(context.Background(), nil)
 
 	if err == nil {
 		t.Fatal("providersがないのにエラーが返らなかった")
@@ -197,7 +197,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	_, err := loader.Load(context.Background())
+	_, err := loader.Load(context.Background(), nil)
 
 	if err == nil {
 		t.Fatal("未対応providerなのにエラーが返らなかった")
@@ -230,7 +230,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	cfg, err := loader.Load(context.Background())
+	cfg, err := loader.Load(context.Background(), nil)
 
 	if err != nil {
 		t.Fatalf("設定読み込みでエラーが返った: %v", err)
@@ -264,7 +264,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	cfg, err := loader.Load(context.Background())
+	cfg, err := loader.Load(context.Background(), nil)
 
 	if err != nil {
 		t.Fatalf("設定読み込みでエラーが返った: %v", err)
@@ -298,7 +298,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	_, err := loader.Load(context.Background())
+	_, err := loader.Load(context.Background(), nil)
 
 	if err == nil {
 		t.Fatal("未対応container providerなのにエラーが返らなかった")

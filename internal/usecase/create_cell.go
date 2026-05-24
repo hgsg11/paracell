@@ -23,7 +23,10 @@ type CreateCellUseCase struct {
 }
 
 func (u CreateCellUseCase) Execute(ctx context.Context, input CreateCellInput) (domain.Cell, error) {
-	cfg, err := u.Config.Load(ctx)
+	cfg, err := u.Config.Load(ctx, &domain.TemplateVars{
+		Issue: input.Issue,
+		Name:  input.Issue,
+	})
 	if err != nil {
 		return domain.Cell{}, err
 	}

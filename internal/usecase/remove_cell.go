@@ -20,7 +20,7 @@ type RemoveCellUseCase struct {
 }
 
 func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) error {
-	cfg, err := u.Config.Load(ctx)
+	cfg, err := u.Config.Load(ctx, nil)
 	if err != nil {
 		return err
 	}

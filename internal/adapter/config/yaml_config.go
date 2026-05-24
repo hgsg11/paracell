@@ -1,11 +1,13 @@
 package config
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 
 	"github.com/shige1114/paradev/internal/domain"
 	"gopkg.in/yaml.v3"
@@ -36,7 +38,7 @@ type yamlTemplate struct {
 	Session    domain.SessionTemplate    `yaml:"session"`
 }
 
-func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
+func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error) {
 	_ = ctx
 	data, err := os.ReadFile(a.Path)
 	if err != nil {
@@ -47,13 +49,22 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 		return domain.Config{}, err
 	}
 	templates := make(map[string]domain.Template, len(raw.Templates))
-	for name, template := range raw.Templates {
+	for name, rawTemplate := range raw.Templates {
+		rendered, err := instantiateTemplate(domain.Template{
+			Repository: rawTemplate.Repository,
+			Files:      append([]string(nil), rawTemplate.Files...),
+			Containers: rawTemplate.Containers,
+			Session:    rawTemplate.Session,
+		}, vars)
+		if err != nil {
+			return domain.Config{}, err
+		}
 		templates[name] = domain.Template{
 			Name:       name,
-			Repository: template.Repository,
-			Files:      append([]string(nil), template.Files...),
-			Containers: template.Containers,
-			Session:    template.Session,
+			Repository: rendered.Repository,
+			Files:      append([]string(nil), rendered.Files...),
+			Containers: rendered.Containers,
+			Session:    rendered.Session,
 		}
 	}
 	providers := domain.ProviderConfig{
@@ -69,6 +80,40 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 		Providers: providers,
 		Templates: templates,
 	}, nil
+}
+
+func instantiateTemplate(tpl domain.Template, vars *domain.TemplateVars) (domain.Template, error) {
+	if vars == nil {
+		return tpl, nil
+	}
+	rendered := tpl
+	rendered.Session.Windows = make([]domain.SessionWindowTemplate, 0, len(tpl.Session.Windows))
+	for _, window := range tpl.Session.Windows {
+		command, err := renderTemplate(window.Command, vars)
+		if err != nil {
+			return domain.Template{}, err
+		}
+		rendered.Session.Windows = append(rendered.Session.Windows, domain.SessionWindowTemplate{
+			Name:    window.Name,
+			Command: command,
+		})
+	}
+	return rendered, nil
+}
+
+func renderTemplate(value string, vars *domain.TemplateVars) (string, error) {
+	tmpl, err := template.New("value").Option("missingkey=error").Parse(value)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, map[string]string{
+		"issue": vars.Issue,
+		"name":  vars.Name,
+	}); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 func validateProviders(providers domain.ProviderConfig) error {

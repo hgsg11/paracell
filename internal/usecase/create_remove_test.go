@@ -1,9 +1,11 @@
 package usecase
 
 import (
+	"bytes"
 	"context"
 	"reflect"
 	"testing"
+	"text/template"
 
 	"github.com/shige1114/paradev/internal/domain"
 )
@@ -38,7 +40,7 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 		"source:create:123",
 		"files:copy:123:.env,apps/web/.env.local",
 		"containers:create:123",
-		"session:create:123",
+		"session:create:123:nvim 123",
 		"state:save:1",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
@@ -202,14 +204,41 @@ func newFakePorts() *fakePorts {
 							"web": {SourceContainer: "myapp-web"},
 						},
 					},
+					Session: domain.SessionTemplate{
+						Windows: []domain.SessionWindowTemplate{{Name: "editor", Command: "nvim {{.issue}}"}},
+					},
 				},
 			},
 		},
 	}
 }
 
-func (f *fakePorts) Load(ctx context.Context) (domain.Config, error) {
-	return f.config, nil
+func (f *fakePorts) Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error) {
+	_ = ctx
+	if vars == nil {
+		return f.config, nil
+	}
+	cfg := f.config
+	cfg.Templates = make(map[string]domain.Template, len(f.config.Templates))
+	for name, tpl := range f.config.Templates {
+		rendered := tpl
+		rendered.Session.Windows = make([]domain.SessionWindowTemplate, 0, len(tpl.Session.Windows))
+		for _, window := range tpl.Session.Windows {
+			command, err := renderString(window.Command, map[string]string{
+				"issue": vars.Issue,
+				"name":  vars.Name,
+			})
+			if err != nil {
+				return domain.Config{}, err
+			}
+			rendered.Session.Windows = append(rendered.Session.Windows, domain.SessionWindowTemplate{
+				Name:    window.Name,
+				Command: command,
+			})
+		}
+		cfg.Templates[name] = rendered
+	}
+	return cfg, nil
 }
 
 func (f *fakePorts) LoadCells(ctx context.Context) ([]domain.Cell, error) {
@@ -263,7 +292,11 @@ func (f *fakePorts) RemoveContainers(ctx context.Context, cell domain.Cell) erro
 }
 
 func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
-	f.calls = append(f.calls, "session:create:"+cell.Name)
+	command := ""
+	if len(cell.Session.Windows) > 0 {
+		command = ":" + cell.Session.Windows[0].Command
+	}
+	f.calls = append(f.calls, "session:create:"+cell.Name+command)
 	return nil
 }
 
@@ -294,4 +327,16 @@ func joinStrings(values []string) string {
 		out += "," + value
 	}
 	return out
+}
+
+func renderString(value string, data map[string]string) (string, error) {
+	tmpl, err := template.New("value").Option("missingkey=error").Parse(value)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }

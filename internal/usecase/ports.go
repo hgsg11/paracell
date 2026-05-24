@@ -7,7 +7,7 @@ import (
 )
 
 type ConfigPort interface {
-	Load(ctx context.Context) (domain.Config, error)
+	Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error)
 }
 
 type InitConfigPort interface {
