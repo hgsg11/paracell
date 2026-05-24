@@ -10,6 +10,7 @@ import (
 	"github.com/shige1114/paradev/internal/adapter/config"
 	"github.com/shige1114/paradev/internal/adapter/id"
 	"github.com/shige1114/paradev/internal/adapter/output"
+	"github.com/shige1114/paradev/internal/adapter/provider"
 	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/adapter/system"
 	"github.com/shige1114/paradev/internal/usecase"
@@ -89,7 +90,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		adapters, err := provider.NewAdapters(cfg.Providers, runner)
 		if err != nil {
 			return err
 		}
@@ -108,7 +109,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		adapters, err := provider.NewAdapters(cfg.Providers, runner)
 		if err != nil {
 			return err
 		}

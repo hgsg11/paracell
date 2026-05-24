@@ -17,8 +17,8 @@
 - Modify `internal/adapter/config/yaml_config_test.go`: cover provider load/save and invalid config errors.
 - Modify `internal/usecase/init_project.go`: include default provider config in `pdev init`.
 - Modify `internal/usecase/init_test.go`: assert default providers from init.
-- Create `internal/app/providers.go`: select source/container/session adapters from provider names.
-- Create `internal/app/providers_test.go`: test supported and unsupported provider selection.
+- Create `internal/adapter/provider/adapters.go`: select source/container/session adapters from provider names.
+- Create `internal/adapter/provider/adapters_test.go`: test supported and unsupported provider selection.
 - Modify `internal/app/cli.go`: wire selected adapters for `create` and `remove`; keep `ls` independent of `.pdev.yml`.
 - Modify `internal/app/cli_test.go`: add a regression test that `ls` does not require `.pdev.yml`.
 
@@ -497,16 +497,16 @@ git commit -m "Add default providers to init"
 ## Task 5: App Provider Selection
 
 **Files:**
-- Create: `internal/app/providers.go`
-- Create: `internal/app/providers_test.go`
+- Create: `internal/adapter/provider/adapters.go`
+- Create: `internal/adapter/provider/adapters_test.go`
 - Modify: `internal/app/cli.go`
 
 - [ ] **Step 1: Write failing provider selection tests**
 
-Create `internal/app/providers_test.go`:
+Create `internal/adapter/provider/adapters_test.go`:
 
 ```go
-package app
+package provider
 
 import (
 	"testing"
@@ -514,8 +514,8 @@ import (
 	"github.com/shige1114/paradev/internal/domain"
 )
 
-func TestProviderAdaptersは対応Providerを選択できる(t *testing.T) {
-	adapters, err := NewProviderAdapters(domain.ProviderConfig{
+func TestAdaptersは対応Providerを選択できる(t *testing.T) {
+	adapters, err := NewAdapters(domain.ProviderConfig{
 		Source:    "git",
 		Container: "docker",
 		Session:   "tmux",
@@ -535,8 +535,8 @@ func TestProviderAdaptersは対応Providerを選択できる(t *testing.T) {
 	}
 }
 
-func TestProviderAdaptersは未対応Providerをエラーにする(t *testing.T) {
-	_, err := NewProviderAdapters(domain.ProviderConfig{
+func TestAdaptersは未対応Providerをエラーにする(t *testing.T) {
+	_, err := NewAdapters(domain.ProviderConfig{
 		Source:    "svn",
 		Container: "docker",
 		Session:   "tmux",
@@ -556,17 +556,17 @@ func TestProviderAdaptersは未対応Providerをエラーにする(t *testing.T)
 Run:
 
 ```bash
-go test ./internal/app -run 'TestProviderAdapters'
+go test ./internal/adapter/provider -run 'TestAdapters'
 ```
 
-Expected: FAIL with `undefined: NewProviderAdapters`.
+Expected: FAIL with `undefined: NewAdapters`.
 
 - [ ] **Step 3: Implement provider adapter selection**
 
-Create `internal/app/providers.go`:
+Create `internal/adapter/provider/adapters.go`:
 
 ```go
-package app
+package provider
 
 import (
 	"fmt"
@@ -579,31 +579,31 @@ import (
 	"github.com/shige1114/paradev/internal/usecase"
 )
 
-type ProviderAdapters struct {
+type Adapters struct {
 	Source     usecase.SourcePort
 	Containers usecase.ContainerPort
 	Session    usecase.SessionPort
 }
 
-func NewProviderAdapters(providers domain.ProviderConfig, runner system.Runner) (ProviderAdapters, error) {
-	var adapters ProviderAdapters
+func NewAdapters(providers domain.ProviderConfig, runner system.Runner) (Adapters, error) {
+	var adapters Adapters
 	switch providers.Source {
 	case "git":
 		adapters.Source = source.GitSourceAdapter{Runner: runner}
 	default:
-		return ProviderAdapters{}, fmt.Errorf("unsupported providers.source %q", providers.Source)
+		return Adapters{}, fmt.Errorf("unsupported providers.source %q", providers.Source)
 	}
 	switch providers.Container {
 	case "docker":
 		adapters.Containers = container.DockerCLIAdapter{Runner: runner}
 	default:
-		return ProviderAdapters{}, fmt.Errorf("unsupported providers.container %q", providers.Container)
+		return Adapters{}, fmt.Errorf("unsupported providers.container %q", providers.Container)
 	}
 	switch providers.Session {
 	case "tmux":
 		adapters.Session = session.TmuxAdapter{Runner: runner}
 	default:
-		return ProviderAdapters{}, fmt.Errorf("unsupported providers.session %q", providers.Session)
+		return Adapters{}, fmt.Errorf("unsupported providers.session %q", providers.Session)
 	}
 	return adapters, nil
 }
@@ -614,7 +614,7 @@ func NewProviderAdapters(providers domain.ProviderConfig, runner system.Runner) 
 Run:
 
 ```bash
-go test ./internal/app -run 'TestProviderAdapters'
+go test ./internal/adapter/provider -run 'TestAdapters'
 ```
 
 Expected: PASS.
@@ -637,7 +637,7 @@ In the `CommandCreate` case, load config once and select adapters:
 		if err != nil {
 			return err
 		}
-		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		adapters, err := provider.NewAdapters(cfg.Providers, runner)
 		if err != nil {
 			return err
 		}
@@ -661,7 +661,7 @@ In the `CommandRemove` case, load config and select adapters:
 		if err != nil {
 			return err
 		}
-		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		adapters, err := provider.NewAdapters(cfg.Providers, runner)
 		if err != nil {
 			return err
 		}
@@ -701,7 +701,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit Task 5**
 
 ```bash
-git add internal/app/cli.go internal/app/providers.go internal/app/providers_test.go
+git add internal/app/cli.go internal/app/providers.go internal/adapter/provider/adapters.go internal/adapter/provider/adapters_test.go
 git commit -m "Select adapters from provider config"
 ```
 

@@ -1,4 +1,4 @@
-package app
+package provider
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 	"github.com/shige1114/paradev/internal/domain"
 )
 
-func TestProviderAdaptersは対応Providerを選択できる(t *testing.T) {
-	adapters, err := NewProviderAdapters(domain.ProviderConfig{
+func TestAdaptersは対応Providerを選択できる(t *testing.T) {
+	adapters, err := NewAdapters(domain.ProviderConfig{
 		Source:    "git",
 		Container: "docker",
 		Session:   "tmux",
@@ -27,8 +27,8 @@ func TestProviderAdaptersは対応Providerを選択できる(t *testing.T) {
 	}
 }
 
-func TestProviderAdaptersは未対応Providerをエラーにする(t *testing.T) {
-	_, err := NewProviderAdapters(domain.ProviderConfig{
+func TestAdaptersは未対応Providerをエラーにする(t *testing.T) {
+	_, err := NewAdapters(domain.ProviderConfig{
 		Source:    "svn",
 		Container: "docker",
 		Session:   "tmux",
