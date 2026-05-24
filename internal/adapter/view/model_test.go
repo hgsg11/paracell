@@ -47,6 +47,23 @@ func TestModelは境界で選択を超えない(t *testing.T) {
 	}
 }
 
+func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
+	doneCell := domain.Cell{ID: "cell-2", Name: "45678", Template: "web"}
+	if err := doneCell.MarkDone(); err != nil {
+		t.Fatalf("MarkDoneでエラーが返った: %v", err)
+	}
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		doneCell,
+	})
+
+	got := model.View()
+	want := "  NAME   TEMPLATE  DONE\n> 123    default   [ ]\n  45678  web       [x]\n"
+	if got != want {
+		t.Fatalf("view = %q, want %q", got, want)
+	}
+}
+
 func TestModelはqで終了する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},

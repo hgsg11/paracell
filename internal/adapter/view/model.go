@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/shige1114/paradev/internal/domain"
 )
 
@@ -169,7 +170,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString("NAME\tTEMPLATE\n")
+	nameWidth, templateWidth := tableWidths(m.Cells)
+	fmt.Fprintf(&b, "  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth))
 	if len(m.Cells) == 0 {
 		b.WriteString("no cells\n")
 		return b.String()
@@ -179,12 +181,30 @@ func (m Model) View() string {
 		if i == m.Selected {
 			prefix = ">"
 		}
-		fmt.Fprintf(&b, "%s %s\t%s\n", prefix, cell.Name, cell.Template)
+		done := "[ ]"
+		if cell.IsDone() {
+			done = "[x]"
+		}
+		fmt.Fprintf(&b, "%s %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), done)
 	}
 	if m.Error != "" {
 		fmt.Fprintf(&b, "\nerror: %s\n", m.Error)
 	}
 	return b.String()
+}
+
+func tableWidths(cells []domain.Cell) (int, int) {
+	nameWidth := lipgloss.Width("NAME")
+	templateWidth := lipgloss.Width("TEMPLATE")
+	for _, cell := range cells {
+		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
+		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
+	}
+	return nameWidth, templateWidth
+}
+
+func padded(value string, width int) string {
+	return lipgloss.NewStyle().Width(width).Render(value)
 }
 
 type enterResultMsg struct {
