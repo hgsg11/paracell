@@ -26,6 +26,8 @@ func NewAdapters(providers domain.ProviderConfig, runner system.Runner) (Adapter
 		return Adapters{}, fmt.Errorf("unsupported providers.source %q", providers.Source)
 	}
 	switch providers.Container {
+	case "":
+		adapters.Containers = container.NoopAdapter{}
 	case "docker":
 		adapters.Containers = container.DockerCLIAdapter{Runner: runner}
 	default:

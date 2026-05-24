@@ -41,3 +41,32 @@ func TestAdaptersは未対応Providerをエラーにする(t *testing.T) {
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.source "svn"`)
 	}
 }
+
+func TestAdaptersはContainerProviderが空ならNoopContainerを選択する(t *testing.T) {
+	adapters, err := NewAdapters(domain.ProviderConfig{
+		Source:  "git",
+		Session: "tmux",
+	}, nil)
+
+	if err != nil {
+		t.Fatalf("provider adapter選択でエラーが返った: %v", err)
+	}
+	if adapters.Containers == nil {
+		t.Fatal("container adapter is nil")
+	}
+}
+
+func TestAdaptersは未対応ContainerProviderをエラーにする(t *testing.T) {
+	_, err := NewAdapters(domain.ProviderConfig{
+		Source:    "git",
+		Container: "podman",
+		Session:   "tmux",
+	}, nil)
+
+	if err == nil {
+		t.Fatal("未対応container providerなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported providers.container "podman"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.container "podman"`)
+	}
+}
