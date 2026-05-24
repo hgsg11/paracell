@@ -27,6 +27,9 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 	if cell.ID != "cell-1" {
 		t.Fatalf("cell ID = %q, want %q", cell.ID, "cell-1")
 	}
+	if cell.IsDone() {
+		t.Fatal("IsDone = true, want false")
+	}
 	wantCalls := []string{
 		"factory:source:git",
 		"factory:container:docker",
@@ -68,7 +71,13 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
-		{ID: "cell-1", Issue: "123", Name: "123"},
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123"}
+			if err := cell.MarkDone(); err != nil {
+				t.Fatalf("Cellをdoneにできなかった: %v", err)
+			}
+			return cell
+		}(),
 		{ID: "cell-2", Issue: "456", Name: "456"},
 	}
 	uc := RemoveCellUseCase{
@@ -97,6 +106,50 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 	}
 	if ports.cells[0].Issue != "456" {
 		t.Fatalf("残ったcell issue = %q, want %q", ports.cells[0].Issue, "456")
+	}
+}
+
+func TestRemoveCellはDoneでないCellを削除しない(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cells = []domain.Cell{
+		{ID: "cell-1", Issue: "123", Name: "123"},
+	}
+	uc := RemoveCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+	}
+
+	err := uc.Execute(ctx, RemoveCellInput{Cell: "123"})
+
+	if err == nil {
+		t.Fatal("doneでないcellなのに削除できてしまった")
+	}
+	if err.Error() != `cell "123" cannot be deleted until it is done` {
+		t.Fatalf("error = %q, want %q", err.Error(), `cell "123" cannot be deleted until it is done`)
+	}
+}
+
+func TestMarkCellDoneはStateのCellをDoneにして返す(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cells = []domain.Cell{
+		{ID: "cell-1", Issue: "123", Name: "123"},
+	}
+
+	uc := MarkCellDoneUseCase{State: ports}
+	cell, err := uc.Execute(ctx, MarkCellDoneInput{Cell: "123"})
+	if err != nil {
+		t.Fatalf("MarkCellDoneでエラーが返った: %v", err)
+	}
+	if !cell.IsDone() {
+		t.Fatal("IsDone = false, want true")
+	}
+	if !ports.cells[0].IsDone() {
+		t.Fatal("stateのcellがdoneになっていない")
 	}
 }
 

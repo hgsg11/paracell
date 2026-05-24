@@ -45,6 +45,9 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.Session.Name != "pdev-myapp-123" {
 		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "pdev-myapp-123")
 	}
+	if cell.IsDone() {
+		t.Fatal("IsDone = true, want false")
+	}
 }
 
 func Test同じIssueのCellは重複として扱う(t *testing.T) {
@@ -91,5 +94,27 @@ func Test存在しないServiceRoleのコンテナ名変更は失敗する(t *te
 
 	if err == nil {
 		t.Fatal("存在しないservice roleなのにエラーが返らなかった")
+	}
+}
+
+func TestCellはMarkDoneできる(t *testing.T) {
+	cell := Cell{}
+
+	if err := cell.MarkDone(); err != nil {
+		t.Fatalf("MarkDoneでエラーが返った: %v", err)
+	}
+	if !cell.IsDone() {
+		t.Fatal("IsDone = false, want true")
+	}
+	if !cell.CanDelete() {
+		t.Fatal("CanDelete = false, want true")
+	}
+}
+
+func TestDoneでないCellは削除不可(t *testing.T) {
+	cell := Cell{}
+
+	if cell.CanDelete() {
+		t.Fatal("doneでないcell should not be deletable")
 	}
 }

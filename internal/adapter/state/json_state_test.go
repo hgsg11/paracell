@@ -24,6 +24,9 @@ func TestStateが存在しない場合は空のCell一覧を返す(t *testing.T)
 func TestCellを保存して読み戻せる(t *testing.T) {
 	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".pdev", "state.json")}
 	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+	if err := cell.MarkDone(); err != nil {
+		t.Fatalf("Cellをdoneにできなかった: %v", err)
+	}
 
 	if err := store.SaveCells(context.Background(), []domain.Cell{cell}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -38,5 +41,8 @@ func TestCellを保存して読み戻せる(t *testing.T) {
 	}
 	if cells[0].ID != "cell-1" {
 		t.Fatalf("cell ID = %q, want %q", cells[0].ID, "cell-1")
+	}
+	if !cells[0].IsDone() {
+		t.Fatal("IsDone = false, want true")
 	}
 }

@@ -40,6 +40,9 @@ func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) e
 	if index < 0 {
 		return fmt.Errorf("cell %q not found", input.Cell)
 	}
+	if !target.CanDelete() {
+		return fmt.Errorf("cell %q cannot be deleted until it is done", input.Cell)
+	}
 	session, err := u.SessionFactory.Session(cfg.Providers)
 	if err != nil {
 		return err

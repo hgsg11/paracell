@@ -167,10 +167,11 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	defer func() { runDelete = originalDelete }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
 		_ = delete
+		_ = markDone
 		got = append([]domain.Cell(nil), cells...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
@@ -234,9 +235,10 @@ templates: {}
 	defer func() { runDelete = originalDelete }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = delete
+		_ = markDone
 		if err := enter(cells[0]); err != nil {
 			t.Fatalf("enterでエラーが返った: %v", err)
 		}
@@ -300,9 +302,10 @@ templates: {}
 	defer func() { runDelete = originalDelete }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
+		_ = markDone
 		if err := delete(cells[0]); err != nil {
 			t.Fatalf("deleteでエラーが返った: %v", err)
 		}

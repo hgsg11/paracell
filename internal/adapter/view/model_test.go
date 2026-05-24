@@ -181,3 +181,27 @@ func TestModelはdのあと別キーなら削除待機を解除する(t *testing
 		t.Fatalf("selected = %d, want %d", got.Selected, 0)
 	}
 }
+
+func TestModelはlで選択中CellをDoneにする(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
+		if cell.Name != "123" {
+			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
+		}
+		if err := cell.MarkDone(); err != nil {
+			t.Fatalf("MarkDoneでエラーが返った: %v", err)
+		}
+		return cell, nil
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if cmd == nil {
+		t.Fatal("lでコマンドが返らなかった")
+	}
+	updated, _ := next.(Model).Update(cmd())
+	if !updated.(Model).Cells[0].IsDone() {
+		t.Fatal("IsDone = false, want true")
+	}
+}

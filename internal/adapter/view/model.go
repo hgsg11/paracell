@@ -32,6 +32,7 @@ type Model struct {
 	Result         Result
 	Enter          func(domain.Cell) error
 	Delete         func(domain.Cell) error
+	MarkDone       func(domain.Cell) (domain.Cell, error)
 }
 
 func NewModel(cells []domain.Cell) Model {
@@ -75,6 +76,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "d":
 			m.AwaitingDelete = true
 			return m, nil
+		case "l":
+			if len(m.Cells) == 0 {
+				m.Error = "no cells available"
+				return m, nil
+			}
+			cell := m.Cells[m.Selected]
+			markDone := m.MarkDone
+			return m, func() tea.Msg {
+				if markDone == nil {
+					return markDoneResultMsg{cell: cell, err: errors.New("mark done handler is not configured")}
+				}
+				updated, err := markDone(cell)
+				return markDoneResultMsg{cell: updated, err: err}
+			}
 		case "q":
 			m.Quitting = true
 			m.Result = Result{Action: ActionQuit}
@@ -127,6 +142,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Result = Result{Action: ActionDelete, Cell: msg.cell}
 		return m, nil
+	case markDoneResultMsg:
+		if msg.err != nil {
+			m.Error = msg.err.Error()
+			return m, nil
+		}
+		m.Error = ""
+		if len(m.Cells) == 0 {
+			return m, nil
+		}
+		index := -1
+		for i, cell := range m.Cells {
+			if cell.ID == msg.cell.ID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			return m, nil
+		}
+		m.Cells[index] = msg.cell
+		return m, nil
 	}
 	return m, nil
 }
@@ -157,6 +193,11 @@ type enterResultMsg struct {
 }
 
 type deleteResultMsg struct {
+	cell domain.Cell
+	err  error
+}
+
+type markDoneResultMsg struct {
 	cell domain.Cell
 	err  error
 }

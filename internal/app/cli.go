@@ -18,15 +18,22 @@ import (
 	"github.com/shige1114/paradev/internal/usecase"
 )
 
-var runView = viewadapter.Run
-var runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
-	uc := usecase.EnterCellUseCase{
-		Config:         cfg,
-		SessionFactory: factory,
+var (
+	runView  = viewadapter.Run
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
+		uc := usecase.EnterCellUseCase{
+			Config:         cfg,
+			SessionFactory: factory,
+		}
+		_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell})
+		return err
 	}
-	_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell})
-	return err
-}
+	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
+		uc := usecase.MarkCellDoneUseCase{State: state}
+		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
+	}
+)
+
 var runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
 	uc := usecase.RemoveCellUseCase{
 		Config:           cfg,
@@ -123,6 +130,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner}, cell)
 		}, func(cell domain.Cell) error {
 			return runDelete(ctx, configAdapter, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, stateAdapter, cell)
+		}, func(cell domain.Cell) (domain.Cell, error) {
+			return runMarkDone(ctx, stateAdapter, cell)
 		})
 		if err != nil {
 			return err

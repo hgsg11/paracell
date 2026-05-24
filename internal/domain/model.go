@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -43,6 +44,60 @@ type Cell struct {
 	Source     Source
 	Containers Containers
 	Session    Session
+	done       bool
+}
+
+func (c Cell) MarshalJSON() ([]byte, error) {
+	type cellJSON struct {
+		ID         string     `json:"id"`
+		Issue      string     `json:"issue"`
+		Name       string     `json:"name"`
+		Template   string     `json:"template"`
+		Branch     string     `json:"branch"`
+		Source     Source     `json:"source"`
+		Containers Containers `json:"containers"`
+		Session    Session    `json:"session"`
+		Done       bool       `json:"done"`
+	}
+	return json.Marshal(cellJSON{
+		ID:         c.ID,
+		Issue:      c.Issue,
+		Name:       c.Name,
+		Template:   c.Template,
+		Branch:     c.Branch,
+		Source:     c.Source,
+		Containers: c.Containers,
+		Session:    c.Session,
+		Done:       c.done,
+	})
+}
+
+func (c *Cell) UnmarshalJSON(data []byte) error {
+	type cellJSON struct {
+		ID         string     `json:"id"`
+		Issue      string     `json:"issue"`
+		Name       string     `json:"name"`
+		Template   string     `json:"template"`
+		Branch     string     `json:"branch"`
+		Source     Source     `json:"source"`
+		Containers Containers `json:"containers"`
+		Session    Session    `json:"session"`
+		Done       bool       `json:"done"`
+	}
+	var decoded cellJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	c.ID = decoded.ID
+	c.Issue = decoded.Issue
+	c.Name = decoded.Name
+	c.Template = decoded.Template
+	c.Branch = decoded.Branch
+	c.Source = decoded.Source
+	c.Containers = decoded.Containers
+	c.Session = decoded.Session
+	c.done = decoded.Done
+	return nil
 }
 
 type Source struct {
@@ -124,6 +179,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 			Name:    prefix,
 			Windows: windows,
 		},
+		done: false,
 	}, nil
 }
 
@@ -137,6 +193,22 @@ func (c *Cell) RenameContainer(role string, name string) error {
 	}
 	c.Containers.Services[role] = service
 	return nil
+}
+
+func (c *Cell) MarkDone() error {
+	if c.done {
+		return fmt.Errorf("cell is already done")
+	}
+	c.done = true
+	return nil
+}
+
+func (c Cell) IsDone() bool {
+	return c.done
+}
+
+func (c Cell) CanDelete() bool {
+	return c.done
 }
 
 type CellUniquenessChecker struct{}
