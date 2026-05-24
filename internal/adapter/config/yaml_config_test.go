@@ -14,6 +14,10 @@ func TestYAML設定からProjectとTemplateを読み込める(t *testing.T) {
 	configPath := filepath.Join(dir, ".pdev.yml")
 	content := []byte(`project:
   name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
 templates:
   webapp:
     repository:
@@ -42,6 +46,15 @@ templates:
 	}
 	if cfg.Project.Name != "myapp" {
 		t.Fatalf("project.name = %q, want %q", cfg.Project.Name, "myapp")
+	}
+	if cfg.Providers.Source != "git" {
+		t.Fatalf("providers.source = %q, want %q", cfg.Providers.Source, "git")
+	}
+	if cfg.Providers.Container != "docker" {
+		t.Fatalf("providers.container = %q, want %q", cfg.Providers.Container, "docker")
+	}
+	if cfg.Providers.Session != "tmux" {
+		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
 	}
 	template := cfg.Templates["webapp"]
 	if template.Name != "webapp" {
