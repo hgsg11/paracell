@@ -10,10 +10,10 @@ import (
 	"github.com/shige1114/paradev/internal/domain"
 )
 
-func TestCreateCellはCellを作成して外部リソースを順番に作る(t *testing.T) {
+func TestForkCellはCellを作成して外部リソースを順番に作る(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
-	uc := CreateCellUseCase{
+	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
 		SourceFactory:    ports,
@@ -23,9 +23,9 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 
-	cell, err := uc.Execute(ctx, CreateCellInput{Issue: "123", Template: "webapp"})
+	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
 	if err != nil {
-		t.Fatalf("CreateCellでエラーが返った: %v", err)
+		t.Fatalf("ForkCellでエラーが返った: %v", err)
 	}
 	if cell.ID != "cell-1" {
 		t.Fatalf("cell ID = %q, want %q", cell.ID, "cell-1")
@@ -37,10 +37,10 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 		"factory:source:git",
 		"factory:container:docker",
 		"factory:session:tmux",
-		"source:create:123",
+		"source:fork:123",
 		"files:copy:123:.env,apps/web/.env.local",
-		"containers:create:123",
-		"session:create:123:nvim 123",
+		"containers:fork:123",
+		"session:fork:123:nvim 123",
 		"state:save:1",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
@@ -48,11 +48,11 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 	}
 }
 
-func TestCreateCellは同じIssueがある場合に失敗する(t *testing.T) {
+func TestForkCellは同じIssueがある場合に失敗する(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{{ID: "existing", Issue: "123", Name: "123"}}
-	uc := CreateCellUseCase{
+	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
 		SourceFactory:    ports,
@@ -62,7 +62,7 @@ func TestCreateCellは同じIssueがある場合に失敗する(t *testing.T) {
 		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 
-	_, err := uc.Execute(ctx, CreateCellInput{Issue: "123", Template: "webapp"})
+	_, err := uc.Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
 
 	if err == nil {
 		t.Fatal("同じIssueなのにエラーが返らなかった")
@@ -278,7 +278,7 @@ func (f *fakePorts) Session(provider domain.ProviderConfig) (SessionPort, error)
 }
 
 func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) error {
-	f.calls = append(f.calls, "source:create:"+cell.Name)
+	f.calls = append(f.calls, "source:fork:"+cell.Name)
 	return nil
 }
 
@@ -293,7 +293,7 @@ func (f *fakePorts) CopyFiles(ctx context.Context, cell domain.Cell, template do
 }
 
 func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
-	f.calls = append(f.calls, "containers:create:"+cell.Name)
+	f.calls = append(f.calls, "containers:fork:"+cell.Name)
 	return nil
 }
 
@@ -307,7 +307,7 @@ func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
 	if len(cell.Session.Windows) > 0 {
 		command = ":" + cell.Session.Windows[0].Command
 	}
-	f.calls = append(f.calls, "session:create:"+cell.Name+command)
+	f.calls = append(f.calls, "session:fork:"+cell.Name+command)
 	return nil
 }
 

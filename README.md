@@ -12,7 +12,7 @@ Each cell is made from:
 
 ```text
 paracell init
-paracell create <issue> --template <template>
+paracell fork <issue> --template <template>
 paracell ls
 paracell view
 paracell remove <cell>
@@ -62,7 +62,7 @@ Template commands can use:
 
 - `paracell init` generates a default `paracell.yaml`.
 - `paracell ls` reads the stored state and does not require `paracell.yaml`.
-- `paracell create` copies configured files into the cell source before starting containers.
+- `paracell fork` copies configured files into the cell source before starting containers.
 
 ## Release
 

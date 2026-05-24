@@ -52,7 +52,7 @@ const AppName = "paracell"
 
 const (
 	CommandInit   CommandKind = "init"
-	CommandCreate CommandKind = "create"
+	CommandFork   CommandKind = "fork"
 	CommandRemove CommandKind = "remove"
 	CommandList   CommandKind = "ls"
 	CommandView   CommandKind = "view"
@@ -86,11 +86,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell view")
 		}
 		return Command{Kind: CommandView}, nil
-	case "create":
+	case "fork":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
-			return Command{}, errors.New("usage: paracell create <issue> --template <template>")
+			return Command{}, errors.New("usage: paracell fork <issue> --template <template>")
 		}
-		return Command{Kind: CommandCreate, Issue: args[1], Template: args[3]}, nil
+		return Command{Kind: CommandFork, Issue: args[1], Template: args[3]}, nil
 	case "remove":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--force") {
 			return Command{}, errors.New("usage: paracell remove <cell> [--force]")
@@ -140,8 +140,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return err
 		}
 		return nil
-	case CommandCreate:
-		uc := usecase.CreateCellUseCase{
+	case CommandFork:
+		uc := usecase.ForkCellUseCase{
 			Config:           configAdapter,
 			State:            stateAdapter,
 			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
@@ -150,7 +150,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 			IDs:              id.RandomGenerator{},
 		}
-		_, err = uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
+		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template})
 		return err
 	case CommandRemove:
 		uc := usecase.RemoveCellUseCase{

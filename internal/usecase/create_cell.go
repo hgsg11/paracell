@@ -7,12 +7,12 @@ import (
 	"github.com/shige1114/paradev/internal/domain"
 )
 
-type CreateCellInput struct {
+type ForkCellInput struct {
 	Issue    string
 	Template string
 }
 
-type CreateCellUseCase struct {
+type ForkCellUseCase struct {
 	Config           ConfigPort
 	State            CellStatePort
 	SourceFactory    SourceProviderFactory
@@ -22,7 +22,7 @@ type CreateCellUseCase struct {
 	IDs              IDGenerator
 }
 
-func (u CreateCellUseCase) Execute(ctx context.Context, input CreateCellInput) (domain.Cell, error) {
+func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.Cell, error) {
 	cfg, err := u.Config.Load(ctx, &domain.TemplateVars{
 		Issue: input.Issue,
 		Name:  input.Issue,

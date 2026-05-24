@@ -14,14 +14,14 @@ import (
 	"github.com/shige1114/paradev/internal/usecase"
 )
 
-func TestCreateコマンドを解析できる(t *testing.T) {
-	cmd, err := ParseCommand([]string{"create", "123", "--template", "webapp"})
+func TestForkコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp"})
 
 	if err != nil {
-		t.Fatalf("create解析でエラーが返った: %v", err)
+		t.Fatalf("fork解析でエラーが返った: %v", err)
 	}
-	if cmd.Kind != CommandCreate {
-		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandCreate)
+	if cmd.Kind != CommandFork {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandFork)
 	}
 	if cmd.Issue != "123" {
 		t.Fatalf("issue = %q, want %q", cmd.Issue, "123")
@@ -357,7 +357,7 @@ templates:
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
 
-	err := Run(context.Background(), []string{"create", "123", "--template", "default"}, dir)
+	err := Run(context.Background(), []string{"fork", "123", "--template", "default"}, dir)
 
 	if err == nil {
 		t.Fatal("providersがないのにエラーが返らなかった")
@@ -391,7 +391,7 @@ templates:
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
 
-	err := Run(context.Background(), []string{"create", "123", "--template", "default"}, dir)
+	err := Run(context.Background(), []string{"fork", "123", "--template", "default"}, dir)
 
 	if err == nil {
 		t.Fatal("git/tmuxが実行できない環境なのにエラーが返らなかった")
