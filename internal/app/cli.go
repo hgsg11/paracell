@@ -8,11 +8,8 @@ import (
 	"path/filepath"
 
 	"github.com/shige1114/paradev/internal/adapter/config"
-	"github.com/shige1114/paradev/internal/adapter/container"
 	"github.com/shige1114/paradev/internal/adapter/id"
 	"github.com/shige1114/paradev/internal/adapter/output"
-	"github.com/shige1114/paradev/internal/adapter/session"
-	"github.com/shige1114/paradev/internal/adapter/source"
 	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/adapter/system"
 	"github.com/shige1114/paradev/internal/usecase"
@@ -73,9 +70,6 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	runner := system.OSCommandRunner{Dir: workdir}
 	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, ".pdev.yml")}
 	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".pdev", "state.json")}
-	sourceAdapter := source.GitSourceAdapter{Runner: runner}
-	containerAdapter := container.DockerCLIAdapter{Runner: runner}
-	sessionAdapter := session.TmuxAdapter{Runner: runner}
 
 	switch cmd.Kind {
 	case CommandInit:
@@ -91,22 +85,38 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		_, err = os.Stdout.WriteString(output.FormatCellList(cells))
 		return err
 	case CommandCreate:
+		cfg, err := configAdapter.Load(ctx)
+		if err != nil {
+			return err
+		}
+		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		if err != nil {
+			return err
+		}
 		uc := usecase.CreateCellUseCase{
-			Config:     configAdapter,
+			Config:     staticConfig{cfg: cfg},
 			State:      stateAdapter,
-			Source:     sourceAdapter,
-			Containers: containerAdapter,
-			Session:    sessionAdapter,
+			Source:     adapters.Source,
+			Containers: adapters.Containers,
+			Session:    adapters.Session,
 			IDs:        id.RandomGenerator{},
 		}
-		_, err := uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
+		_, err = uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
 		return err
 	case CommandRemove:
+		cfg, err := configAdapter.Load(ctx)
+		if err != nil {
+			return err
+		}
+		adapters, err := NewProviderAdapters(cfg.Providers, runner)
+		if err != nil {
+			return err
+		}
 		uc := usecase.RemoveCellUseCase{
 			State:      stateAdapter,
-			Source:     sourceAdapter,
-			Containers: containerAdapter,
-			Session:    sessionAdapter,
+			Source:     adapters.Source,
+			Containers: adapters.Containers,
+			Session:    adapters.Session,
 		}
 		return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cmd.Cell})
 	default:
