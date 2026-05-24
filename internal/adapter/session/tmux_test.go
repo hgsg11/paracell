@@ -65,3 +65,46 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
 }
+
+func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) {
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{
+		Source:  domain.Source{Path: ".pdev/cells/123/source"},
+		Session: domain.Session{Name: "pdev-myapp-123"},
+	}
+
+	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+		t.Fatalf("CreateSessionでエラーが返った: %v", err)
+	}
+	want := []string{"tmux new-session -d -s pdev-myapp-123 -c .pdev/cells/123/source"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestCreateSessionは指定Windowを作る(t *testing.T) {
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{
+		Source: domain.Source{Path: ".pdev/cells/123/source"},
+		Session: domain.Session{
+			Name: "pdev-myapp-123",
+			Windows: []domain.SessionWindow{
+				{Name: "editor"},
+				{Name: "server"},
+			},
+		},
+	}
+
+	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+		t.Fatalf("CreateSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux new-session -d -s pdev-myapp-123 -n editor -c .pdev/cells/123/source",
+		"tmux new-window -t pdev-myapp-123 -n server -c .pdev/cells/123/source",
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
