@@ -30,6 +30,28 @@ func TestInitコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestLsコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"ls"})
+
+	if err != nil {
+		t.Fatalf("ls解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandList {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandList)
+	}
+}
+
+func TestLsコマンドは余計な引数があるとエラーにする(t *testing.T) {
+	_, err := ParseCommand([]string{"ls", "extra"})
+
+	if err == nil {
+		t.Fatal("lsに余計な引数があるのにエラーが返らなかった")
+	}
+	if err.Error() != "usage: pdev ls" {
+		t.Fatalf("error = %q, want %q", err.Error(), "usage: pdev ls")
+	}
+}
+
 func TestRemoveコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"remove", "123", "--force"})
 

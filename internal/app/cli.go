@@ -21,6 +21,7 @@ const (
 	CommandInit   CommandKind = "init"
 	CommandCreate CommandKind = "create"
 	CommandRemove CommandKind = "remove"
+	CommandList   CommandKind = "ls"
 )
 
 type Command struct {
@@ -41,6 +42,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: pdev init")
 		}
 		return Command{Kind: CommandInit}, nil
+	case "ls":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: pdev ls")
+		}
+		return Command{Kind: CommandList}, nil
 	case "create":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
 			return Command{}, errors.New("usage: pdev create <issue> --template <template>")
