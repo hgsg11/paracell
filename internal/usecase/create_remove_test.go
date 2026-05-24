@@ -83,6 +83,24 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 	}
 }
 
+func TestListCellsはStateのCell一覧を返す(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cells = []domain.Cell{
+		{ID: "cell-1", Issue: "123", Name: "123", Template: "default"},
+		{ID: "cell-2", Issue: "456", Name: "456", Template: "webapp"},
+	}
+	uc := ListCellsUseCase{State: ports}
+
+	cells, err := uc.Execute(ctx)
+	if err != nil {
+		t.Fatalf("ListCellsでエラーが返った: %v", err)
+	}
+	if !reflect.DeepEqual(cells, ports.cells) {
+		t.Fatalf("cells = %#v, want %#v", cells, ports.cells)
+	}
+}
+
 type fakePorts struct {
 	config domain.Config
 	cells  []domain.Cell
