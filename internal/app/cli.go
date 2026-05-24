@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/shige1114/paradev/internal/adapter/config"
 	"github.com/shige1114/paradev/internal/adapter/container"
@@ -12,6 +13,7 @@ import (
 	"github.com/shige1114/paradev/internal/adapter/source"
 	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/adapter/system"
+	"github.com/shige1114/paradev/internal/domain"
 	"github.com/shige1114/paradev/internal/usecase"
 )
 
@@ -60,6 +62,18 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unsupported command %q", args[0])
 	}
+}
+
+func FormatCellList(cells []domain.Cell) string {
+	var b strings.Builder
+	b.WriteString("NAME\tTEMPLATE\n")
+	for _, cell := range cells {
+		b.WriteString(cell.Name)
+		b.WriteByte('\t')
+		b.WriteString(cell.Template)
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func Run(ctx context.Context, args []string, workdir string) error {
