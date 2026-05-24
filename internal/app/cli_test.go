@@ -164,6 +164,84 @@ templates:
 	}
 }
 
+func TestRunはCreateでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	err := Run(context.Background(), []string{"create", "123", "--template", "default"}, dir)
+
+	if err == nil {
+		t.Fatal("git/tmuxが実行できない環境なのにエラーが返らなかった")
+	}
+	if err.Error() == `exec: "docker": executable file not found in $PATH` {
+		t.Fatalf("container provider未設定なのにdockerが実行された: %v", err)
+	}
+}
+
+func TestRunはRemoveでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates: {}
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{
+		{
+			ID:    "cell-1",
+			Issue: "123",
+			Name:  "123",
+			Source: domain.Source{
+				Path: filepath.Join(dir, "missing-source"),
+			},
+			Containers: domain.Containers{
+				Network: "pdev-myapp-123",
+				Services: map[string]domain.CellContainer{
+					"web": {ContainerName: "pdev-myapp-123-web"},
+				},
+			},
+			Session: domain.Session{Name: "pdev-myapp-123"},
+		},
+	}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+
+	err := Run(context.Background(), []string{"remove", "123"}, dir)
+
+	if err == nil {
+		t.Fatal("tmux/gitが実行できない環境なのにエラーが返らなかった")
+	}
+	if err.Error() == `exec: "docker": executable file not found in $PATH` {
+		t.Fatalf("container provider未設定なのにdockerが実行された: %v", err)
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	original := os.Stdout
 	read, write, err := os.Pipe()
