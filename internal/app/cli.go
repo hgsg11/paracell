@@ -48,6 +48,8 @@ var runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase
 
 type CommandKind string
 
+const AppName = "paracell"
+
 const (
 	CommandInit   CommandKind = "init"
 	CommandCreate CommandKind = "create"
@@ -71,27 +73,27 @@ func ParseCommand(args []string) (Command, error) {
 	switch args[0] {
 	case "init":
 		if len(args) != 1 {
-			return Command{}, errors.New("usage: pdev init")
+			return Command{}, errors.New("usage: paracell init")
 		}
 		return Command{Kind: CommandInit}, nil
 	case "ls":
 		if len(args) != 1 {
-			return Command{}, errors.New("usage: pdev ls")
+			return Command{}, errors.New("usage: paracell ls")
 		}
 		return Command{Kind: CommandList}, nil
 	case "view":
 		if len(args) != 1 {
-			return Command{}, errors.New("usage: pdev view")
+			return Command{}, errors.New("usage: paracell view")
 		}
 		return Command{Kind: CommandView}, nil
 	case "create":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
-			return Command{}, errors.New("usage: pdev create <issue> --template <template>")
+			return Command{}, errors.New("usage: paracell create <issue> --template <template>")
 		}
 		return Command{Kind: CommandCreate, Issue: args[1], Template: args[3]}, nil
 	case "remove":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--force") {
-			return Command{}, errors.New("usage: pdev remove <cell> [--force]")
+			return Command{}, errors.New("usage: paracell remove <cell> [--force]")
 		}
 		return Command{Kind: CommandRemove, Cell: args[1], Force: len(args) == 3}, nil
 	default:

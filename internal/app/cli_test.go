@@ -70,8 +70,8 @@ func TestLsコマンドは余計な引数があるとエラーにする(t *testi
 	if err == nil {
 		t.Fatal("lsに余計な引数があるのにエラーが返らなかった")
 	}
-	if err.Error() != "usage: pdev ls" {
-		t.Fatalf("error = %q, want %q", err.Error(), "usage: pdev ls")
+	if err.Error() != "usage: paracell ls" {
+		t.Fatalf("error = %q, want %q", err.Error(), "usage: paracell ls")
 	}
 }
 
