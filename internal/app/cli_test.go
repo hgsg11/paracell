@@ -1,8 +1,13 @@
 package app
 
 import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/domain"
 )
 
@@ -93,6 +98,46 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 
 	if got != want {
 		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestRunWithOutputはLsでStateのCell一覧を出力する(t *testing.T) {
+	dir := t.TempDir()
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{
+		{Name: "123", Template: "default"},
+		{Name: "456", Template: "webapp"},
+	}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+	var out bytes.Buffer
+
+	err := RunWithOutput(context.Background(), []string{"ls"}, dir, &out)
+
+	if err != nil {
+		t.Fatalf("RunWithOutputでエラーが返った: %v", err)
+	}
+	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	if out.String() != want {
+		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+}
+
+func TestRunWithOutputはLsでStateがなくてもヘッダーだけ出力する(t *testing.T) {
+	dir := t.TempDir()
+	var out bytes.Buffer
+
+	err := RunWithOutput(context.Background(), []string{"ls"}, dir, &out)
+
+	if err != nil {
+		t.Fatalf("RunWithOutputでエラーが返った: %v", err)
+	}
+	want := "NAME\tTEMPLATE\n"
+	if out.String() != want {
+		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".pdev", "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("state.json existence error = %v, want not exist", err)
 	}
 }
 
