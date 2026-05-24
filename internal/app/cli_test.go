@@ -19,6 +19,17 @@ func TestCreateコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestInitコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"init"})
+
+	if err != nil {
+		t.Fatalf("init解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandInit {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandInit)
+	}
+}
+
 func TestRemoveコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"remove", "123", "--force"})
 

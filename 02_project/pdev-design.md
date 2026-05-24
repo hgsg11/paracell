@@ -13,7 +13,7 @@ MVP では Docker Compose を使って cell のコンテナを作らない。代
 - `git` や `tmux` などの実装詳細を、ユーザー向けの主語にしない。
 - 指定された起動中コンテナを cell 専用コンテナとしてコピーする。
 - source path、Docker network、container name、volume、port、session name を cell ごとに分離する。
-- cell の作成と削除を CLI で扱えるようにする。
+- 初期設定、cell の作成、削除を CLI で扱えるようにする。
 - MVP の状態はプロジェクト内に保存し、将来 `~/.pdev` へ移せる境界を残す。
 
 ## 対象外
@@ -91,12 +91,15 @@ MVP では現在のリポジトリのみを対象にする。将来、template �
 ## CLI
 
 ```bash
+pdev init
 pdev create <issue> --template <template>
 pdev remove <cell>
 pdev remove <cell> --force
 ```
 
-MVP のユーザー向けコマンドは `create` と `remove` だけに絞る。設定ファイルは手で作成・編集する。
+MVP のユーザー向けコマンドは `init`、`create`、`remove` に絞る。
+
+`pdev init` は空の初期設定を作る。検出は行わず、`.pdev.yml` と `.pdev/` を作成する。`.pdev.yml` が既にある場合は失敗する。
 
 `pdev create` は cell の作成、コンテナ起動、detached session 作成まで行うが、session には入らない。session に入る操作は MVP の `pdev` コマンドとしては提供せず、ユーザーが通常の session tool で入る。
 
@@ -114,10 +117,12 @@ internal/app
   dependency wiring。
 
 internal/usecase
+  InitProjectUseCase
   CreateCellUseCase
   RemoveCellUseCase
 
   Port Interface:
+    InitConfigPort
     ConfigPort
     CellStatePort
     SourcePort
@@ -172,7 +177,33 @@ Domain Service は外部 I/O を行わない。たとえば `CellUniquenessCheck
 
 Entity の値は通常、entity のメソッドで変更する。子 entity を変更する場合は、aggregate root である `Cell` のメソッドから子 entity のメソッドを呼び出し、整合性を保つ。Go のフィールドは公開してよいが、domain 内の変更経路はメソッドとして表現し、テストで固定する。
 
-方針は「状態モデルは明示的に持つが、実装は薄く保つ」。create と remove を確実に行うために必要な状態は持つが、重い orchestration system にはしない。
+方針は「状態モデルは明示的に持つが、実装は薄く保つ」。init、create、remove を確実に行うために必要な状態は持つが、重い orchestration system にはしない。
+
+## 初期化フロー
+
+`pdev init` は以下を行う。
+
+1. `.pdev.yml` が存在しないことを確認する。
+2. `.pdev/` を作る。
+3. 空の `.pdev.yml` を作る。
+
+生成する `.pdev.yml`:
+
+```yaml
+project:
+    name: ""
+templates:
+    default:
+        repository:
+            branchPrefix: feat/
+            base: main
+        containers:
+            services: {}
+        session:
+            windows: []
+```
+
+MVP では git、Docker Compose、起動中コンテナの検出は行わない。
 
 ## 作成フロー
 

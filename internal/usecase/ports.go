@@ -10,6 +10,11 @@ type ConfigPort interface {
 	Load(ctx context.Context) (domain.Config, error)
 }
 
+type InitConfigPort interface {
+	ConfigExists(ctx context.Context) (bool, error)
+	SaveConfig(ctx context.Context, cfg InitConfig) error
+}
+
 type CellStatePort interface {
 	LoadCells(ctx context.Context) ([]domain.Cell, error)
 	SaveCells(ctx context.Context, cells []domain.Cell) error
