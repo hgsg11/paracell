@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/shige1114/paradev/internal/adapter/config"
 	"github.com/shige1114/paradev/internal/adapter/container"
+	"github.com/shige1114/paradev/internal/adapter/id"
+	"github.com/shige1114/paradev/internal/adapter/output"
 	"github.com/shige1114/paradev/internal/adapter/session"
 	"github.com/shige1114/paradev/internal/adapter/source"
 	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/adapter/system"
-	"github.com/shige1114/paradev/internal/domain"
 	"github.com/shige1114/paradev/internal/usecase"
 )
 
@@ -65,18 +65,6 @@ func ParseCommand(args []string) (Command, error) {
 	}
 }
 
-func FormatCellList(cells []domain.Cell) string {
-	var b strings.Builder
-	b.WriteString("NAME\tTEMPLATE\n")
-	for _, cell := range cells {
-		b.WriteString(cell.Name)
-		b.WriteByte('\t')
-		b.WriteString(cell.Template)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
 func Run(ctx context.Context, args []string, workdir string) error {
 	cmd, err := ParseCommand(args)
 	if err != nil {
@@ -100,7 +88,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = os.Stdout.WriteString(FormatCellList(cells))
+		_, err = os.Stdout.WriteString(output.FormatCellList(cells))
 		return err
 	case CommandCreate:
 		uc := usecase.CreateCellUseCase{
@@ -109,7 +97,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			Source:     sourceAdapter,
 			Containers: containerAdapter,
 			Session:    sessionAdapter,
-			IDs:        RandomIDGenerator{},
+			IDs:        id.RandomGenerator{},
 		}
 		_, err := uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
 		return err

@@ -1,13 +1,13 @@
-package app
+package id
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 )
 
-type RandomIDGenerator struct{}
+type RandomGenerator struct{}
 
-func (g RandomIDGenerator) NewID() string {
+func (g RandomGenerator) NewID() string {
 	var data [16]byte
 	if _, err := rand.Read(data[:]); err != nil {
 		return "cell-id-unavailable"
