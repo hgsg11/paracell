@@ -120,6 +120,50 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	}
 }
 
+func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
+	dir := t.TempDir()
+
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"ls"}, dir)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if output != "NAME\tTEMPLATE\n" {
+		t.Fatalf("output = %q, want %q", output, "NAME\tTEMPLATE\n")
+	}
+}
+
+func TestRunはCreateでProvidersがない設定をエラーにする(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	err := Run(context.Background(), []string{"create", "123", "--template", "default"}, dir)
+
+	if err == nil {
+		t.Fatal("providersがないのにエラーが返らなかった")
+	}
+	if err.Error() != "providers.source is required" {
+		t.Fatalf("error = %q, want %q", err.Error(), "providers.source is required")
+	}
+}
+
 func captureStdout(fn func() error) (string, error) {
 	original := os.Stdout
 	read, write, err := os.Pipe()
