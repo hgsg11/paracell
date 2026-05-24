@@ -23,6 +23,15 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.Project.Name != "" {
 		t.Fatalf("project.name = %q, want empty", cfg.Project.Name)
 	}
+	if cfg.Providers.Source != "git" {
+		t.Fatalf("providers.source = %q, want %q", cfg.Providers.Source, "git")
+	}
+	if cfg.Providers.Container != "docker" {
+		t.Fatalf("providers.container = %q, want %q", cfg.Providers.Container, "docker")
+	}
+	if cfg.Providers.Session != "tmux" {
+		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
+	}
 	template := cfg.Templates["default"]
 	if template.Repository.Base != "main" {
 		t.Fatalf("repository.base = %q, want %q", template.Repository.Base, "main")
