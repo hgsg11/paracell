@@ -75,6 +75,11 @@ func TestYAML設定を保存できる(t *testing.T) {
 
 	err := adapter.SaveConfig(context.Background(), domain.Config{
 		Project: domain.ProjectConfig{Name: "paradev"},
+		Providers: domain.ProviderConfig{
+			Source:    "git",
+			Container: "docker",
+			Session:   "tmux",
+		},
 		Templates: map[string]domain.Template{
 			"default": {
 				Name: "default",
@@ -101,6 +106,10 @@ func TestYAML設定を保存できる(t *testing.T) {
 	}
 	want := `project:
     name: paradev
+providers:
+    source: git
+    container: docker
+    session: tmux
 templates:
     default:
         repository:

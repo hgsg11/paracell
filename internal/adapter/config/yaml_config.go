@@ -18,7 +18,14 @@ type yamlConfig struct {
 	Project struct {
 		Name string `yaml:"name"`
 	} `yaml:"project"`
+	Providers yamlProviders           `yaml:"providers"`
 	Templates map[string]yamlTemplate `yaml:"templates"`
+}
+
+type yamlProviders struct {
+	Source    string `yaml:"source"`
+	Container string `yaml:"container"`
+	Session   string `yaml:"session"`
 }
 
 type yamlTemplate struct {
@@ -47,7 +54,12 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 		}
 	}
 	return domain.Config{
-		Project:   domain.ProjectConfig{Name: raw.Project.Name},
+		Project: domain.ProjectConfig{Name: raw.Project.Name},
+		Providers: domain.ProviderConfig{
+			Source:    raw.Providers.Source,
+			Container: raw.Providers.Container,
+			Session:   raw.Providers.Session,
+		},
 		Templates: templates,
 	}, nil
 }
@@ -70,6 +82,11 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Config) er
 		return err
 	}
 	raw := yamlConfig{
+		Providers: yamlProviders{
+			Source:    cfg.Providers.Source,
+			Container: cfg.Providers.Container,
+			Session:   cfg.Providers.Session,
+		},
 		Templates: make(map[string]yamlTemplate, len(cfg.Templates)),
 	}
 	raw.Project.Name = cfg.Project.Name
