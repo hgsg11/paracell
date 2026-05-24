@@ -1,0 +1,67 @@
+package session
+
+import (
+	"context"
+	"reflect"
+	"testing"
+
+	"github.com/shige1114/paradev/internal/domain"
+)
+
+type fakeRunner struct {
+	calls []string
+}
+
+func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
+	_ = ctx
+	r.calls = append(r.calls, name+" "+joinArgs(args))
+	return nil
+}
+
+func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
+	_ = ctx
+	_ = name
+	_ = args
+	return "", nil
+}
+
+func joinArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	out := args[0]
+	for _, arg := range args[1:] {
+		out += " " + arg
+	}
+	return out
+}
+
+func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{Session: domain.Session{Name: "pdev-myapp-123"}}
+
+	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+		t.Fatalf("EnterSessionでエラーが返った: %v", err)
+	}
+	want := []string{"tmux attach-session -t pdev-myapp-123"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{Session: domain.Session{Name: "pdev-myapp-123"}}
+
+	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+		t.Fatalf("EnterSessionでエラーが返った: %v", err)
+	}
+	want := []string{"tmux switch-client -t pdev-myapp-123"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}

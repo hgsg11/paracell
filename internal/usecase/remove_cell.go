@@ -12,13 +12,18 @@ type RemoveCellInput struct {
 }
 
 type RemoveCellUseCase struct {
-	State      CellStatePort
-	Source     SourcePort
-	Containers ContainerPort
-	Session    SessionPort
+	Config           ConfigPort
+	State            CellStatePort
+	SourceFactory    SourceProviderFactory
+	ContainerFactory ContainerProviderFactory
+	SessionFactory   SessionProviderFactory
 }
 
 func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) error {
+	cfg, err := u.Config.Load(ctx)
+	if err != nil {
+		return err
+	}
 	cells, err := u.State.LoadCells(ctx)
 	if err != nil {
 		return err
@@ -35,13 +40,25 @@ func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) e
 	if index < 0 {
 		return fmt.Errorf("cell %q not found", input.Cell)
 	}
-	if err := u.Session.RemoveSession(ctx, target); err != nil {
+	session, err := u.SessionFactory.Session(cfg.Providers)
+	if err != nil {
 		return err
 	}
-	if err := u.Containers.RemoveContainers(ctx, target); err != nil {
+	containers, err := u.ContainerFactory.Container(cfg.Providers)
+	if err != nil {
 		return err
 	}
-	if err := u.Source.RemoveSource(ctx, target); err != nil {
+	source, err := u.SourceFactory.Source(cfg.Providers)
+	if err != nil {
+		return err
+	}
+	if err := session.RemoveSession(ctx, target); err != nil {
+		return err
+	}
+	if err := containers.RemoveContainers(ctx, target); err != nil {
+		return err
+	}
+	if err := source.RemoveSource(ctx, target); err != nil {
 		return err
 	}
 	next := append([]domain.Cell{}, cells[:index]...)

@@ -13,12 +13,12 @@ type CreateCellInput struct {
 }
 
 type CreateCellUseCase struct {
-	Config     ConfigPort
-	State      CellStatePort
-	Source     SourcePort
-	Containers ContainerPort
-	Session    SessionPort
-	IDs        IDGenerator
+	Config           ConfigPort
+	State            CellStatePort
+	SourceFactory    SourceProviderFactory
+	ContainerFactory ContainerProviderFactory
+	SessionFactory   SessionProviderFactory
+	IDs              IDGenerator
 }
 
 func (u CreateCellUseCase) Execute(ctx context.Context, input CreateCellInput) (domain.Cell, error) {
@@ -42,13 +42,25 @@ func (u CreateCellUseCase) Execute(ctx context.Context, input CreateCellInput) (
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	if err := u.Source.CreateSource(ctx, cell); err != nil {
+	source, err := u.SourceFactory.Source(cfg.Providers)
+	if err != nil {
 		return domain.Cell{}, err
 	}
-	if err := u.Containers.CreateContainers(ctx, cell, template); err != nil {
+	containers, err := u.ContainerFactory.Container(cfg.Providers)
+	if err != nil {
 		return domain.Cell{}, err
 	}
-	if err := u.Session.CreateSession(ctx, cell); err != nil {
+	session, err := u.SessionFactory.Session(cfg.Providers)
+	if err != nil {
+		return domain.Cell{}, err
+	}
+	if err := source.CreateSource(ctx, cell); err != nil {
+		return domain.Cell{}, err
+	}
+	if err := containers.CreateContainers(ctx, cell, template); err != nil {
+		return domain.Cell{}, err
+	}
+	if err := session.CreateSession(ctx, cell); err != nil {
 		return domain.Cell{}, err
 	}
 	existing = append(existing, cell)

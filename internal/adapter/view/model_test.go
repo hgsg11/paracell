@@ -1,0 +1,183 @@
+package view
+
+import (
+	"fmt"
+	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/shige1114/paradev/internal/domain"
+)
+
+func TestModelはjで選択を下げる(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := next.(Model)
+	if got.Selected != 1 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 1)
+	}
+}
+
+func TestModelはkで選択を上げる(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.Selected = 1
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	got := next.(Model)
+	if got.Selected != 0 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	}
+}
+
+func TestModelは境界で選択を超えない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := next.(Model)
+	if got.Selected != 0 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	}
+}
+
+func TestModelはqで終了する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	got := next.(Model)
+	if !got.Quitting {
+		t.Fatal("Quitting = false, want true")
+	}
+	if cmd == nil {
+		t.Fatal("qで終了コマンドが返らなかった")
+	}
+	if got.Result.Action != ActionQuit {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionQuit)
+	}
+}
+
+func TestModelはEnterで選択中Cellを返す(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.Selected = 1
+	model.Enter = func(cell domain.Cell) error { return nil }
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enterでコマンドが返らなかった")
+	}
+	updated, nextCmd := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if got.Result.Action != ActionEnter {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionEnter)
+	}
+	if got.Result.Cell.Name != "456" {
+		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
+	}
+	if nextCmd == nil {
+		t.Fatal("enter成功で終了コマンドが返らなかった")
+	}
+}
+
+func TestModelはEnter失敗でエラーを保持する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Enter = func(cell domain.Cell) error {
+		return fmt.Errorf("attach failed")
+	}
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enterでコマンドが返らなかった")
+	}
+	updated, nextCmd := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if got.Error != "attach failed" {
+		t.Fatalf("error = %q, want %q", got.Error, "attach failed")
+	}
+	if got.Quitting {
+		t.Fatal("Quitting = true, want false")
+	}
+	if nextCmd != nil {
+		t.Fatal("enter失敗で終了コマンドが返った")
+	}
+}
+
+func TestModelはddで選択中Cellを削除する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.Delete = func(cell domain.Cell) error {
+		if cell.Name != "123" {
+			t.Fatalf("delete cell = %#v, want name %q", cell, "123")
+		}
+		return nil
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	got := next.(Model)
+	if !got.AwaitingDelete {
+		t.Fatal("AwaitingDelete = false, want true")
+	}
+	if cmd != nil {
+		t.Fatal("最初のdでコマンドが返った")
+	}
+
+	next, cmd = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if cmd == nil {
+		t.Fatal("ddでコマンドが返らなかった")
+	}
+	updated, nextCmd := next.(Model).Update(cmd())
+	got = updated.(Model)
+	if got.Error != "" {
+		t.Fatalf("error = %q, want empty", got.Error)
+	}
+	if len(got.Cells) != 1 || got.Cells[0].Name != "456" {
+		t.Fatalf("cells = %#v, want remaining cell 456", got.Cells)
+	}
+	if got.Result.Action != ActionDelete {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionDelete)
+	}
+	if nextCmd != nil {
+		t.Fatal("delete成功で終了コマンドが返った")
+	}
+}
+
+func TestModelはdのあと別キーなら削除待機を解除する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if cmd != nil {
+		t.Fatal("最初のdでコマンドが返った")
+	}
+	got := next.(Model)
+	if !got.AwaitingDelete {
+		t.Fatal("AwaitingDelete = false, want true")
+	}
+
+	next, cmd = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if cmd != nil {
+		t.Fatal("dのあとjでコマンドが返った")
+	}
+	got = next.(Model)
+	if got.AwaitingDelete {
+		t.Fatal("AwaitingDelete = true, want false")
+	}
+	if got.Selected != 0 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	}
+}

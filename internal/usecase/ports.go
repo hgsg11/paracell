@@ -25,14 +25,27 @@ type SourcePort interface {
 	RemoveSource(ctx context.Context, cell domain.Cell) error
 }
 
+type SourceProviderFactory interface {
+	Source(provider domain.ProviderConfig) (SourcePort, error)
+}
+
 type ContainerPort interface {
 	CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error
 	RemoveContainers(ctx context.Context, cell domain.Cell) error
 }
 
+type ContainerProviderFactory interface {
+	Container(provider domain.ProviderConfig) (ContainerPort, error)
+}
+
 type SessionPort interface {
 	CreateSession(ctx context.Context, cell domain.Cell) error
 	RemoveSession(ctx context.Context, cell domain.Cell) error
+	EnterSession(ctx context.Context, cell domain.Cell) error
+}
+
+type SessionProviderFactory interface {
+	Session(provider domain.ProviderConfig) (SessionPort, error)
 }
 
 type IDGenerator interface {

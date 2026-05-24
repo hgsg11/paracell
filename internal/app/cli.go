@@ -13,8 +13,30 @@ import (
 	"github.com/shige1114/paradev/internal/adapter/provider"
 	"github.com/shige1114/paradev/internal/adapter/state"
 	"github.com/shige1114/paradev/internal/adapter/system"
+	viewadapter "github.com/shige1114/paradev/internal/adapter/view"
+	"github.com/shige1114/paradev/internal/domain"
 	"github.com/shige1114/paradev/internal/usecase"
 )
+
+var runView = viewadapter.Run
+var runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
+	uc := usecase.EnterCellUseCase{
+		Config:         cfg,
+		SessionFactory: factory,
+	}
+	_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell})
+	return err
+}
+var runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	uc := usecase.RemoveCellUseCase{
+		Config:           cfg,
+		State:            state,
+		SourceFactory:    source,
+		ContainerFactory: container,
+		SessionFactory:   session,
+	}
+	return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cell.Name})
+}
 
 type CommandKind string
 
@@ -23,6 +45,7 @@ const (
 	CommandCreate CommandKind = "create"
 	CommandRemove CommandKind = "remove"
 	CommandList   CommandKind = "ls"
+	CommandView   CommandKind = "view"
 )
 
 type Command struct {
@@ -48,6 +71,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: pdev ls")
 		}
 		return Command{Kind: CommandList}, nil
+	case "view":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: pdev view")
+		}
+		return Command{Kind: CommandView}, nil
 	case "create":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
 			return Command{}, errors.New("usage: pdev create <issue> --template <template>")
@@ -85,39 +113,39 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		}
 		_, err = os.Stdout.WriteString(output.FormatCellList(cells))
 		return err
+	case CommandView:
+		uc := usecase.ViewCellsUseCase{State: stateAdapter}
+		cells, err := uc.Execute(ctx)
+		if err != nil {
+			return err
+		}
+		_, err = runView(ctx, cells, func(cell domain.Cell) error {
+			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner}, cell)
+		}, func(cell domain.Cell) error {
+			return runDelete(ctx, configAdapter, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, stateAdapter, cell)
+		})
+		if err != nil {
+			return err
+		}
+		return nil
 	case CommandCreate:
-		cfg, err := configAdapter.Load(ctx)
-		if err != nil {
-			return err
-		}
-		adapters, err := provider.NewAdapters(cfg.Providers, runner)
-		if err != nil {
-			return err
-		}
 		uc := usecase.CreateCellUseCase{
-			Config:     staticConfig{cfg: cfg},
-			State:      stateAdapter,
-			Source:     adapters.Source,
-			Containers: adapters.Containers,
-			Session:    adapters.Session,
-			IDs:        id.RandomGenerator{},
+			Config:           configAdapter,
+			State:            stateAdapter,
+			SourceFactory:    provider.Factory{Runner: runner},
+			ContainerFactory: provider.Factory{Runner: runner},
+			SessionFactory:   provider.Factory{Runner: runner},
+			IDs:              id.RandomGenerator{},
 		}
 		_, err = uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
 		return err
 	case CommandRemove:
-		cfg, err := configAdapter.Load(ctx)
-		if err != nil {
-			return err
-		}
-		adapters, err := provider.NewAdapters(cfg.Providers, runner)
-		if err != nil {
-			return err
-		}
 		uc := usecase.RemoveCellUseCase{
-			State:      stateAdapter,
-			Source:     adapters.Source,
-			Containers: adapters.Containers,
-			Session:    adapters.Session,
+			Config:           configAdapter,
+			State:            stateAdapter,
+			SourceFactory:    provider.Factory{Runner: runner},
+			ContainerFactory: provider.Factory{Runner: runner},
+			SessionFactory:   provider.Factory{Runner: runner},
 		}
 		return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cmd.Cell})
 	default:
