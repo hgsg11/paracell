@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type InitConfig = domain.Config

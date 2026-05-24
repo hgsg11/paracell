@@ -3,7 +3,7 @@ package usecase
 import (
 	"context"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type ListCellsUseCase struct {

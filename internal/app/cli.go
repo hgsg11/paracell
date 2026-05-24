@@ -7,16 +7,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/shige1114/paradev/internal/adapter/config"
-	"github.com/shige1114/paradev/internal/adapter/files"
-	"github.com/shige1114/paradev/internal/adapter/id"
-	"github.com/shige1114/paradev/internal/adapter/output"
-	"github.com/shige1114/paradev/internal/adapter/provider"
-	"github.com/shige1114/paradev/internal/adapter/state"
-	"github.com/shige1114/paradev/internal/adapter/system"
-	viewadapter "github.com/shige1114/paradev/internal/adapter/view"
-	"github.com/shige1114/paradev/internal/domain"
-	"github.com/shige1114/paradev/internal/usecase"
+	"github.com/hgsg11/paracell/internal/adapter/config"
+	"github.com/hgsg11/paracell/internal/adapter/files"
+	"github.com/hgsg11/paracell/internal/adapter/id"
+	"github.com/hgsg11/paracell/internal/adapter/output"
+	"github.com/hgsg11/paracell/internal/adapter/provider"
+	"github.com/hgsg11/paracell/internal/adapter/state"
+	"github.com/hgsg11/paracell/internal/adapter/system"
+	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
+	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 var (

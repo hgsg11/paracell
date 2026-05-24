@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {

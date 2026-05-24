@@ -1,4 +1,4 @@
-module github.com/shige1114/paradev
+module github.com/hgsg11/paracell
 
 go 1.26
 

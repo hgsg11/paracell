@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/shige1114/paradev/internal/app"
+	"github.com/hgsg11/paracell/internal/app"
 )
 
 func main() {

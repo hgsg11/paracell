@@ -3,7 +3,7 @@ package output
 import (
 	"strings"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func FormatCellList(cells []domain.Cell) string {

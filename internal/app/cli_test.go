@@ -8,10 +8,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/shige1114/paradev/internal/adapter/state"
-	viewadapter "github.com/shige1114/paradev/internal/adapter/view"
-	"github.com/shige1114/paradev/internal/domain"
-	"github.com/shige1114/paradev/internal/usecase"
+	"github.com/hgsg11/paracell/internal/adapter/state"
+	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
+	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 func TestForkコマンドを解析できる(t *testing.T) {

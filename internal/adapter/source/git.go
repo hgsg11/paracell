@@ -3,8 +3,8 @@ package source
 import (
 	"context"
 
-	"github.com/shige1114/paradev/internal/adapter/system"
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/adapter/system"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type GitSourceAdapter struct {

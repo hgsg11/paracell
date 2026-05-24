@@ -3,12 +3,12 @@ package provider
 import (
 	"fmt"
 
-	"github.com/shige1114/paradev/internal/adapter/container"
-	"github.com/shige1114/paradev/internal/adapter/session"
-	"github.com/shige1114/paradev/internal/adapter/source"
-	"github.com/shige1114/paradev/internal/adapter/system"
-	"github.com/shige1114/paradev/internal/domain"
-	"github.com/shige1114/paradev/internal/usecase"
+	"github.com/hgsg11/paracell/internal/adapter/container"
+	"github.com/hgsg11/paracell/internal/adapter/session"
+	"github.com/hgsg11/paracell/internal/adapter/source"
+	"github.com/hgsg11/paracell/internal/adapter/system"
+	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 type Factory struct {

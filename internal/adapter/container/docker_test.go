@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestDockerRun引数を組み立てられる(t *testing.T) {

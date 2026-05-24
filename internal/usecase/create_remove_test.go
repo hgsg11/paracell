@@ -7,7 +7,7 @@ import (
 	"testing"
 	"text/template"
 
-	"github.com/shige1114/paradev/internal/domain"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestForkCellはCellを作成して外部リソースを順番に作る(t *testing.T) {
