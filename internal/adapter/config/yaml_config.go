@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -53,15 +54,41 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 			Session:    template.Session,
 		}
 	}
+	providers := domain.ProviderConfig{
+		Source:    raw.Providers.Source,
+		Container: raw.Providers.Container,
+		Session:   raw.Providers.Session,
+	}
+	if err := validateProviders(providers); err != nil {
+		return domain.Config{}, err
+	}
 	return domain.Config{
-		Project: domain.ProjectConfig{Name: raw.Project.Name},
-		Providers: domain.ProviderConfig{
-			Source:    raw.Providers.Source,
-			Container: raw.Providers.Container,
-			Session:   raw.Providers.Session,
-		},
+		Project:   domain.ProjectConfig{Name: raw.Project.Name},
+		Providers: providers,
 		Templates: templates,
 	}, nil
+}
+
+func validateProviders(providers domain.ProviderConfig) error {
+	if providers.Source == "" {
+		return errors.New("providers.source is required")
+	}
+	if providers.Source != "git" {
+		return fmt.Errorf("unsupported providers.source %q", providers.Source)
+	}
+	if providers.Container == "" {
+		return errors.New("providers.container is required")
+	}
+	if providers.Container != "docker" {
+		return fmt.Errorf("unsupported providers.container %q", providers.Container)
+	}
+	if providers.Session == "" {
+		return errors.New("providers.session is required")
+	}
+	if providers.Session != "tmux" {
+		return fmt.Errorf("unsupported providers.session %q", providers.Session)
+	}
+	return nil
 }
 
 func (a YAMLConfigAdapter) ConfigExists(ctx context.Context) (bool, error) {

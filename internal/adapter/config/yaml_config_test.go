@@ -133,3 +133,67 @@ templates:
 		t.Fatal(".pdev がdirectoryではない")
 	}
 }
+
+func TestYAML設定はProvidersがない場合に失敗する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	_, err := loader.Load(context.Background())
+
+	if err == nil {
+		t.Fatal("providersがないのにエラーが返らなかった")
+	}
+	if err.Error() != "providers.source is required" {
+		t.Fatalf("error = %q, want %q", err.Error(), "providers.source is required")
+	}
+}
+
+func TestYAML設定は未対応Providerの場合に失敗する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: svn
+  container: docker
+  session: tmux
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	_, err := loader.Load(context.Background())
+
+	if err == nil {
+		t.Fatal("未対応providerなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported providers.source "svn"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.source "svn"`)
+	}
+}
