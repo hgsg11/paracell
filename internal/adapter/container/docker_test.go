@@ -1,8 +1,11 @@
 package container
 
 import (
+	"context"
 	"reflect"
 	"testing"
+
+	"github.com/shige1114/paradev/internal/domain"
 )
 
 func TestDockerRun引数を組み立てられる(t *testing.T) {
@@ -35,4 +38,77 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("docker run args = %#v, want %#v", args, want)
 	}
+}
+
+func TestCreateContainersはSourceContainerの設定を復元して作成する(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev","PATH=/usr/bin"]},"Mounts":[{"Type":"bind","Source":"/project","Destination":"/app","RW":true},{"Type":"bind","Source":"/project/config","Destination":"/config","RW":false},{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Source: domain.Source{
+			Path: "/project/.pdev/cells/123/source",
+		},
+		Containers: domain.Containers{
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "pdev-myapp-123-web", SourceContainer: "myapp-web"},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantOutputCalls := []string{`docker inspect -f {{json .}} myapp-web`}
+	if !reflect.DeepEqual(runner.outputCalls, wantOutputCalls) {
+		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
+	}
+	wantRunCalls := []string{
+		"docker run -d --name pdev-myapp-123-web --network myapp_default -e APP_ENV=dev -e PATH=/usr/bin -v /project/.pdev/cells/123/source:/app -v /project/.pdev/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro myapp-web:latest",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
+type fakeRunner struct {
+	outputs     []string
+	outputCalls []string
+	runCalls    []string
+}
+
+func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
+	_ = ctx
+	r.runCalls = append(r.runCalls, name+" "+joinArgs(args))
+	return nil
+}
+
+func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
+	_ = ctx
+	r.outputCalls = append(r.outputCalls, name+" "+joinArgs(args))
+	out := r.outputs[0]
+	r.outputs = r.outputs[1:]
+	return out, nil
+}
+
+func joinArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	out := args[0]
+	for _, arg := range args[1:] {
+		out += " " + arg
+	}
+	return out
 }

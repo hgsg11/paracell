@@ -1,14 +1,17 @@
 package domain
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"text/template"
 )
 
 type Template struct {
 	Name       string
 	Repository RepositoryTemplate
+	Files      []string
 	Containers ContainerTemplate
 	Session    SessionTemplate
 }
@@ -159,7 +162,14 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 	}
 	windows := make([]SessionWindow, 0, len(template.Session.Windows))
 	for _, window := range template.Session.Windows {
-		windows = append(windows, SessionWindow{Name: window.Name, Command: window.Command})
+		command, err := renderTemplate(window.Command, map[string]string{
+			"issue": issue,
+			"name":  name,
+		})
+		if err != nil {
+			return Cell{}, err
+		}
+		windows = append(windows, SessionWindow{Name: window.Name, Command: command})
 	}
 
 	return Cell{
@@ -181,6 +191,18 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		},
 		done: false,
 	}, nil
+}
+
+func renderTemplate(value string, data map[string]string) (string, error) {
+	tmpl, err := template.New("value").Option("missingkey=error").Parse(value)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 func (c *Cell) RenameContainer(role string, name string) error {

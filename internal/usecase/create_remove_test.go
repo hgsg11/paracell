@@ -17,6 +17,7 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
+		Files:            ports,
 		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 
@@ -35,6 +36,7 @@ func TestCreateCellはCellを作成して外部リソースを順番に作る(t 
 		"factory:container:docker",
 		"factory:session:tmux",
 		"source:create:123",
+		"files:copy:123:.env,apps/web/.env.local",
 		"containers:create:123",
 		"session:create:123",
 		"state:save:1",
@@ -54,6 +56,7 @@ func TestCreateCellは同じIssueがある場合に失敗する(t *testing.T) {
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
+		Files:            ports,
 		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 
@@ -193,6 +196,7 @@ func newFakePorts() *fakePorts {
 						BranchPrefix: "feat/",
 						Base:         "main",
 					},
+					Files: []string{".env", "apps/web/.env.local"},
 					Containers: domain.ContainerTemplate{
 						Services: map[string]domain.ContainerServiceTemplate{
 							"web": {SourceContainer: "myapp-web"},
@@ -243,6 +247,11 @@ func (f *fakePorts) RemoveSource(ctx context.Context, cell domain.Cell) error {
 	return nil
 }
 
+func (f *fakePorts) CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
+	f.calls = append(f.calls, "files:copy:"+cell.Name+":"+joinStrings(template.Files))
+	return nil
+}
+
 func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	f.calls = append(f.calls, "containers:create:"+cell.Name)
 	return nil
@@ -274,4 +283,15 @@ type fixedIDGenerator struct {
 
 func (g fixedIDGenerator) NewID() string {
 	return g.id
+}
+
+func joinStrings(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	out := values[0]
+	for _, value := range values[1:] {
+		out += "," + value
+	}
+	return out
 }

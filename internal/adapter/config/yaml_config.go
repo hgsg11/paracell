@@ -31,6 +31,7 @@ type yamlProviders struct {
 
 type yamlTemplate struct {
 	Repository domain.RepositoryTemplate `yaml:"repository"`
+	Files      []string                  `yaml:"files,omitempty"`
 	Containers domain.ContainerTemplate  `yaml:"containers"`
 	Session    domain.SessionTemplate    `yaml:"session"`
 }
@@ -50,6 +51,7 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Config, error) {
 		templates[name] = domain.Template{
 			Name:       name,
 			Repository: template.Repository,
+			Files:      append([]string(nil), template.Files...),
 			Containers: template.Containers,
 			Session:    template.Session,
 		}
@@ -117,6 +119,7 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Config) er
 	for name, template := range cfg.Templates {
 		raw.Templates[name] = yamlTemplate{
 			Repository: template.Repository,
+			Files:      append([]string(nil), template.Files...),
 			Containers: template.Containers,
 			Session:    template.Session,
 		}

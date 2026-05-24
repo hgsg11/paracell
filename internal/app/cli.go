@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/shige1114/paradev/internal/adapter/config"
+	"github.com/shige1114/paradev/internal/adapter/files"
 	"github.com/shige1114/paradev/internal/adapter/id"
 	"github.com/shige1114/paradev/internal/adapter/output"
 	"github.com/shige1114/paradev/internal/adapter/provider"
@@ -127,9 +128,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return err
 		}
 		_, err = runView(ctx, cells, func(cell domain.Cell) error {
-			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner}, cell)
+			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
 		}, func(cell domain.Cell) error {
-			return runDelete(ctx, configAdapter, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, provider.Factory{Runner: runner}, stateAdapter, cell)
+			return runDelete(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
 		})
@@ -141,9 +142,10 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		uc := usecase.CreateCellUseCase{
 			Config:           configAdapter,
 			State:            stateAdapter,
-			SourceFactory:    provider.Factory{Runner: runner},
-			ContainerFactory: provider.Factory{Runner: runner},
-			SessionFactory:   provider.Factory{Runner: runner},
+			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
+			Files:            files.CopyAdapter{Root: workdir},
+			ContainerFactory: provider.Factory{Runner: runner, Root: workdir},
+			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 			IDs:              id.RandomGenerator{},
 		}
 		_, err = uc.Execute(ctx, usecase.CreateCellInput{Issue: cmd.Issue, Template: cmd.Template})
@@ -152,9 +154,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		uc := usecase.RemoveCellUseCase{
 			Config:           configAdapter,
 			State:            stateAdapter,
-			SourceFactory:    provider.Factory{Runner: runner},
-			ContainerFactory: provider.Factory{Runner: runner},
-			SessionFactory:   provider.Factory{Runner: runner},
+			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
+			ContainerFactory: provider.Factory{Runner: runner, Root: workdir},
+			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 		}
 		return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cmd.Cell})
 	default:

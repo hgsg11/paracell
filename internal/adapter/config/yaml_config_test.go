@@ -23,6 +23,9 @@ templates:
     repository:
       branchPrefix: feat/
       base: main
+    files:
+      - .env
+      - apps/web/.env.local
     containers:
       services:
         web:
@@ -63,6 +66,9 @@ templates:
 	if template.Containers.Services["web"].SourceContainer != "myapp-web" {
 		t.Fatalf("webのsourceContainer = %q, want %q", template.Containers.Services["web"].SourceContainer, "myapp-web")
 	}
+	if len(template.Files) != 2 || template.Files[0] != ".env" || template.Files[1] != "apps/web/.env.local" {
+		t.Fatalf("files = %#v, want .env and apps/web/.env.local", template.Files)
+	}
 	if template.Session.Windows[0].Command != "nvim ." {
 		t.Fatalf("session command = %q, want %q", template.Session.Windows[0].Command, "nvim .")
 	}
@@ -87,6 +93,7 @@ func TestYAML設定を保存できる(t *testing.T) {
 					BranchPrefix: "feat/",
 					Base:         "main",
 				},
+				Files: []string{".env"},
 				Containers: domain.ContainerTemplate{
 					Services: map[string]domain.ContainerServiceTemplate{
 						"web": {SourceContainer: "myapp-web"},
@@ -115,6 +122,8 @@ templates:
         repository:
             branchPrefix: feat/
             base: main
+        files:
+            - .env
         containers:
             services:
                 web:

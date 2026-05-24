@@ -29,6 +29,10 @@ type SourceProviderFactory interface {
 	Source(provider domain.ProviderConfig) (SourcePort, error)
 }
 
+type FilePort interface {
+	CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error
+}
+
 type ContainerPort interface {
 	CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error
 	RemoveContainers(ctx context.Context, cell domain.Cell) error

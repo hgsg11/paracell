@@ -16,6 +16,7 @@ type CreateCellUseCase struct {
 	Config           ConfigPort
 	State            CellStatePort
 	SourceFactory    SourceProviderFactory
+	Files            FilePort
 	ContainerFactory ContainerProviderFactory
 	SessionFactory   SessionProviderFactory
 	IDs              IDGenerator
@@ -56,6 +57,11 @@ func (u CreateCellUseCase) Execute(ctx context.Context, input CreateCellInput) (
 	}
 	if err := source.CreateSource(ctx, cell); err != nil {
 		return domain.Cell{}, err
+	}
+	if u.Files != nil {
+		if err := u.Files.CopyFiles(ctx, cell, template); err != nil {
+			return domain.Cell{}, err
+		}
 	}
 	if err := containers.CreateContainers(ctx, cell, template); err != nil {
 		return domain.Cell{}, err

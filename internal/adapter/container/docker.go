@@ -2,7 +2,10 @@ package container
 
 import (
 	"context"
+	"encoding/json"
+	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/shige1114/paradev/internal/adapter/system"
 	"github.com/shige1114/paradev/internal/domain"
@@ -52,25 +55,25 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 
 type DockerCLIAdapter struct {
 	Runner system.Runner
+	Root   string
 }
 
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
-	if err := a.Runner.Run(ctx, "docker", "network", "create", cell.Containers.Network); err != nil {
-		return err
-	}
 	for role, service := range cell.Containers.Services {
 		source := template.Containers.Services[role].SourceContainer
 		if source == "" {
 			source = service.SourceContainer
 		}
-		image, err := a.Runner.Output(ctx, "docker", "inspect", "-f", "{{.Config.Image}}", source)
+		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return err
 		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:    service.ContainerName,
-			Image:   image,
-			Network: cell.Containers.Network,
+			Image:   inspection.Config.Image,
+			Network: firstNetwork(inspection.NetworkSettings.Networks),
+			Env:     append([]string(nil), inspection.Config.Env...),
+			Mounts:  a.cellMounts(cell, inspection.Mounts),
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
@@ -79,9 +82,85 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 	return nil
 }
 
+func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (containerInspection, error) {
+	raw, err := a.Runner.Output(ctx, "docker", "inspect", "-f", "{{json .}}", source)
+	if err != nil {
+		return containerInspection{}, err
+	}
+	var inspection containerInspection
+	if err := json.Unmarshal([]byte(raw), &inspection); err != nil {
+		return containerInspection{}, err
+	}
+	return inspection, nil
+}
+
+func (a DockerCLIAdapter) cellMounts(cell domain.Cell, mounts []dockerMount) []string {
+	out := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		if mount.Type == "volume" && mount.Name != "" {
+			out = append(out, mount.Name+":"+mount.Destination+":ro")
+			continue
+		}
+		if mount.Type != "bind" {
+			continue
+		}
+		rel, err := filepath.Rel(a.Root, mount.Source)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		source := cell.Source.Path
+		if rel != "." {
+			source = filepath.Join(cell.Source.Path, rel)
+		}
+		spec := source + ":" + mount.Destination
+		if !mount.RW {
+			spec += ":ro"
+		}
+		out = append(out, spec)
+	}
+	return out
+}
+
+func firstNetwork(networks map[string]dockerNetwork) string {
+	names := make([]string, 0, len(networks))
+	for name := range networks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
+}
+
 func (a DockerCLIAdapter) RemoveContainers(ctx context.Context, cell domain.Cell) error {
 	for _, service := range cell.Containers.Services {
 		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
 	}
-	return a.Runner.Run(ctx, "docker", "network", "rm", cell.Containers.Network)
+	return nil
 }
+
+type containerInspection struct {
+	Config          dockerConfig          `json:"Config"`
+	Mounts          []dockerMount         `json:"Mounts"`
+	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
+}
+
+type dockerConfig struct {
+	Image string   `json:"Image"`
+	Env   []string `json:"Env"`
+}
+
+type dockerMount struct {
+	Type        string `json:"Type"`
+	Name        string `json:"Name"`
+	Source      string `json:"Source"`
+	Destination string `json:"Destination"`
+	RW          bool   `json:"RW"`
+}
+
+type dockerNetworkSettings struct {
+	Networks map[string]dockerNetwork `json:"Networks"`
+}
+
+type dockerNetwork struct{}

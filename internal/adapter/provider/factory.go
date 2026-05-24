@@ -13,6 +13,7 @@ import (
 
 type Factory struct {
 	Runner system.Runner
+	Root   string
 }
 
 func (f Factory) Source(provider domain.ProviderConfig) (usecase.SourcePort, error) {
@@ -29,7 +30,7 @@ func (f Factory) Container(provider domain.ProviderConfig) (usecase.ContainerPor
 	case "":
 		return container.NoopAdapter{}, nil
 	case "docker":
-		return container.DockerCLIAdapter{Runner: f.Runner}, nil
+		return container.DockerCLIAdapter{Runner: f.Runner, Root: f.Root}, nil
 	default:
 		return nil, fmt.Errorf("unsupported providers.container %q", provider.Container)
 	}
