@@ -20,12 +20,25 @@ func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error 
 	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-n", first.Name, "-c", cell.Source.Path); err != nil {
 		return err
 	}
+	if err := a.runWindowCommand(ctx, cell.Session.Name, first); err != nil {
+		return err
+	}
 	for _, window := range cell.Session.Windows[1:] {
 		if err := a.Runner.Run(ctx, "tmux", "new-window", "-t", cell.Session.Name, "-n", window.Name, "-c", cell.Source.Path); err != nil {
 			return err
 		}
+		if err := a.runWindowCommand(ctx, cell.Session.Name, window); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (a TmuxAdapter) runWindowCommand(ctx context.Context, sessionName string, window domain.SessionWindow) error {
+	if window.Command == "" {
+		return nil
+	}
+	return a.Runner.Run(ctx, "tmux", "send-keys", "-t", sessionName+":"+window.Name, window.Command, "Enter")
 }
 
 func (a TmuxAdapter) RemoveSession(ctx context.Context, cell domain.Cell) error {

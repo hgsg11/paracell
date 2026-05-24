@@ -108,3 +108,33 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
 }
+
+func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *testing.T) {
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{
+		Source: domain.Source{Path: ".pdev/cells/123/source"},
+		Session: domain.Session{
+			Name: "pdev-myapp-123",
+			Windows: []domain.SessionWindow{
+				{Name: "editor", Command: "nvim ."},
+				{Name: "server"},
+				{Name: "test", Command: "go test ./..."},
+			},
+		},
+	}
+
+	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+		t.Fatalf("CreateSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux new-session -d -s pdev-myapp-123 -n editor -c .pdev/cells/123/source",
+		"tmux send-keys -t pdev-myapp-123:editor nvim . Enter",
+		"tmux new-window -t pdev-myapp-123 -n server -c .pdev/cells/123/source",
+		"tmux new-window -t pdev-myapp-123 -n test -c .pdev/cells/123/source",
+		"tmux send-keys -t pdev-myapp-123:test go test ./... Enter",
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
