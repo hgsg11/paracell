@@ -21,21 +21,27 @@ three providers independent and testable.
 
 ## Architecture
 
-Define a provider factory interface in `internal/usecase`.
+Define provider factory interfaces in `internal/usecase`.
 
-The usecase layer owns the contract:
+The usecase layer owns the contracts:
 
 ```go
-type ProviderFactory interface {
+type SourceProviderFactory interface {
 	Source(provider domain.ProviderConfig) (SourcePort, error)
+}
+
+type ContainerProviderFactory interface {
 	Container(provider domain.ProviderConfig) (ContainerPort, error)
+}
+
+type SessionProviderFactory interface {
 	Session(provider domain.ProviderConfig) (SessionPort, error)
 }
 ```
 
-`CreateCellUseCase` and `RemoveCellUseCase` gain a `Providers` dependency of
-that interface type. After loading config, each usecase resolves the ports it
-needs through the factory and then continues as before.
+`CreateCellUseCase` and `RemoveCellUseCase` gain only the provider factory
+dependencies they need. After loading config, each usecase resolves the ports
+it needs through the relevant factory interface and then continues as before.
 
 The adapter layer implements the interface in `internal/adapter/provider`.
 That implementation keeps the current provider rules:
@@ -46,7 +52,8 @@ That implementation keeps the current provider rules:
 - `container: docker` resolves to the existing Docker adapter
 
 `internal/app` stops selecting providers directly. It just constructs the
-provider factory implementation and passes it into the usecases.
+provider factory implementation and passes the relevant factory dependencies
+into the usecases.
 
 ## Behavior
 
