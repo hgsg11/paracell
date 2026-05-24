@@ -197,3 +197,104 @@ templates:
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.source "svn"`)
 	}
 }
+
+func TestYAML設定はContainerProviderがない場合も読み込める(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	cfg, err := loader.Load(context.Background())
+
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if cfg.Providers.Container != "" {
+		t.Fatalf("providers.container = %q, want empty", cfg.Providers.Container)
+	}
+}
+
+func TestYAML設定はContainerProviderが空文字でも読み込める(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: ""
+  session: tmux
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	cfg, err := loader.Load(context.Background())
+
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if cfg.Providers.Container != "" {
+		t.Fatalf("providers.container = %q, want empty", cfg.Providers.Container)
+	}
+}
+
+func TestYAML設定は未対応ContainerProviderの場合に失敗する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".pdev.yml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: podman
+  session: tmux
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	_, err := loader.Load(context.Background())
+
+	if err == nil {
+		t.Fatal("未対応container providerなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported providers.container "podman"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.container "podman"`)
+	}
+}

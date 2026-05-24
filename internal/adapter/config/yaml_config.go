@@ -76,10 +76,7 @@ func validateProviders(providers domain.ProviderConfig) error {
 	if providers.Source != "git" {
 		return fmt.Errorf("unsupported providers.source %q", providers.Source)
 	}
-	if providers.Container == "" {
-		return errors.New("providers.container is required")
-	}
-	if providers.Container != "docker" {
+	if providers.Container != "" && providers.Container != "docker" {
 		return fmt.Errorf("unsupported providers.container %q", providers.Container)
 	}
 	if providers.Session == "" {
