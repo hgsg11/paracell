@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,10 +78,6 @@ func FormatCellList(cells []domain.Cell) string {
 }
 
 func Run(ctx context.Context, args []string, workdir string) error {
-	return RunWithOutput(ctx, args, workdir, os.Stdout)
-}
-
-func RunWithOutput(ctx context.Context, args []string, workdir string, out io.Writer) error {
 	cmd, err := ParseCommand(args)
 	if err != nil {
 		return err
@@ -105,7 +100,7 @@ func RunWithOutput(ctx context.Context, args []string, workdir string, out io.Wr
 		if err != nil {
 			return err
 		}
-		_, err = io.WriteString(out, FormatCellList(cells))
+		_, err = os.Stdout.WriteString(FormatCellList(cells))
 		return err
 	case CommandCreate:
 		uc := usecase.CreateCellUseCase{

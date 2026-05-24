@@ -1,8 +1,8 @@
 package app
 
 import (
-	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -101,7 +101,7 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 	}
 }
 
-func TestRunWithOutputはLsでStateのCell一覧を出力する(t *testing.T) {
+func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".pdev", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -110,35 +110,60 @@ func TestRunWithOutputはLsでStateのCell一覧を出力する(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
-	var out bytes.Buffer
 
-	err := RunWithOutput(context.Background(), []string{"ls"}, dir, &out)
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"ls"}, dir)
+	})
 
 	if err != nil {
-		t.Fatalf("RunWithOutputでエラーが返った: %v", err)
+		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
-	if out.String() != want {
-		t.Fatalf("output = %q, want %q", out.String(), want)
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
 	}
 }
 
-func TestRunWithOutputはLsでStateがなくてもヘッダーだけ出力する(t *testing.T) {
+func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testing.T) {
 	dir := t.TempDir()
-	var out bytes.Buffer
 
-	err := RunWithOutput(context.Background(), []string{"ls"}, dir, &out)
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"ls"}, dir)
+	})
 
 	if err != nil {
-		t.Fatalf("RunWithOutputでエラーが返った: %v", err)
+		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 	want := "NAME\tTEMPLATE\n"
-	if out.String() != want {
-		t.Fatalf("output = %q, want %q", out.String(), want)
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".pdev", "state.json")); !os.IsNotExist(err) {
 		t.Fatalf("state.json existence error = %v, want not exist", err)
 	}
+}
+
+func captureStdout(fn func() error) (string, error) {
+	original := os.Stdout
+	read, write, err := os.Pipe()
+	if err != nil {
+		return "", err
+	}
+	os.Stdout = write
+	defer func() {
+		os.Stdout = original
+	}()
+
+	runErr := fn()
+	closeErr := write.Close()
+	output, readErr := io.ReadAll(read)
+	if closeErr != nil && runErr == nil {
+		runErr = closeErr
+	}
+	if readErr != nil && runErr == nil {
+		runErr = readErr
+	}
+	return string(output), runErr
 }
 
 func Test未対応コマンドはエラーにする(t *testing.T) {
