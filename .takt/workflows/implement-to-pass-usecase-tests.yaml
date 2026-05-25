@@ -1,0 +1,123 @@
+name: implement-to-pass-usecase-tests
+description: Implement production code to pass approved use case tests, then review.
+workflow_config:
+  provider_options:
+    codex:
+      network_access: true
+max_steps: 16
+initial_step: implement
+
+loop_monitors:
+  - cycle:
+      - ai-antipattern-review-1st
+      - ai-antipattern-fix
+    threshold: 3
+    judge:
+      persona: supervisor
+      instruction: loop-monitor-ai-antipattern-fix
+      rules:
+        - condition: 健全（進捗あり）
+          next: ai-antipattern-review-1st
+        - condition: 非生産的（改善なし）
+          next: review
+
+personas:
+  coder: ../facets/personas/coder.md
+  architecture-reviewer: ../facets/personas/architecture-reviewer.md
+
+steps:
+  - name: implement
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    knowledge:
+      - architecture
+    edit: true
+    required_permission_mode: edit
+    instruction: |
+      {task}
+
+      既に承認済みの use case テストを通すために実装してください。
+      テストの意図を変えないでください。
+      原則としてテストは変更しないでください。
+      変更が必要な場合は理由を明記して Cannot proceed にしてください。
+
+      実行対象:
+      - use case テスト
+      - 必要なら関連する既存テスト
+    rules:
+      - condition: Implementation complete
+        next: ai-antipattern-review-1st
+      - condition: Cannot proceed
+        next: ABORT
+
+  - name: ai-antipattern-review-1st
+    edit: false
+    persona: ai-antipattern-reviewer
+    model: gpt-5.4-mini
+    policy:
+      - review
+      - ai-antipattern
+    instruction: ai-antipattern-review
+    rules:
+      - condition: AI特有の問題が見つからない
+        next: review
+      - condition: AI特有の問題が検出された
+        next: ai-antipattern-fix
+    output_contracts:
+      report:
+        - name: ai-antipattern-review.md
+          format: ai-antipattern-review
+
+  - name: ai-antipattern-fix
+    edit: true
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    session: refresh
+    knowledge:
+      - architecture
+      - unit-testing
+    required_permission_mode: edit
+    instruction: ai-antipattern-fix
+    pass_previous_response: false
+    rules:
+      - condition: AI Reviewerの指摘に対する修正が完了した
+        next: ai-antipattern-review-1st
+      - condition: 修正不要（指摘対象ファイル/仕様の確認済み）
+        next: review
+      - condition: 修正を進行できない
+        next: review
+
+  - name: review
+    persona: architecture-reviewer
+    model: gpt-5.5
+    knowledge:
+      - architecture
+    edit: false
+    required_permission_mode: readonly
+    rules:
+      - condition: Approved
+        next: COMPLETE
+      - condition: Needs fix
+        next: implement
+      - condition: Cannot proceed
+        next: ABORT
+    instruction: |
+      実装をレビューしてください。
+
+      観点:
+      - 承認済み use case テストを満たしているか
+      - テストを書き換えて逃げていないか
+      - DDD / Clean Architecture の依存方向を壊していないか
+      - use case が transaction / orchestration の責務を持てているか
+      - domain に infrastructure が漏れていないか
+      - repository interface の境界が自然か
+      - エラーハンドリングが仕様に合っているか
+
+      問題なければ Approved。
+      修正が必要なら Needs fix。

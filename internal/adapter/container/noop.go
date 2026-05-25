@@ -15,7 +15,7 @@ func (a NoopAdapter) CreateContainers(ctx context.Context, cell domain.Cell, tem
 	return nil
 }
 
-func (a NoopAdapter) RemoveContainers(ctx context.Context, cell domain.Cell) error {
+func (a NoopAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	_ = ctx
 	_ = cell
 	return nil

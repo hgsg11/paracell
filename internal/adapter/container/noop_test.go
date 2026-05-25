@@ -15,10 +15,10 @@ func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
 	}
 }
 
-func TestNoopAdapterはRemoveContainersで何もしない(t *testing.T) {
-	err := NoopAdapter{}.RemoveContainers(context.Background(), domain.Cell{})
+func TestNoopAdapterはCleanContainersで何もしない(t *testing.T) {
+	err := NoopAdapter{}.CleanContainers(context.Background(), domain.Cell{})
 
 	if err != nil {
-		t.Fatalf("RemoveContainers error = %v, want nil", err)
+		t.Fatalf("CleanContainers error = %v, want nil", err)
 	}
 }

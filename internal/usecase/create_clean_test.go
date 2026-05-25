@@ -72,7 +72,7 @@ func TestForkCellは同じIssueがある場合に失敗する(t *testing.T) {
 	}
 }
 
-func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
+func TestCleanCellはCellを削除してStateから消す(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
@@ -85,7 +85,7 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 		}(),
 		{ID: "cell-2", Issue: "456", Name: "456"},
 	}
-	uc := RemoveCellUseCase{
+	uc := CleanCellUseCase{
 		Config:           ports,
 		State:            ports,
 		SourceFactory:    ports,
@@ -93,17 +93,17 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 		SessionFactory:   ports,
 	}
 
-	err := uc.Execute(ctx, RemoveCellInput{Cell: "123"})
+	err := uc.Execute(ctx, CleanCellInput{Cell: "123"})
 	if err != nil {
-		t.Fatalf("RemoveCellでエラーが返った: %v", err)
+		t.Fatalf("CleanCellでエラーが返った: %v", err)
 	}
 	wantCalls := []string{
 		"factory:session:tmux",
 		"factory:container:docker",
 		"factory:source:git",
-		"session:remove:123",
-		"containers:remove:123",
-		"source:remove:123",
+		"session:clean:123",
+		"containers:clean:123",
+		"source:clean:123",
 		"state:save:1",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
@@ -114,13 +114,13 @@ func TestRemoveCellはCellを削除してStateから消す(t *testing.T) {
 	}
 }
 
-func TestRemoveCellはDoneでないCellを削除しない(t *testing.T) {
+func TestCleanCellはDoneでないCellを削除しない(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
 		{ID: "cell-1", Issue: "123", Name: "123"},
 	}
-	uc := RemoveCellUseCase{
+	uc := CleanCellUseCase{
 		Config:           ports,
 		State:            ports,
 		SourceFactory:    ports,
@@ -128,7 +128,7 @@ func TestRemoveCellはDoneでないCellを削除しない(t *testing.T) {
 		SessionFactory:   ports,
 	}
 
-	err := uc.Execute(ctx, RemoveCellInput{Cell: "123"})
+	err := uc.Execute(ctx, CleanCellInput{Cell: "123"})
 
 	if err == nil {
 		t.Fatal("doneでないcellなのに削除できてしまった")
@@ -282,8 +282,8 @@ func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) error {
 	return nil
 }
 
-func (f *fakePorts) RemoveSource(ctx context.Context, cell domain.Cell) error {
-	f.calls = append(f.calls, "source:remove:"+cell.Name)
+func (f *fakePorts) CleanSource(ctx context.Context, cell domain.Cell) error {
+	f.calls = append(f.calls, "source:clean:"+cell.Name)
 	return nil
 }
 
@@ -297,8 +297,8 @@ func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, temp
 	return nil
 }
 
-func (f *fakePorts) RemoveContainers(ctx context.Context, cell domain.Cell) error {
-	f.calls = append(f.calls, "containers:remove:"+cell.Name)
+func (f *fakePorts) CleanContainers(ctx context.Context, cell domain.Cell) error {
+	f.calls = append(f.calls, "containers:clean:"+cell.Name)
 	return nil
 }
 
@@ -311,8 +311,8 @@ func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
 	return nil
 }
 
-func (f *fakePorts) RemoveSession(ctx context.Context, cell domain.Cell) error {
-	f.calls = append(f.calls, "session:remove:"+cell.Name)
+func (f *fakePorts) CleanSession(ctx context.Context, cell domain.Cell) error {
+	f.calls = append(f.calls, "session:clean:"+cell.Name)
 	return nil
 }
 

@@ -22,7 +22,7 @@ type CellStatePort interface {
 
 type SourcePort interface {
 	CreateSource(ctx context.Context, cell domain.Cell) error
-	RemoveSource(ctx context.Context, cell domain.Cell) error
+	CleanSource(ctx context.Context, cell domain.Cell) error
 }
 
 type SourceProviderFactory interface {
@@ -35,7 +35,7 @@ type FilePort interface {
 
 type ContainerPort interface {
 	CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error
-	RemoveContainers(ctx context.Context, cell domain.Cell) error
+	CleanContainers(ctx context.Context, cell domain.Cell) error
 }
 
 type ContainerProviderFactory interface {
@@ -44,7 +44,7 @@ type ContainerProviderFactory interface {
 
 type SessionPort interface {
 	CreateSession(ctx context.Context, cell domain.Cell) error
-	RemoveSession(ctx context.Context, cell domain.Cell) error
+	CleanSession(ctx context.Context, cell domain.Cell) error
 	EnterSession(ctx context.Context, cell domain.Cell) error
 }
 

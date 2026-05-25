@@ -35,15 +35,15 @@ var (
 	}
 )
 
-var runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
-	uc := usecase.RemoveCellUseCase{
+var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	uc := usecase.CleanCellUseCase{
 		Config:           cfg,
 		State:            state,
 		SourceFactory:    source,
 		ContainerFactory: container,
 		SessionFactory:   session,
 	}
-	return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cell.Name})
+	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.Name})
 }
 
 type CommandKind string
@@ -51,11 +51,11 @@ type CommandKind string
 const AppName = "paracell"
 
 const (
-	CommandInit   CommandKind = "init"
-	CommandFork   CommandKind = "fork"
-	CommandRemove CommandKind = "remove"
-	CommandList   CommandKind = "ls"
-	CommandView   CommandKind = "view"
+	CommandInit  CommandKind = "init"
+	CommandFork  CommandKind = "fork"
+	CommandClean CommandKind = "clean"
+	CommandList  CommandKind = "ls"
+	CommandView  CommandKind = "view"
 )
 
 type Command struct {
@@ -68,7 +68,7 @@ type Command struct {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{}, errors.New("command is required")
+		return Command{Kind: CommandView}, nil
 	}
 	switch args[0] {
 	case "init":
@@ -91,11 +91,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell fork <issue> --template <template>")
 		}
 		return Command{Kind: CommandFork, Issue: args[1], Template: args[3]}, nil
-	case "remove":
+	case "clean":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--force") {
-			return Command{}, errors.New("usage: paracell remove <cell> [--force]")
+			return Command{}, errors.New("usage: paracell clean <cell> [--force]")
 		}
-		return Command{Kind: CommandRemove, Cell: args[1], Force: len(args) == 3}, nil
+		return Command{Kind: CommandClean, Cell: args[1], Force: len(args) == 3}, nil
 	default:
 		return Command{}, fmt.Errorf("unsupported command %q", args[0])
 	}
@@ -132,7 +132,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		_, err = runView(ctx, cells, func(cell domain.Cell) error {
 			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
 		}, func(cell domain.Cell) error {
-			return runDelete(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cell)
+			return runClean(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
 		})
@@ -152,15 +152,15 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		}
 		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template})
 		return err
-	case CommandRemove:
-		uc := usecase.RemoveCellUseCase{
+	case CommandClean:
+		uc := usecase.CleanCellUseCase{
 			Config:           configAdapter,
 			State:            stateAdapter,
 			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
 			ContainerFactory: provider.Factory{Runner: runner, Root: workdir},
 			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 		}
-		return uc.Execute(ctx, usecase.RemoveCellInput{Cell: cmd.Cell})
+		return uc.Execute(ctx, usecase.CleanCellInput{Cell: cmd.Cell})
 	default:
 		return fmt.Errorf("unsupported command %q", cmd.Kind)
 	}

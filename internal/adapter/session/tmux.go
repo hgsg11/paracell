@@ -41,7 +41,7 @@ func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, win
 	return a.Runner.Run(ctx, "tmux", "send-keys", "-t", cell.Session.Name+":"+window.Name, window.Command, "Enter")
 }
 
-func (a TmuxAdapter) RemoveSession(ctx context.Context, cell domain.Cell) error {
+func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
 	return a.Runner.Run(ctx, "tmux", "kill-session", "-t", cell.Session.Name)
 }
 

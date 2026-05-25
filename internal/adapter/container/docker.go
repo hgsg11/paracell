@@ -133,7 +133,7 @@ func firstNetwork(networks map[string]dockerNetwork) string {
 	return names[0]
 }
 
-func (a DockerCLIAdapter) RemoveContainers(ctx context.Context, cell domain.Cell) error {
+func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	for _, service := range cell.Containers.Services {
 		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
 	}

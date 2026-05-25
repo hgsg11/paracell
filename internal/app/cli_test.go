@@ -64,6 +64,17 @@ func TestViewコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func Test引数なしはViewコマンドとして解析する(t *testing.T) {
+	cmd, err := ParseCommand([]string{})
+
+	if err != nil {
+		t.Fatalf("引数なし解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandView {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandView)
+	}
+}
+
 func TestLsコマンドは余計な引数があるとエラーにする(t *testing.T) {
 	_, err := ParseCommand([]string{"ls", "extra"})
 
@@ -75,14 +86,14 @@ func TestLsコマンドは余計な引数があるとエラーにする(t *testi
 	}
 }
 
-func TestRemoveコマンドを解析できる(t *testing.T) {
-	cmd, err := ParseCommand([]string{"remove", "123", "--force"})
+func TestCleanコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"clean", "123", "--force"})
 
 	if err != nil {
-		t.Fatalf("remove解析でエラーが返った: %v", err)
+		t.Fatalf("clean解析でエラーが返った: %v", err)
 	}
-	if cmd.Kind != CommandRemove {
-		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandRemove)
+	if cmd.Kind != CommandClean {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandClean)
 	}
 	if cmd.Cell != "123" {
 		t.Fatalf("cell = %q, want %q", cmd.Cell, "123")
@@ -163,14 +174,14 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	defer func() { runView = original }()
 	originalEnter := runEnter
 	defer func() { runEnter = originalEnter }()
-	originalDelete := runDelete
-	defer func() { runDelete = originalDelete }()
+	originalClean := runClean
+	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
-		_ = delete
+		_ = clean
 		_ = markDone
 		got = append([]domain.Cell(nil), cells...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -183,7 +194,7 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 		t.Fatal("enterが呼ばれた")
 		return nil
 	}
-	runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -191,7 +202,7 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 		_ = session
 		_ = state
 		_ = cell
-		t.Fatal("deleteが呼ばれた")
+		t.Fatal("cleanが呼ばれた")
 		return nil
 	}
 
@@ -231,13 +242,13 @@ templates: {}
 	defer func() { runView = originalView }()
 	originalEnter := runEnter
 	defer func() { runEnter = originalEnter }()
-	originalDelete := runDelete
-	defer func() { runDelete = originalDelete }()
+	originalClean := runClean
+	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
-		_ = delete
+		_ = clean
 		_ = markDone
 		if err := enter(cells[0]); err != nil {
 			t.Fatalf("enterでエラーが返った: %v", err)
@@ -255,7 +266,7 @@ templates: {}
 		entered = cell
 		return nil
 	}
-	runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -274,7 +285,7 @@ templates: {}
 	}
 }
 
-func TestRunはViewでddしたCellをDelete処理に渡す(t *testing.T) {
+func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -298,16 +309,16 @@ templates: {}
 	defer func() { runView = originalView }()
 	originalEnter := runEnter
 	defer func() { runEnter = originalEnter }()
-	originalDelete := runDelete
-	defer func() { runDelete = originalDelete }()
+	originalClean := runClean
+	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
 		_ = markDone
-		if err := delete(cells[0]); err != nil {
-			t.Fatalf("deleteでエラーが返った: %v", err)
+		if err := clean(cells[0]); err != nil {
+			t.Fatalf("cleanでエラーが返った: %v", err)
 		}
 		deleted = cells[0]
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -319,7 +330,7 @@ templates: {}
 		_ = cell
 		return nil
 	}
-	runDelete = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -401,7 +412,7 @@ templates:
 	}
 }
 
-func TestRunはRemoveでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
+func TestRunはCleanでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -435,7 +446,7 @@ templates: {}
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 
-	err := Run(context.Background(), []string{"remove", "123"}, dir)
+	err := Run(context.Background(), []string{"clean", "123"}, dir)
 
 	if err == nil {
 		t.Fatal("tmux/gitが実行できない環境なのにエラーが返らなかった")

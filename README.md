@@ -15,8 +15,8 @@ paracell init
 paracell fork <issue> --template <template>
 paracell ls
 paracell view
-paracell remove <cell>
-paracell remove <cell> --force
+paracell clean <cell>
+paracell clean <cell> --force
 ```
 
 ## Files

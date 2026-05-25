@@ -7,11 +7,11 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-type RemoveCellInput struct {
+type CleanCellInput struct {
 	Cell string
 }
 
-type RemoveCellUseCase struct {
+type CleanCellUseCase struct {
 	Config           ConfigPort
 	State            CellStatePort
 	SourceFactory    SourceProviderFactory
@@ -19,7 +19,7 @@ type RemoveCellUseCase struct {
 	SessionFactory   SessionProviderFactory
 }
 
-func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) error {
+func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) error {
 	cfg, err := u.Config.Load(ctx, nil)
 	if err != nil {
 		return err
@@ -55,13 +55,13 @@ func (u RemoveCellUseCase) Execute(ctx context.Context, input RemoveCellInput) e
 	if err != nil {
 		return err
 	}
-	if err := session.RemoveSession(ctx, target); err != nil {
+	if err := session.CleanSession(ctx, target); err != nil {
 		return err
 	}
-	if err := containers.RemoveContainers(ctx, target); err != nil {
+	if err := containers.CleanContainers(ctx, target); err != nil {
 		return err
 	}
-	if err := source.RemoveSource(ctx, target); err != nil {
+	if err := source.CleanSource(ctx, target); err != nil {
 		return err
 	}
 	next := append([]domain.Cell{}, cells[:index]...)
