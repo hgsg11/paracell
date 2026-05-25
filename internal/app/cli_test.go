@@ -64,6 +64,17 @@ func TestViewコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestHelpオプションを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"--help"})
+
+	if err != nil {
+		t.Fatalf("help解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandHelp {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandHelp)
+	}
+}
+
 func Test引数なしはViewコマンドとして解析する(t *testing.T) {
 	cmd, err := ParseCommand([]string{})
 
@@ -100,6 +111,22 @@ func TestCleanコマンドを解析できる(t *testing.T) {
 	}
 	if !cmd.Force {
 		t.Fatal("force = false, want true")
+	}
+}
+
+func TestRunはHelpでUsageを出力する(t *testing.T) {
+	dir := t.TempDir()
+
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"--help"}, dir)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	want := "usage: paracell [init|fork|ls|view|clean|help]\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
 	}
 }
 

@@ -56,7 +56,10 @@ const (
 	CommandClean CommandKind = "clean"
 	CommandList  CommandKind = "ls"
 	CommandView  CommandKind = "view"
+	CommandHelp  CommandKind = "help"
 )
+
+const usage = "usage: paracell [init|fork|ls|view|clean|help]\n"
 
 type Command struct {
 	Kind     CommandKind
@@ -71,6 +74,11 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Kind: CommandView}, nil
 	}
 	switch args[0] {
+	case "--help", "-h", "help":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell help")
+		}
+		return Command{Kind: CommandHelp}, nil
 	case "init":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell init")
@@ -111,6 +119,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
 
 	switch cmd.Kind {
+	case CommandHelp:
+		_, err := os.Stdout.WriteString(usage)
+		return err
 	case CommandInit:
 		uc := usecase.InitProjectUseCase{Config: configAdapter}
 		_, err := uc.Execute(ctx)
