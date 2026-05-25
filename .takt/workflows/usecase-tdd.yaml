@@ -1,0 +1,254 @@
+name: usecase-tdd
+description: Generate and review use case tests, then implement production code to pass them and review.
+workflow_config:
+  provider_options:
+    codex:
+      network_access: true
+max_steps: 28
+initial_step: write-tests
+
+loop_monitors:
+  - cycle: [ai-antipattern-review-1st-1, ai-antipattern-fix-1]
+    threshold: 3
+    judge:
+      persona: supervisor
+      edit: false
+      instruction: |
+        AI 特有の問題のレビュー/修正ループが継続しています。
+
+        以下を評価してください:
+        - 実際に改善しているか
+        - レビュー指摘が発散していないか
+        - scope が大きすぎないか
+        - user intervention が必要か
+
+        次を判定してください:
+        - Progress acceptable
+        - Scope reduction needed
+        - Architecture deadlock
+      rules:
+        - condition: Progress acceptable
+          next: ai-antipattern-review-1st-1
+        - condition: Scope reduction needed
+          next: review-tests
+        - condition: Architecture deadlock
+          next: review-tests
+  - cycle:
+      - review-tests
+      - write-tests
+    threshold: 3
+    judge:
+      persona: supervisor
+      edit: false
+      instruction: loop-monitor-reviewers-fix
+      rules:
+        - condition: 健全（指摘数が減少、修正が反映されている）
+          next: review-tests
+        - condition: 非生産的（同じ指摘が繰り返される）
+          next: ABORT
+  - cycle:
+      - ai-antipattern-review-1st-2
+      - ai-antipattern-fix-2
+    threshold: 3
+    judge:
+      persona: supervisor
+      instruction: loop-monitor-ai-antipattern-fix
+      rules:
+        - condition: 健全（進捗あり）
+          next: ai-antipattern-review-1st-2
+        - condition: 非生産的（改善なし）
+          next: review
+
+personas:
+  coder: ../facets/personas/coder.md
+  architecture-reviewer: ../facets/personas/architecture-reviewer.md
+
+steps:
+  - name: write-tests
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    knowledge:
+      - architecture
+    edit: true
+    required_permission_mode: edit
+    instruction: |
+      {task}
+
+      use case 層のテストのみ作成してください。
+      実装コードは変更しないでください。
+      repository/mock/fake はテストに必要な範囲のみ作成してください。
+      domain / infrastructure / handler のテストは作成しないでください。
+      テストは現時点で失敗しても構いません。
+    rules:
+      - condition: Tests written
+        next: ai-antipattern-review-1st-1
+      - condition: Cannot proceed
+        next: ABORT
+
+  - name: ai-antipattern-review-1st-1
+    edit: false
+    persona: ai-antipattern-reviewer
+    model: gpt-5.4-mini
+    policy:
+      - review
+      - ai-antipattern
+    instruction: ai-antipattern-review
+    rules:
+      - condition: AI特有の問題が見つからない
+        next: review-tests
+      - condition: AI特有の問題が検出された
+        next: ai-antipattern-fix-1
+    output_contracts:
+      report:
+        - name: ai-antipattern-review-tests.md
+          format: ai-antipattern-review
+
+  - name: ai-antipattern-fix-1
+    edit: true
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    session: refresh
+    knowledge:
+      - architecture
+      - unit-testing
+    required_permission_mode: edit
+    instruction: ai-antipattern-fix
+    pass_previous_response: false
+    rules:
+      - condition: AI Reviewerの指摘に対する修正が完了した
+        next: ai-antipattern-review-1st-1
+      - condition: 修正不要（指摘対象ファイル/仕様の確認済み）
+        next: review-tests
+      - condition: 修正を進行できない
+        next: review-tests
+
+  - name: review-tests
+    persona: architecture-reviewer
+    model: gpt-5.5
+    knowledge:
+      - architecture
+    edit: false
+    required_permission_mode: readonly
+    rules:
+      - condition: Test review approved
+        next: implement
+      - condition: Tests need fix
+        next: write-tests
+      - condition: Cannot proceed
+        next: ABORT
+    instruction: |
+      作成された use case テストをレビューしてください。
+
+      観点:
+      - use case の振る舞いを検証しているか
+      - 実装詳細に依存しすぎていないか
+      - DDD / Clean Architecture の依存方向を壊していないか
+      - mock/fake が過剰でないか
+      - repository interface 境界が自然か
+      - テスト名が仕様として読めるか
+
+      実装コードは変更しないでください。
+      承認可能なら Test review approved。
+      修正が必要なら Tests need fix。
+
+  - name: implement
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    knowledge:
+      - architecture
+    edit: true
+    required_permission_mode: edit
+    instruction: |
+      {task}
+
+      既に承認済みの use case テストを通すために実装してください。
+      テストの意図を変えないでください。
+      原則としてテストは変更しないでください。
+      変更が必要な場合は理由を明記して Cannot proceed にしてください。
+
+      実行対象:
+      - use case テスト
+      - 必要なら関連する既存テスト
+    rules:
+      - condition: Implementation complete
+        next: ai-antipattern-review-1st-2
+      - condition: Cannot proceed
+        next: ABORT
+
+  - name: ai-antipattern-review-1st-2
+    edit: false
+    persona: ai-antipattern-reviewer
+    model: gpt-5.4-mini
+    policy:
+      - review
+      - ai-antipattern
+    instruction: ai-antipattern-review
+    rules:
+      - condition: AI特有の問題が見つからない
+        next: review
+      - condition: AI特有の問題が検出された
+        next: ai-antipattern-fix-2
+    output_contracts:
+      report:
+        - name: ai-antipattern-review-implementation.md
+          format: ai-antipattern-review
+
+  - name: ai-antipattern-fix-2
+    edit: true
+    persona: coder
+    model: gpt-5.4-mini
+    policy:
+      - coding
+      - testing
+    session: refresh
+    knowledge:
+      - architecture
+      - unit-testing
+    required_permission_mode: edit
+    instruction: ai-antipattern-fix
+    pass_previous_response: false
+    rules:
+      - condition: AI Reviewerの指摘に対する修正が完了した
+        next: ai-antipattern-review-1st-2
+      - condition: 修正不要（指摘対象ファイル/仕様の確認済み）
+        next: review
+      - condition: 修正を進行できない
+        next: review
+
+  - name: review
+    persona: architecture-reviewer
+    model: gpt-5.5
+    knowledge:
+      - architecture
+    edit: false
+    required_permission_mode: readonly
+    rules:
+      - condition: Approved
+        next: COMPLETE
+      - condition: Needs fix
+        next: implement
+      - condition: Cannot proceed
+        next: ABORT
+    instruction: |
+      実装をレビューしてください。
+
+      観点:
+      - 承認済み use case テストを満たしているか
+      - テストを書き換えて逃げていないか
+      - DDD / Clean Architecture の依存方向を壊していないか
+      - use case が transaction / orchestration の責務を持てているか
+      - domain に infrastructure が漏れていないか
+      - repository interface の境界が自然か
+      - エラーハンドリングが仕様に合っているか
+
+      問題なければ Approved。
+      修正が必要なら Needs fix。
