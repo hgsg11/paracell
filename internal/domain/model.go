@@ -217,8 +217,11 @@ func (c Cell) IsDone() bool {
 	return c.done
 }
 
-func (c Cell) CanDelete() bool {
-	return c.done
+func (c *Cell) Clean() error {
+	if !c.done {
+		return fmt.Errorf("完了済みではないので消せない")
+	}
+	return nil
 }
 
 type CellUniquenessChecker struct{}

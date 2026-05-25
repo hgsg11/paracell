@@ -40,8 +40,8 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if index < 0 {
 		return fmt.Errorf("cell %q not found", input.Cell)
 	}
-	if !target.CanDelete() {
-		return fmt.Errorf("cell %q cannot be deleted until it is done", input.Cell)
+	if err := target.Clean(); err != nil {
+		return err
 	}
 	session, err := u.SessionFactory.Session(cfg.Providers)
 	if err != nil {

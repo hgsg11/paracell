@@ -114,7 +114,7 @@ func TestCleanCellはCellを削除してStateから消す(t *testing.T) {
 	}
 }
 
-func TestCleanCellはDoneでないCellを削除しない(t *testing.T) {
+func TestCleanCellはDoneでないCellをCleanしない(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
@@ -133,8 +133,8 @@ func TestCleanCellはDoneでないCellを削除しない(t *testing.T) {
 	if err == nil {
 		t.Fatal("doneでないcellなのに削除できてしまった")
 	}
-	if err.Error() != `cell "123" cannot be deleted until it is done` {
-		t.Fatalf("error = %q, want %q", err.Error(), `cell "123" cannot be deleted until it is done`)
+	if err.Error() != "完了済みではないので消せない" {
+		t.Fatalf("error = %q, want %q", err.Error(), "完了済みではないので消せない")
 	}
 }
 

@@ -109,8 +109,8 @@ func TestCellはMarkDoneできる(t *testing.T) {
 	if !cell.IsDone() {
 		t.Fatal("IsDone = false, want true")
 	}
-	if !cell.CanDelete() {
-		t.Fatal("CanDelete = false, want true")
+	if err := cell.Clean(); err != nil {
+		t.Fatalf("Cleanでエラーが返った: %v", err)
 	}
 }
 
@@ -127,10 +127,10 @@ func TestCellはDone状態を切り替えられる(t *testing.T) {
 	}
 }
 
-func TestDoneでないCellは削除不可(t *testing.T) {
+func TestDoneでないCellはCleanできない(t *testing.T) {
 	cell := Cell{}
 
-	if cell.CanDelete() {
-		t.Fatal("doneでないcell should not be deletable")
+	if err := cell.Clean(); err == nil {
+		t.Fatal("doneでないcellなのにCleanできてしまった")
 	}
 }
