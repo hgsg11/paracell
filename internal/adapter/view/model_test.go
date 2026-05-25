@@ -40,9 +40,10 @@ func TestModelは境界で選択を超えない(t *testing.T) {
 	})
 
 	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	got := next.(Model)
-	if got.Selected != 0 {
-		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	if got.Selected != 1 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 1)
 	}
 }
 
@@ -57,7 +58,19 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  DONE\n> 123    default   [ ]\n  45678  web       [x]\n"
+	want := "  NAME   TEMPLATE  DONE\n> 123    default   [ ]\n  45678  web       [x]\n\n  exit paracell\n"
+	if got != want {
+		t.Fatalf("view = %q, want %q", got, want)
+	}
+}
+
+func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	got := model.View()
+	want := "  NAME  TEMPLATE  DONE\n> 123   default   [ ]\n\n  exit paracell\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -103,6 +116,34 @@ func TestModelはlで選択中Cellを返す(t *testing.T) {
 	}
 	if nextCmd == nil {
 		t.Fatal("l成功で終了コマンドが返らなかった")
+	}
+}
+
+func TestModelはlでExitParacellを実行する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Selected = 1
+	called := false
+	model.Exit = func() error {
+		called = true
+		return nil
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if cmd == nil {
+		t.Fatal("lでコマンドが返らなかった")
+	}
+	updated, nextCmd := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if !called {
+		t.Fatal("exit handlerが呼ばれなかった")
+	}
+	if got.Result.Action != ActionQuit {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionQuit)
+	}
+	if nextCmd == nil {
+		t.Fatal("exit paracell成功で終了コマンドが返らなかった")
 	}
 }
 
@@ -177,6 +218,49 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	}
 }
 
+func TestModelはExitParacellをCleanできない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Selected = 1
+	model.Delete = func(cell domain.Cell) error {
+		t.Fatalf("exit paracellでdelete handlerが呼ばれた: %#v", cell)
+		return nil
+	}
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	next, cmd := next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	if cmd != nil {
+		t.Fatal("exit paracellのddでコマンドが返った")
+	}
+	got := next.(Model)
+	if got.Error != "exit paracell cannot be cleaned" {
+		t.Fatalf("error = %q, want %q", got.Error, "exit paracell cannot be cleaned")
+	}
+}
+
+func TestModelはExitParacellをDoneにできない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Selected = 1
+	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
+		t.Fatalf("exit paracellでmark done handlerが呼ばれた: %#v", cell)
+		return cell, nil
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if cmd != nil {
+		t.Fatal("exit paracellのEnterでコマンドが返った")
+	}
+	got := next.(Model)
+	if got.Error != "exit paracell cannot be marked done" {
+		t.Fatalf("error = %q, want %q", got.Error, "exit paracell cannot be marked done")
+	}
+}
+
 func TestModelはdのあと別キーなら削除待機を解除する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
@@ -199,8 +283,8 @@ func TestModelはdのあと別キーなら削除待機を解除する(t *testing
 	if got.AwaitingDelete {
 		t.Fatal("AwaitingDelete = true, want false")
 	}
-	if got.Selected != 0 {
-		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	if got.Selected != 1 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 1)
 	}
 }
 

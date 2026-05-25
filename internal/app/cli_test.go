@@ -172,6 +172,33 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	}
 }
 
+func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *testing.T) {
+	dir := t.TempDir()
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{
+		{Name: "123", Template: "default"},
+		{Name: "456", Template: "webapp"},
+	}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+	cellSource := filepath.Join(dir, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(cellSource, 0o755); err != nil {
+		t.Fatalf("cell sourceを作れなかった: %v", err)
+	}
+
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"ls"}, cellSource)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
 func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	dir := t.TempDir()
 
@@ -205,9 +232,10 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
+		_ = exit
 		_ = clean
 		_ = markDone
 		got = append([]domain.Cell(nil), cells...)
@@ -273,8 +301,9 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
+		_ = exit
 		_ = clean
 		_ = markDone
 		if err := enter(cells[0]); err != nil {
@@ -340,9 +369,10 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
+		_ = exit
 		_ = markDone
 		if err := clean(cells[0]); err != nil {
 			t.Fatalf("cleanでエラーが返った: %v", err)
@@ -373,6 +403,31 @@ templates: {}
 	}
 	if deleted.Name != "123" {
 		t.Fatalf("deleted cell = %#v, want name %q", deleted, "123")
+	}
+}
+
+func TestRunExitはTMUX内ならDetachClientを実行する(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+	runner := &fakeRunner{outputs: map[string]string{}}
+
+	if err := runExit(context.Background(), runner); err != nil {
+		t.Fatalf("runExitでエラーが返った: %v", err)
+	}
+	want := []string{"tmux detach-client"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestRunExitはTMUX外なら何もしない(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{outputs: map[string]string{}}
+
+	if err := runExit(context.Background(), runner); err != nil {
+		t.Fatalf("runExitでエラーが返った: %v", err)
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("calls = %#v, want empty", runner.calls)
 	}
 }
 
@@ -512,4 +567,31 @@ func Test未対応コマンドはエラーにする(t *testing.T) {
 	if err == nil {
 		t.Fatal("未対応コマンドなのにエラーが返らなかった")
 	}
+}
+
+type fakeRunner struct {
+	calls   []string
+	outputs map[string]string
+}
+
+func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
+	_ = ctx
+	r.calls = append(r.calls, name+" "+joinArgs(args))
+	return nil
+}
+
+func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
+	_ = ctx
+	return r.outputs[name+" "+joinArgs(args)], nil
+}
+
+func joinArgs(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	out := args[0]
+	for _, arg := range args[1:] {
+		out += " " + arg
+	}
+	return out
 }

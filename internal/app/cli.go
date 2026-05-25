@@ -33,6 +33,12 @@ var (
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
 	}
+	runExit = func(ctx context.Context, runner system.Runner) error {
+		if os.Getenv("TMUX") == "" {
+			return nil
+		}
+		return runner.Run(ctx, "tmux", "detach-client")
+	}
 )
 
 var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
@@ -114,6 +120,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	if err != nil {
 		return err
 	}
+	workdir = projectRootForWorkdir(workdir)
 	runner := system.OSCommandRunner{Dir: workdir}
 	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, "paracell.yaml")}
 	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
@@ -142,6 +149,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		}
 		_, err = runView(ctx, cells, func(cell domain.Cell) error {
 			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
+		}, func() error {
+			return runExit(ctx, runner)
 		}, func(cell domain.Cell) error {
 			return runClean(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
@@ -174,5 +183,22 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		return uc.Execute(ctx, usecase.CleanCellInput{Cell: cmd.Cell})
 	default:
 		return fmt.Errorf("unsupported command %q", cmd.Kind)
+	}
+}
+
+func projectRootForWorkdir(workdir string) string {
+	for dir := filepath.Clean(workdir); ; dir = filepath.Dir(dir) {
+		if filepath.Base(dir) == "source" {
+			cellDir := filepath.Dir(dir)
+			cellsDir := filepath.Dir(cellDir)
+			paracellDir := filepath.Dir(cellsDir)
+			if filepath.Base(cellsDir) == "cells" && filepath.Base(paracellDir) == ".paracell" {
+				return filepath.Dir(paracellDir)
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return workdir
+		}
 	}
 }

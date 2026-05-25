@@ -32,6 +32,7 @@ type Model struct {
 	Error          string
 	Result         Result
 	Enter          func(domain.Cell) error
+	Exit           func() error
 	Delete         func(domain.Cell) error
 	MarkDone       func(domain.Cell) (domain.Cell, error)
 }
@@ -51,6 +52,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.AwaitingDelete {
 			m.AwaitingDelete = false
 			if key == "d" {
+				if m.isExitSelected() {
+					m.Error = "exit paracell cannot be cleaned"
+					return m, nil
+				}
 				if len(m.Cells) == 0 {
 					m.Error = "no cells available"
 					return m, nil
@@ -67,7 +72,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "j":
-			if m.Selected < len(m.Cells)-1 {
+			if m.Selected < m.lastSelectableIndex() {
 				m.Selected++
 			}
 		case "k":
@@ -78,6 +83,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AwaitingDelete = true
 			return m, nil
 		case "enter":
+			if m.isExitSelected() {
+				m.Error = "exit paracell cannot be marked done"
+				return m, nil
+			}
 			if len(m.Cells) == 0 {
 				m.Error = "no cells available"
 				return m, nil
@@ -92,9 +101,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return markDoneResultMsg{cell: updated, err: err}
 			}
 		case "l":
-			if len(m.Cells) == 0 {
-				m.Error = "no cells available"
-				return m, nil
+			if m.isExitSelected() {
+				exit := m.Exit
+				return m, func() tea.Msg {
+					if exit == nil {
+						return exitResultMsg{err: nil}
+					}
+					return exitResultMsg{err: exit()}
+				}
 			}
 			cell := m.Cells[m.Selected]
 			enter := m.Enter
@@ -116,6 +130,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Error = ""
 		m.Result = Result{Action: ActionEnter, Cell: msg.cell}
+		m.Quitting = true
+		return m, tea.Quit
+	case exitResultMsg:
+		if msg.err != nil {
+			m.Error = msg.err.Error()
+			return m, nil
+		}
+		m.Error = ""
+		m.Result = Result{Action: ActionQuit}
 		m.Quitting = true
 		return m, tea.Quit
 	case deleteResultMsg:
@@ -168,13 +191,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) isExitSelected() bool {
+	return m.Selected == len(m.Cells)
+}
+
+func (m Model) lastSelectableIndex() int {
+	return len(m.Cells)
+}
+
 func (m Model) View() string {
 	var b strings.Builder
 	nameWidth, templateWidth := tableWidths(m.Cells)
 	fmt.Fprintf(&b, "  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth))
 	if len(m.Cells) == 0 {
 		b.WriteString("no cells\n")
-		return b.String()
 	}
 	for i, cell := range m.Cells {
 		prefix := " "
@@ -187,6 +217,11 @@ func (m Model) View() string {
 		}
 		fmt.Fprintf(&b, "%s %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), done)
 	}
+	prefix := " "
+	if m.isExitSelected() {
+		prefix = ">"
+	}
+	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
 	if m.Error != "" {
 		fmt.Fprintf(&b, "\nerror: %s\n", m.Error)
 	}
@@ -210,6 +245,10 @@ func padded(value string, width int) string {
 type enterResultMsg struct {
 	cell domain.Cell
 	err  error
+}
+
+type exitResultMsg struct {
+	err error
 }
 
 type deleteResultMsg struct {

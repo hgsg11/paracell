@@ -40,7 +40,7 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
+	result, err := Run(context.Background(), cells, func(cell domain.Cell) error { return nil }, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T
 	}
 	result, err := Run(context.Background(), cells, func(cell domain.Cell) error {
 		return fmt.Errorf("attach failed")
-	}, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
+	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -111,6 +111,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		context.Background(),
 		cells,
 		func(cell domain.Cell) error { return nil },
+		func() error { return nil },
 		func(cell domain.Cell) error { return nil },
 		func(cell domain.Cell) (domain.Cell, error) {
 			if err := cell.MarkDone(); err != nil {
