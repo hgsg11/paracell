@@ -1,0 +1,16 @@
+project:
+    name: "paracell"
+providers:
+    source: git
+    session: tmux
+templates:
+    default:
+        repository:
+            branchPrefix: feat/
+            base: main
+        containers:
+            services: {}
+        session:
+            windows:
+                - name: takt
+                  command: "takt --issue {{.issue}} --workflow usecase-tdd"

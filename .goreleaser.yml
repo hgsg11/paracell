@@ -1,5 +1,7 @@
 version: 2
 
+project_name: paracell
+
 before:
   hooks:
     - go mod tidy
@@ -29,3 +31,22 @@ archives:
 checksum:
   name_template: checksums.txt
 
+homebrew_casks:
+  - name: paracell
+    ids:
+      - paracell
+    binaries:
+      - paracell
+    homepage: https://github.com/hgsg11/paradev
+    description: Create isolated per-issue development cells from a project repo
+    commit_msg_template: "Cask update for {{ .ProjectName }} version {{ .Tag }}"
+    repository:
+      owner: hgsg11
+      name: homebrew-paracell
+      branch: main
+      git:
+        url: ssh://git@github.com/hgsg11/homebrew-paracell.git
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@hgsg11.dev

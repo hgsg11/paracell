@@ -65,6 +65,5 @@ Template commands can use:
 - `paracell fork` copies configured files into the cell source before starting containers.
 
 ## Release
-
-- GitHub Releases are generated with GoReleaser from the `v*` tag workflow in `.github/workflows/release.yml`.
-- Local release dry-runs can use `goreleaser release --clean --snapshot --skip=publish`.
+- Homebrew distribution is published to the `hgsg11/homebrew-paracell` tap as a cask.
+- Install with `brew install --cask hgsg11/homebrew-paracell/paracell`.
