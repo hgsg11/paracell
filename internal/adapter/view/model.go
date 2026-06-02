@@ -15,6 +15,7 @@ type Action string
 const (
 	ActionNone   Action = ""
 	ActionQuit   Action = "quit"
+	ActionExit   Action = "exit"
 	ActionEnter  Action = "enter"
 	ActionDelete Action = "delete"
 )
@@ -32,7 +33,6 @@ type Model struct {
 	Error          string
 	Result         Result
 	Enter          func(domain.Cell) error
-	Exit           func() error
 	Delete         func(domain.Cell) error
 	MarkDone       func(domain.Cell) (domain.Cell, error)
 }
@@ -102,13 +102,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "l":
 			if m.isExitSelected() {
-				exit := m.Exit
-				return m, func() tea.Msg {
-					if exit == nil {
-						return exitResultMsg{err: nil}
-					}
-					return exitResultMsg{err: exit()}
-				}
+				m.Result = Result{Action: ActionExit}
+				m.Quitting = true
+				return m, tea.Quit
 			}
 			cell := m.Cells[m.Selected]
 			enter := m.Enter
@@ -130,15 +126,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Error = ""
 		m.Result = Result{Action: ActionEnter, Cell: msg.cell}
-		m.Quitting = true
-		return m, tea.Quit
-	case exitResultMsg:
-		if msg.err != nil {
-			m.Error = msg.err.Error()
-			return m, nil
-		}
-		m.Error = ""
-		m.Result = Result{Action: ActionQuit}
 		m.Quitting = true
 		return m, tea.Quit
 	case deleteResultMsg:
@@ -245,10 +232,6 @@ func padded(value string, width int) string {
 type enterResultMsg struct {
 	cell domain.Cell
 	err  error
-}
-
-type exitResultMsg struct {
-	err error
 }
 
 type deleteResultMsg struct {

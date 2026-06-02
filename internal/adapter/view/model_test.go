@@ -119,31 +119,22 @@ func TestModelはlで選択中Cellを返す(t *testing.T) {
 	}
 }
 
-func TestModelはlでExitParacellを実行する(t *testing.T) {
+func TestModelはlでExitParacell選択時にExit処理を直接呼ばず終了する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
 	model.Selected = 1
-	called := false
-	model.Exit = func() error {
-		called = true
-		return nil
-	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	if cmd == nil {
-		t.Fatal("lでコマンドが返らなかった")
+		t.Fatal("lで終了コマンドが返らなかった")
 	}
-	updated, nextCmd := next.(Model).Update(cmd())
-	got := updated.(Model)
-	if !called {
-		t.Fatal("exit handlerが呼ばれなかった")
+	got := next.(Model)
+	if got.Result.Action != ActionExit {
+		t.Fatalf("action = %q, want %q", got.Result.Action, ActionExit)
 	}
-	if got.Result.Action != ActionQuit {
-		t.Fatalf("action = %q, want %q", got.Result.Action, ActionQuit)
-	}
-	if nextCmd == nil {
-		t.Fatal("exit paracell成功で終了コマンドが返らなかった")
+	if !got.Quitting {
+		t.Fatal("Quitting = false, want true")
 	}
 }
 

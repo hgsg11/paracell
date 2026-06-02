@@ -131,6 +131,54 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	}
 }
 
+func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
+	original := newProgram
+	defer func() { newProgram = original }()
+
+	exitCalled := false
+	programReturned := false
+	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
+		_ = opts
+		return programFunc(func() (tea.Model, error) {
+			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+			_ = cmd
+			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+			if cmd == nil {
+				t.Fatal("lで終了コマンドが返らなかった")
+			}
+			if exitCalled {
+				t.Fatal("program終了前にexit処理が呼ばれた")
+			}
+			programReturned = true
+			return updated, nil
+		})
+	}
+
+	result, err := Run(
+		context.Background(),
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		func(cell domain.Cell) error { return nil },
+		func() error {
+			if !programReturned {
+				t.Fatal("program終了前にexit処理が呼ばれた")
+			}
+			exitCalled = true
+			return nil
+		},
+		func(cell domain.Cell) error { return nil },
+		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
+	)
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !exitCalled {
+		t.Fatal("exit handlerが呼ばれなかった")
+	}
+	if result.Action != ActionExit {
+		t.Fatalf("action = %q, want %q", result.Action, ActionExit)
+	}
+}
+
 type programFunc func() (tea.Model, error)
 
 func (f programFunc) Run() (tea.Model, error) {

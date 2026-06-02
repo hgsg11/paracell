@@ -20,7 +20,6 @@ func Run(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error
 	_ = ctx
 	model := NewModel(cells)
 	model.Enter = enter
-	model.Exit = exit
 	model.Delete = delete
 	model.MarkDone = markDone
 	p := newProgram(model)
@@ -31,6 +30,11 @@ func Run(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error
 	model, ok := final.(Model)
 	if !ok {
 		return Result{}, fmt.Errorf("unexpected view model type %T", final)
+	}
+	if model.Result.Action == ActionExit && exit != nil {
+		if err := exit(); err != nil {
+			return Result{}, err
+		}
 	}
 	return model.Result, nil
 }
