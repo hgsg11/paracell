@@ -122,6 +122,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	}
 	workdir = projectRootForWorkdir(workdir)
 	runner := system.OSCommandRunner{Dir: workdir}
+	quietRunner := system.CaptureRunner{Dir: workdir}
 	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, "paracell.yaml")}
 	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
 
@@ -148,11 +149,11 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return err
 		}
 		_, err = runView(ctx, cells, func(cell domain.Cell) error {
-			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
+			return runEnter(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, cell)
 		}, func() error {
 			return runExit(ctx, runner)
 		}, func(cell domain.Cell) error {
-			return runClean(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cell)
+			return runClean(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
 		})
