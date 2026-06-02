@@ -100,7 +100,9 @@ func TestModelはlで選択中Cellを返す(t *testing.T) {
 		{ID: "cell-2", Name: "456", Template: "webapp"},
 	})
 	model.Selected = 1
-	model.Enter = func(cell domain.Cell) error { return nil }
+	model.Enter = func(cell domain.Cell) tea.Cmd {
+		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
+	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 	if cmd == nil {

@@ -3,6 +3,7 @@ package view
 import (
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +33,7 @@ type Model struct {
 	AwaitingDelete bool
 	Error          string
 	Result         Result
-	Enter          func(domain.Cell) error
+	Enter          func(domain.Cell) tea.Cmd
 	Delete         func(domain.Cell) error
 	MarkDone       func(domain.Cell) (domain.Cell, error)
 }
@@ -108,12 +109,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			cell := m.Cells[m.Selected]
 			enter := m.Enter
-			return m, func() tea.Msg {
-				if enter == nil {
-					return enterResultMsg{cell: cell, err: errors.New("enter handler is not configured")}
-				}
-				return enterResultMsg{cell: cell, err: enter(cell)}
+			if enter == nil {
+				return m, EnterFailureCmd(cell, errors.New("enter handler is not configured"))
 			}
+			return m, enter(cell)
 		case "q":
 			m.Quitting = true
 			m.Result = Result{Action: ActionQuit}
@@ -232,6 +231,18 @@ func padded(value string, width int) string {
 type enterResultMsg struct {
 	cell domain.Cell
 	err  error
+}
+
+func EnterProcessCmd(cell domain.Cell, cmd *exec.Cmd) tea.Cmd {
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return enterResultMsg{cell: cell, err: err}
+	})
+}
+
+func EnterFailureCmd(cell domain.Cell, err error) tea.Cmd {
+	return func() tea.Msg {
+		return enterResultMsg{cell: cell, err: err}
+	}
 }
 
 type deleteResultMsg struct {

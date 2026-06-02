@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/adapter/state"
 	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
 	"github.com/hgsg11/paracell/internal/domain"
@@ -232,7 +233,7 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
 		_ = exit
@@ -301,14 +302,16 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = exit
 		_ = clean
 		_ = markDone
-		if err := enter(cells[0]); err != nil {
-			t.Fatalf("enterでエラーが返った: %v", err)
+		cmd := enter(cells[0])
+		if cmd == nil {
+			t.Fatal("enterでコマンドが返らなかった")
 		}
+		_ = cmd
 		entered = cells[0]
 		return viewadapter.Result{
 			Action: viewadapter.ActionEnter,
@@ -369,7 +372,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
 		_ = ctx
 		_ = enter
 		_ = exit

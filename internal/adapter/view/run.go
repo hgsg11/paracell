@@ -16,7 +16,7 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 	return tea.NewProgram(model, opts...)
 }
 
-func Run(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) error, exit func() error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (Result, error) {
+func Run(ctx context.Context, cells []domain.Cell, enter func(domain.Cell) tea.Cmd, exit func() error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (Result, error) {
 	_ = ctx
 	model := NewModel(cells)
 	model.Enter = enter

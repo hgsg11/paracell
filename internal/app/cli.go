@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/files"
 	"github.com/hgsg11/paracell/internal/adapter/id"
@@ -38,6 +40,19 @@ var (
 			return nil
 		}
 		return runner.Run(ctx, "tmux", "detach-client")
+	}
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, cell domain.Cell) (*exec.Cmd, error) {
+		loaded, err := cfg.Load(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		if loaded.Providers.Session != "tmux" {
+			return nil, fmt.Errorf("unsupported providers.session %q", loaded.Providers.Session)
+		}
+		if os.Getenv("TMUX") != "" {
+			return exec.CommandContext(ctx, "tmux", "switch-client", "-t", cell.Session.Name), nil
+		}
+		return exec.CommandContext(ctx, "tmux", "attach-session", "-t", cell.Session.Name), nil
 	}
 )
 
@@ -148,8 +163,12 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = runView(ctx, cells, func(cell domain.Cell) error {
-			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
+		_, err = runView(ctx, cells, func(cell domain.Cell) tea.Cmd {
+			cmd, err := runEnterCmd(ctx, configAdapter, cell)
+			if err != nil {
+				return viewadapter.EnterFailureCmd(cell, err)
+			}
+			return viewadapter.EnterProcessCmd(cell, cmd)
 		}, func() error {
 			return runExit(ctx, runner)
 		}, func(cell domain.Cell) error {
