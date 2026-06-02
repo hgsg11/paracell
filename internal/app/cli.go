@@ -149,7 +149,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return err
 		}
 		_, err = runView(ctx, cells, func(cell domain.Cell) error {
-			return runEnter(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, cell)
+			return runEnter(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
 		}, func() error {
 			return runExit(ctx, runner)
 		}, func(cell domain.Cell) error {
