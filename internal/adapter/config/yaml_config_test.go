@@ -611,3 +611,67 @@ templates:
 		t.Fatalf("error = %q, want %q", err.Error(), `volumeMode is not supported for service "db"`)
 	}
 }
+
+func TestYAMLConfigはRepositoryBaseCurrentを読み込む(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: current
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if got := cfg.Templates["default"].Repository.Base; got != "current" {
+		t.Fatalf("repository.base = %q, want %q", got, "current")
+	}
+}
+
+func TestYAMLConfigは空でない不正なRepositoryBaseを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: feature/other
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("不正なrepository.baseなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported repository.base "feature/other" for template "default"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported repository.base "feature/other" for template "default"`)
+	}
+}

@@ -292,6 +292,36 @@ func TestCreateCellはVolumeModeをCellへ保持する(t *testing.T) {
 	}
 }
 
+func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.config.Templates["baseapp"] = domain.Template{
+		Name: "baseapp",
+		Repository: domain.RepositoryTemplate{
+			BranchPrefix: "feat/",
+			Base:         "current",
+		},
+		Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
+	}
+	uc := ForkCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+		IDs:              fixedIDGenerator{id: "cell-1"},
+	}
+
+	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "126", Template: "baseapp"})
+	if err != nil {
+		t.Fatalf("ForkCellでエラーが返った: %v", err)
+	}
+	if cell.Base != "current" {
+		t.Fatalf("cell base = %q, want %q", cell.Base, "current")
+	}
+}
+
 type fakePorts struct {
 	config domain.Config
 	cells  []domain.Cell

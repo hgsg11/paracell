@@ -54,6 +54,7 @@ type Cell struct {
 	Issue      string
 	Name       string
 	Template   string
+	Base       string
 	Branch     string
 	Source     Source
 	Containers Containers
@@ -67,6 +68,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Issue      string     `json:"issue"`
 		Name       string     `json:"name"`
 		Template   string     `json:"template"`
+		Base       string     `json:"base"`
 		Branch     string     `json:"branch"`
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
@@ -78,6 +80,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Issue:      c.Issue,
 		Name:       c.Name,
 		Template:   c.Template,
+		Base:       c.Base,
 		Branch:     c.Branch,
 		Source:     c.Source,
 		Containers: c.Containers,
@@ -92,6 +95,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 		Issue      string     `json:"issue"`
 		Name       string     `json:"name"`
 		Template   string     `json:"template"`
+		Base       string     `json:"base"`
 		Branch     string     `json:"branch"`
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
@@ -106,6 +110,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Issue = decoded.Issue
 	c.Name = decoded.Name
 	c.Template = decoded.Template
+	c.Base = decoded.Base
 	c.Branch = decoded.Branch
 	c.Source = decoded.Source
 	c.Containers = decoded.Containers
@@ -193,6 +198,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		Issue:    issue,
 		Name:     name,
 		Template: template.Name,
+		Base:     template.Repository.Base,
 		Branch:   template.Repository.BranchPrefix + issue,
 		Source: Source{
 			Path: fmt.Sprintf(".paracell/cells/%s/source", name),

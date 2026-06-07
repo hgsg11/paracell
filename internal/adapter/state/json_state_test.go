@@ -55,6 +55,7 @@ func TestCellStateはDatabase設定を保存して読み戻せる(t *testing.T) 
 		Issue:    "123",
 		Name:     "123",
 		Template: "webapp",
+		Base:     "current",
 		Containers: domain.Containers{
 			Services: map[string]domain.CellContainer{
 				"db": {
@@ -84,6 +85,9 @@ func TestCellStateはDatabase設定を保存して読み戻せる(t *testing.T) 
 	}
 	if len(cells) != 1 {
 		t.Fatalf("cells length = %d, want 1", len(cells))
+	}
+	if got := cells[0].Base; got != "current" {
+		t.Fatalf("base = %q, want %q", got, "current")
 	}
 	got := cells[0].Containers.Services["db"].Database
 	want := &domain.DatabaseConfig{

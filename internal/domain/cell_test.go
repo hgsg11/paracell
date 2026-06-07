@@ -30,6 +30,9 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.Name != "123" {
 		t.Fatalf("Cell名 = %q, want %q", cell.Name, "123")
 	}
+	if cell.Base != "main" {
+		t.Fatalf("Base = %q, want %q", cell.Base, "main")
+	}
 	if cell.Branch != "feat/123" {
 		t.Fatalf("ブランチ名 = %q, want %q", cell.Branch, "feat/123")
 	}
@@ -50,6 +53,25 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	}
 	if cell.IsDone() {
 		t.Fatal("IsDone = true, want false")
+	}
+}
+
+func TestテンプレートのBaseをCellへ保持する(t *testing.T) {
+	factory := NewCellFactory()
+	template := Template{
+		Name: "webapp",
+		Repository: RepositoryTemplate{
+			BranchPrefix: "feat/",
+			Base:         "current",
+		},
+	}
+
+	cell, err := factory.NewCell("cell-1", "123", template, "myapp")
+	if err != nil {
+		t.Fatalf("Cell作成でエラーが返った: %v", err)
+	}
+	if cell.Base != "current" {
+		t.Fatalf("cell base = %q, want %q", cell.Base, "current")
 	}
 }
 
