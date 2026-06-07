@@ -125,7 +125,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Containers = decoded.Containers
 	c.Session = decoded.Session
 	if decoded.Status == "" {
-		c.status = CellStatusPending
+		c.status = CellStatusReady
 	} else {
 		c.status = decoded.Status
 	}
@@ -225,7 +225,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 			Name:    prefix,
 			Windows: windows,
 		},
-		status: CellStatusPending,
+		status: CellStatusReady,
 		done:   false,
 	}, nil
 }
@@ -266,7 +266,7 @@ func (c *Cell) SetStatus(status string) error {
 
 func (c Cell) Status() string {
 	if c.status == "" {
-		return CellStatusPending
+		return CellStatusReady
 	}
 	return c.status
 }

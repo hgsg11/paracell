@@ -14,13 +14,13 @@ type TmuxAdapter struct {
 
 func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error {
 	if len(cell.Session.Windows) == 0 {
-		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-c", cell.Source.Path); err != nil {
+		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-c", cell.Source.Path); err != nil {
 			return err
 		}
 		return a.configureSessionBindings(ctx, cell)
 	}
 	first := cell.Session.Windows[0]
-	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-n", first.Name, "-c", cell.Source.Path); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-n", first.Name, "-c", cell.Source.Path); err != nil {
 		return err
 	}
 	if err := a.runWindowCommand(ctx, cell, first); err != nil {

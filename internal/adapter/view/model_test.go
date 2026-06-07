@@ -61,7 +61,7 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  STATUS   DONE\n> 123    default   pending  [ ]\n  45678  web       ready    [x]\n\n  exit paracell\n"
+	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -73,7 +73,7 @@ func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME  TEMPLATE  STATUS   DONE\n> 123   default   pending  [ ]\n\n  exit paracell\n"
+	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}

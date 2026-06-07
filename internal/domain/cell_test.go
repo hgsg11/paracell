@@ -54,8 +54,8 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.IsDone() {
 		t.Fatal("IsDone = true, want false")
 	}
-	if got := cell.Status(); got != CellStatusPending {
-		t.Fatalf("Status = %q, want %q", got, CellStatusPending)
+	if got := cell.Status(); got != CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got, CellStatusReady)
 	}
 }
 

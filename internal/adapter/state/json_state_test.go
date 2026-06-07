@@ -54,6 +54,22 @@ func TestCellを保存して読み戻せる(t *testing.T) {
 	}
 }
 
+func TestCellは未設定StatusならReadyとして読み戻せる(t *testing.T) {
+	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.json")}
+	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+
+	if err := store.SaveCells(context.Background(), []domain.Cell{cell}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatalf("state読み込みでエラーが返った: %v", err)
+	}
+	if got := cells[0].Status(); got != domain.CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	}
+}
+
 func TestCellStateはDatabase設定を保存して読み戻せる(t *testing.T) {
 	store := JSONCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.json")}
 	cell := domain.Cell{

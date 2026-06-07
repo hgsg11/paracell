@@ -341,14 +341,14 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	want := []domain.Cell{
 		func() domain.Cell {
 			cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
-			if err := cell.SetStatus(domain.CellStatusPending); err != nil {
+			if err := cell.SetStatus(domain.CellStatusReady); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
 		}(),
 		func() domain.Cell {
 			cell := domain.Cell{ID: "cell-2", Name: "456", Template: "webapp"}
-			if err := cell.SetStatus(domain.CellStatusPending); err != nil {
+			if err := cell.SetStatus(domain.CellStatusReady); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
