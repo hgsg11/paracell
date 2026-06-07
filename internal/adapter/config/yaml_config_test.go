@@ -27,6 +27,7 @@ templates:
       - .env
       - apps/web/.env.local
     containers:
+      network: isolated
       services:
         web:
           sourceContainer: myapp-web
@@ -66,6 +67,9 @@ templates:
 	if template.Containers.Services["web"].SourceContainer != "myapp-web" {
 		t.Fatalf("webのsourceContainer = %q, want %q", template.Containers.Services["web"].SourceContainer, "myapp-web")
 	}
+	if template.Containers.Network != "isolated" {
+		t.Fatalf("containers.network = %q, want %q", template.Containers.Network, "isolated")
+	}
 	if len(template.Files) != 2 || template.Files[0] != ".env" || template.Files[1] != "apps/web/.env.local" {
 		t.Fatalf("files = %#v, want .env and apps/web/.env.local", template.Files)
 	}
@@ -95,6 +99,7 @@ func TestYAML設定を保存できる(t *testing.T) {
 				},
 				Files: []string{".env"},
 				Containers: domain.ContainerTemplate{
+					Network: "shared",
 					Services: map[string]domain.ContainerServiceTemplate{
 						"web": {SourceContainer: "myapp-web"},
 					},
@@ -125,6 +130,7 @@ templates:
         files:
             - .env
         containers:
+            network: shared
             services:
                 web:
                     sourceContainer: myapp-web

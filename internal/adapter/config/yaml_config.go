@@ -63,7 +63,7 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		if err := validateRepositoryBase(name, rendered.Repository); err != nil {
 			return domain.Config{}, err
 		}
-		if err := validateContainerServices(rendered.Containers.Services); err != nil {
+		if err := validateContainerTemplate(rendered.Containers); err != nil {
 			return domain.Config{}, err
 		}
 		templates[name] = domain.Template{
@@ -96,6 +96,15 @@ func validateRepositoryBase(name string, repository domain.RepositoryTemplate) e
 	default:
 		return fmt.Errorf("unsupported repository.base %q for template %q", repository.Base, name)
 	}
+}
+
+func validateContainerTemplate(containers domain.ContainerTemplate) error {
+	switch containers.Network {
+	case "", domain.ContainerNetworkModeIsolated, domain.ContainerNetworkModeShared:
+	default:
+		return fmt.Errorf("unsupported containers.network %q", containers.Network)
+	}
+	return validateContainerServices(containers.Services)
 }
 
 func validateContainerServices(services map[string]domain.ContainerServiceTemplate) error {

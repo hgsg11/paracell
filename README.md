@@ -44,6 +44,7 @@ templates:
     files:
       - .env
     containers:
+      network: isolated
       services:
         web:
           sourceContainer: myapp-web

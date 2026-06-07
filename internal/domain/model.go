@@ -25,8 +25,14 @@ type RepositoryTemplate struct {
 }
 
 type ContainerTemplate struct {
+	Network  string                              `yaml:"network,omitempty" json:"network,omitempty"`
 	Services map[string]ContainerServiceTemplate `yaml:"services" json:"services"`
 }
+
+const (
+	ContainerNetworkModeIsolated = "isolated"
+	ContainerNetworkModeShared   = "shared"
+)
 
 type DatabaseConfig struct {
 	System    string   `yaml:"system,omitempty" json:"system,omitempty"`
@@ -138,8 +144,9 @@ type Source struct {
 }
 
 type Containers struct {
-	Network  string
-	Services map[string]CellContainer
+	Network     string
+	NetworkMode string
+	Services    map[string]CellContainer
 }
 
 type CellContainer struct {
@@ -218,8 +225,9 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
 		},
 		Containers: Containers{
-			Network:  prefix,
-			Services: services,
+			Network:     prefix,
+			NetworkMode: template.Containers.Network,
+			Services:    services,
 		},
 		Session: Session{
 			Name:    prefix,

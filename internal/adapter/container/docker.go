@@ -63,7 +63,7 @@ type DockerCLIAdapter struct {
 
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	network := cellNetworkName(cell)
-	if network != "" {
+	if shouldCreateIsolatedNetwork(cell.Containers.NetworkMode) && network != "" {
 		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
 			return err
 		}
@@ -82,10 +82,14 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		if err != nil {
 			return err
 		}
+		runNetwork := network
+		if cell.Containers.NetworkMode == domain.ContainerNetworkModeShared {
+			runNetwork = firstNetwork(inspection.NetworkSettings.Networks)
+		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:    service.ContainerName,
 			Image:   inspection.Config.Image,
-			Network: network,
+			Network: runNetwork,
 			Env:     append([]string(nil), inspection.Config.Env...),
 			Mounts:  mounts,
 		})
@@ -357,6 +361,22 @@ func cellNetworkName(cell domain.Cell) string {
 	return cell.Containers.Network
 }
 
+func shouldCreateIsolatedNetwork(mode string) bool {
+	return mode == "" || mode == domain.ContainerNetworkModeIsolated
+}
+
+func firstNetwork(networks map[string]dockerNetwork) string {
+	names := make([]string, 0, len(networks))
+	for name := range networks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[0]
+}
+
 func sortedServiceRoles(services map[string]domain.CellContainer) []string {
 	roles := make([]string, 0, len(services))
 	for role := range services {
@@ -371,15 +391,18 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 		service := cell.Containers.Services[role]
 		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
 	}
-	if network := cellNetworkName(cell); network != "" {
-		_ = a.Runner.Run(ctx, "docker", "network", "rm", network)
+	if cell.Containers.NetworkMode == domain.ContainerNetworkModeIsolated || cell.Containers.NetworkMode == "" {
+		if network := cellNetworkName(cell); network != "" {
+			_ = a.Runner.Run(ctx, "docker", "network", "rm", network)
+		}
 	}
 	return nil
 }
 
 type containerInspection struct {
-	Config dockerConfig  `json:"Config"`
-	Mounts []dockerMount `json:"Mounts"`
+	Config          dockerConfig          `json:"Config"`
+	Mounts          []dockerMount         `json:"Mounts"`
+	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
 }
 
 type dockerConfig struct {
@@ -394,3 +417,9 @@ type dockerMount struct {
 	Destination string `json:"Destination"`
 	RW          bool   `json:"RW"`
 }
+
+type dockerNetworkSettings struct {
+	Networks map[string]dockerNetwork `json:"Networks"`
+}
+
+type dockerNetwork struct{}
