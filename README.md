@@ -45,6 +45,7 @@ templates:
       services:
         web:
           sourceContainer: myapp-web
+          volumeMode: copy
         db:
           sourceContainer: myapp-db
           database:
@@ -70,6 +71,8 @@ Template commands can use:
 - `paracell init` generates a default `paracell.yaml`.
 - `paracell ls` reads the stored state and does not require `paracell.yaml`.
 - `paracell fork` copies configured files into the cell source before starting containers.
+- `volumeMode: readonly` keeps the current shared read-only volume behavior for non-database services.
+- `volumeMode: copy` clones named Docker volumes for non-database services.
 - `database.copyMode: data` is reserved and is not implemented yet.
 
 ## Release

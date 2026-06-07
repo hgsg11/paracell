@@ -36,6 +36,7 @@ type DatabaseConfig struct {
 
 type ContainerServiceTemplate struct {
 	SourceContainer string          `yaml:"sourceContainer" json:"sourceContainer"`
+	VolumeMode      string          `yaml:"volumeMode,omitempty" json:"volumeMode,omitempty"`
 	Database        *DatabaseConfig `yaml:"database,omitempty" json:"database,omitempty"`
 }
 
@@ -125,6 +126,7 @@ type Containers struct {
 type CellContainer struct {
 	ContainerName   string
 	SourceContainer string
+	VolumeMode      string
 	Database        *DatabaseConfig
 }
 
@@ -177,6 +179,7 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		services[role] = CellContainer{
 			ContainerName:   fmt.Sprintf("%s-%s", prefix, role),
 			SourceContainer: service.SourceContainer,
+			VolumeMode:      service.VolumeMode,
 			Database:        database,
 		}
 	}

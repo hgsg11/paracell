@@ -71,12 +71,16 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		if err != nil {
 			return err
 		}
+		mounts, err := a.prepareMounts(ctx, cell, service, inspection.Mounts)
+		if err != nil {
+			return err
+		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:    service.ContainerName,
 			Image:   inspection.Config.Image,
 			Network: firstNetwork(inspection.NetworkSettings.Networks),
 			Env:     append([]string(nil), inspection.Config.Env...),
-			Mounts:  a.cellMounts(cell, service, inspection.Mounts),
+			Mounts:  mounts,
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
@@ -98,6 +102,13 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 		return containerInspection{}, err
 	}
 	return inspection, nil
+}
+
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, mounts []dockerMount) ([]string, error) {
+	if service.VolumeMode != "copy" {
+		return a.cellMounts(cell, service, mounts), nil
+	}
+	return a.copyMounts(ctx, cell, service, mounts)
 }
 
 func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContainer, mounts []dockerMount) []string {
@@ -128,6 +139,42 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 	return out
 }
 
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, mounts []dockerMount) ([]string, error) {
+	out := make([]string, 0, len(mounts))
+	for _, mount := range mounts {
+		if mount.Type == "volume" && mount.Name != "" {
+			targetVolume := copiedVolumeName(service.ContainerName, mount.Destination)
+			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
+				return nil, err
+			}
+			spec := targetVolume + ":" + mount.Destination
+			if !mount.RW {
+				spec += ":ro"
+			}
+			out = append(out, spec)
+			continue
+		}
+		if mount.Type != "bind" {
+			continue
+		}
+		rel, err := filepath.Rel(a.Root, mount.Source)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		source := cell.Source.Path
+		if rel != "." {
+			source = filepath.Join(cell.Source.Path, rel)
+		}
+		spec := source + ":" + mount.Destination
+		if !mount.RW {
+			spec += ":ro"
+		}
+		out = append(out, spec)
+	}
+	out = append(out, a.initFileMounts(cell, service)...)
+	return out, nil
+}
+
 func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellContainer) []string {
 	if service.Database == nil {
 		return nil
@@ -140,6 +187,24 @@ func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellCo
 		out = append(out, source+":"+target+":ro")
 	}
 	return out
+}
+
+func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, target string) error {
+	if err := a.Runner.Run(ctx, "docker", "volume", "create", target); err != nil {
+		return err
+	}
+	return a.Runner.Run(
+		ctx,
+		"docker",
+		"run",
+		"--rm",
+		"-v", source+":/from:ro",
+		"-v", target+":/to",
+		"alpine",
+		"sh",
+		"-c",
+		"cp -a /from/. /to/",
+	)
 }
 
 func firstNetwork(networks map[string]dockerNetwork) string {
@@ -277,6 +342,15 @@ func mysqlDumpArgs(container string, conn mysqlConnection) []string {
 
 func shQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
+}
+
+func copiedVolumeName(container string, destination string) string {
+	name := strings.Trim(destination, "/")
+	name = strings.ReplaceAll(name, "/", "-")
+	if name == "" {
+		name = "root"
+	}
+	return container + "-" + name
 }
 
 func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {

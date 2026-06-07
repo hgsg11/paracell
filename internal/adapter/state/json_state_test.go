@@ -66,6 +66,11 @@ func TestCellStateはDatabase設定を保存して読み戻せる(t *testing.T) 
 						InitFiles: []string{"docker/mysql/init/001-users.sql"},
 					},
 				},
+				"web": {
+					ContainerName:   "paracell-myapp-123-web",
+					SourceContainer: "myapp-web",
+					VolumeMode:      "copy",
+				},
 			},
 		},
 	}
@@ -88,5 +93,8 @@ func TestCellStateはDatabase設定を保存して読み戻せる(t *testing.T) 
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("database = %#v, want %#v", got, want)
+	}
+	if got := cells[0].Containers.Services["web"].VolumeMode; got != "copy" {
+		t.Fatalf("volumeMode = %q, want %q", got, "copy")
 	}
 }

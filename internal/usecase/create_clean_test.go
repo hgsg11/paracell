@@ -254,6 +254,44 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 	}
 }
 
+func TestCreateCellはVolumeModeをCellへ保持する(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.config.Templates["volumeapp"] = domain.Template{
+		Name: "volumeapp",
+		Repository: domain.RepositoryTemplate{
+			BranchPrefix: "feat/",
+			Base:         "main",
+		},
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {
+					SourceContainer: "myapp-web",
+					VolumeMode:      "copy",
+				},
+			},
+		},
+		Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
+	}
+	uc := ForkCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+		IDs:              fixedIDGenerator{id: "cell-1"},
+	}
+
+	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "125", Template: "volumeapp"})
+	if err != nil {
+		t.Fatalf("ForkCellでエラーが返った: %v", err)
+	}
+	if got := cell.Containers.Services["web"].VolumeMode; got != "copy" {
+		t.Fatalf("VolumeMode = %q, want %q", got, "copy")
+	}
+}
+
 type fakePorts struct {
 	config domain.Config
 	cells  []domain.Cell

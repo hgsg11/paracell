@@ -88,11 +88,22 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 
 func validateContainerServices(services map[string]domain.ContainerServiceTemplate) error {
 	for role, service := range services {
+		switch service.VolumeMode {
+		case "", "readonly", "copy":
+		default:
+			return fmt.Errorf("unsupported volumeMode %q for service %q", service.VolumeMode, role)
+		}
 		if service.Database == nil {
+			if role == "db" && service.VolumeMode != "" {
+				return fmt.Errorf("volumeMode is not supported for service %q", role)
+			}
 			continue
 		}
 		if role != "db" {
 			return fmt.Errorf("database config is only supported for service %q", "db")
+		}
+		if service.VolumeMode != "" {
+			return fmt.Errorf("volumeMode is not supported for service %q", role)
 		}
 		switch service.Database.System {
 		case "mysql":

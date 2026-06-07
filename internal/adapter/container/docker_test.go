@@ -233,6 +233,47 @@ func TestCreateContainersはInitFilesをCellSource経由でMountする(t *testin
 	}
 }
 
+func TestCreateContainersはVolumeModeCopyでNamedVolumeを複製する(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev"]},"Mounts":[{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Containers: domain.Containers{
+			Services: map[string]domain.CellContainer{
+				"web": {
+					ContainerName:   "paracell-myapp-123-web",
+					SourceContainer: "myapp-web",
+					VolumeMode:      "copy",
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantRunCalls := []string{
+		"docker volume create paracell-myapp-123-web-app-vendor",
+		"docker run --rm -v myapp_vendor:/from:ro -v paracell-myapp-123-web-app-vendor:/to alpine sh -c cp -a /from/. /to/",
+		"docker run -d --name paracell-myapp-123-web --network myapp_default -e APP_ENV=dev -v paracell-myapp-123-web-app-vendor:/app/vendor myapp-web:latest",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
 type fakeRunner struct {
 	outputs     []string
 	outputCalls []string

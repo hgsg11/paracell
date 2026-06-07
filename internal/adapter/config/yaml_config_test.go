@@ -506,3 +506,108 @@ templates:
 		t.Fatalf("error = %q, want %q", err.Error(), `database config is only supported for service "db"`)
 	}
 }
+
+func TestYAMLConfigはVolumeMode設定を読み込む(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+          volumeMode: copy
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if got := cfg.Templates["default"].Containers.Services["web"].VolumeMode; got != "copy" {
+		t.Fatalf("volumeMode = %q, want %q", got, "copy")
+	}
+}
+
+func TestYAMLConfigは未対応volumeModeを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+          volumeMode: nonsense
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("未対応volumeModeなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported volumeMode "nonsense" for service "web"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported volumeMode "nonsense" for service "web"`)
+	}
+}
+
+func TestYAMLConfigはdbServiceでVolumeModeを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          volumeMode: copy
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("db serviceのvolumeModeなのにエラーが返らなかった")
+	}
+	if err.Error() != `volumeMode is not supported for service "db"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `volumeMode is not supported for service "db"`)
+	}
+}
