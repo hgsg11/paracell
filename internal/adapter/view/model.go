@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -36,6 +37,7 @@ type Model struct {
 	Enter          func(domain.Cell) tea.Cmd
 	Delete         func(domain.Cell) error
 	MarkDone       func(domain.Cell) (domain.Cell, error)
+	Reload         func() ([]domain.Cell, error)
 }
 
 func NewModel(cells []domain.Cell) Model {
@@ -43,7 +45,7 @@ func NewModel(cells []domain.Cell) Model {
 }
 
 func (m Model) Init() tea.Cmd {
-	return nil
+	return m.refreshCmd()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -173,6 +175,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Cells[index] = msg.cell
 		return m, nil
+	case refreshMsg:
+		if m.Reload == nil {
+			return m, m.refreshCmd()
+		}
+		cells, err := m.Reload()
+		if err != nil {
+			m.Error = err.Error()
+			return m, m.refreshCmd()
+		}
+		m.Error = ""
+		selectedID := ""
+		if m.Selected >= 0 && m.Selected < len(m.Cells) {
+			selectedID = m.Cells[m.Selected].ID
+		}
+		m.Cells = cells
+		if selectedID != "" {
+			for i, cell := range m.Cells {
+				if cell.ID == selectedID {
+					m.Selected = i
+					break
+				}
+			}
+		}
+		if m.Selected >= len(m.Cells) {
+			m.Selected = len(m.Cells)
+		}
+		return m, m.refreshCmd()
 	}
 	return m, nil
 }
@@ -230,6 +259,15 @@ func padded(value string, width int) string {
 	return lipgloss.NewStyle().Width(width).Render(value)
 }
 
+func (m Model) refreshCmd() tea.Cmd {
+	if m.Reload == nil {
+		return nil
+	}
+	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg {
+		return refreshMsg{}
+	})
+}
+
 type enterResultMsg struct {
 	cell domain.Cell
 	err  error
@@ -256,3 +294,5 @@ type markDoneResultMsg struct {
 	cell domain.Cell
 	err  error
 }
+
+type refreshMsg struct{}

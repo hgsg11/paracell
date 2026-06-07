@@ -195,6 +195,28 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	}
 }
 
+func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Reload = func() ([]domain.Cell, error) {
+		cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+		if err := cell.SetStatus(domain.CellStatusReady); err != nil {
+			t.Fatalf("SetStatusでエラーが返った: %v", err)
+		}
+		return []domain.Cell{cell}, nil
+	}
+
+	next, cmd := model.Update(refreshMsg{})
+	got := next.(Model)
+	if got.Cells[0].Status() != domain.CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got.Cells[0].Status(), domain.CellStatusReady)
+	}
+	if cmd == nil {
+		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
+	}
+}
+
 func TestModelはExitParacellをCleanできない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},

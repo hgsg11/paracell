@@ -213,7 +213,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = runView(ctx, cells, func(cell domain.Cell) tea.Cmd {
+		_, err = runView(ctx, cells, func() ([]domain.Cell, error) {
+			return stateAdapter.LoadCells(ctx)
+		}, func(cell domain.Cell) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, configAdapter, cell)
 			if err != nil {
 				return viewadapter.EnterFailureCmd(cell, err)

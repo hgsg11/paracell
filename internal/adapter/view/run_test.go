@@ -40,7 +40,9 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, func(cell domain.Cell) tea.Cmd {
+	result, err := Run(context.Background(), cells, func() ([]domain.Cell, error) {
+		return cells, nil
+	}, func(cell domain.Cell) tea.Cmd {
 		if cell.Name != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
@@ -78,7 +80,9 @@ func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, func(cell domain.Cell) tea.Cmd {
+	result, err := Run(context.Background(), cells, func() ([]domain.Cell, error) {
+		return cells, nil
+	}, func(cell domain.Cell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
 	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
 	if err != nil {
@@ -115,6 +119,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	result, err := Run(
 		context.Background(),
 		cells,
+		func() ([]domain.Cell, error) { return cells, nil },
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error { return nil },
 		func(cell domain.Cell) error { return nil },
@@ -157,6 +162,9 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	result, err := Run(
 		context.Background(),
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		func() ([]domain.Cell, error) {
+			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
+		},
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error {
 			exitCalled = true
