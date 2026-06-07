@@ -76,6 +76,28 @@ func TestHelpオプションを解析できる(t *testing.T) {
 	}
 }
 
+func TestVersionコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"version"})
+
+	if err != nil {
+		t.Fatalf("version解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandVersion {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandVersion)
+	}
+}
+
+func TestVersionオプションを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"--version"})
+
+	if err != nil {
+		t.Fatalf("--version解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandVersion {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandVersion)
+	}
+}
+
 func Test引数なしはViewコマンドとして解析する(t *testing.T) {
 	cmd, err := ParseCommand([]string{})
 
@@ -125,7 +147,34 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|ls|view|clean|help]\n"
+	want := "usage: paracell [init|fork|ls|view|clean|version|help]\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
+func TestRunはVersionを出力する(t *testing.T) {
+	dir := t.TempDir()
+	originalVersion := Version
+	originalCommit := Commit
+	originalDate := BuildDate
+	defer func() {
+		Version = originalVersion
+		Commit = originalCommit
+		BuildDate = originalDate
+	}()
+	Version = "v0.1.6"
+	Commit = "abc1234"
+	BuildDate = "2026-06-08T12:34:56Z"
+
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"version"}, dir)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	want := "paracell v0.1.6\ncommit: abc1234\nbuilt: 2026-06-08T12:34:56Z\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}

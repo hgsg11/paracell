@@ -17,6 +17,8 @@ paracell ls
 paracell view
 paracell clean <cell>
 paracell clean <cell> --force
+paracell version
+paracell --version
 ```
 
 ## Files
@@ -74,6 +76,7 @@ Template commands can use:
 - `volumeMode: readonly` keeps the current shared read-only volume behavior for non-database services.
 - `volumeMode: copy` clones named Docker volumes for non-database services.
 - `database.copyMode: data` is reserved and is not implemented yet.
+- `paracell version` and `paracell --version` show release metadata injected at build time.
 
 ## Release
 - Homebrew distribution is published to the `hgsg11/homebrew-paracell` tap as a cask.

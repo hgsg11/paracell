@@ -77,10 +77,17 @@ const (
 	CommandClean CommandKind = "clean"
 	CommandList  CommandKind = "ls"
 	CommandView  CommandKind = "view"
+	CommandVersion CommandKind = "version"
 	CommandHelp  CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|ls|view|clean|help]\n"
+const usage = "usage: paracell [init|fork|ls|view|clean|version|help]\n"
+
+var (
+	Version   = "dev"
+	Commit    = "none"
+	BuildDate = "unknown"
+)
 
 type Command struct {
 	Kind     CommandKind
@@ -95,6 +102,11 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Kind: CommandView}, nil
 	}
 	switch args[0] {
+	case "--version":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell --version")
+		}
+		return Command{Kind: CommandVersion}, nil
 	case "--help", "-h", "help":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell help")
@@ -115,6 +127,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell view")
 		}
 		return Command{Kind: CommandView}, nil
+	case "version":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell version")
+		}
+		return Command{Kind: CommandVersion}, nil
 	case "fork":
 		if len(args) != 4 || args[2] != "--template" || args[1] == "" || args[3] == "" {
 			return Command{}, errors.New("usage: paracell fork <issue> --template <template>")
@@ -142,6 +159,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
 
 	switch cmd.Kind {
+	case CommandVersion:
+		_, err := os.Stdout.WriteString(formatVersion())
+		return err
 	case CommandHelp:
 		_, err := os.Stdout.WriteString(usage)
 		return err
@@ -204,6 +224,10 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	default:
 		return fmt.Errorf("unsupported command %q", cmd.Kind)
 	}
+}
+
+func formatVersion() string {
+	return fmt.Sprintf("%s %s\ncommit: %s\nbuilt: %s\n", AppName, Version, Commit, BuildDate)
 }
 
 func projectRootForWorkdir(workdir string) string {
