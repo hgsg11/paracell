@@ -54,6 +54,9 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if cell.IsDone() {
 		t.Fatal("IsDone = true, want false")
 	}
+	if got := cell.Status(); got != CellStatusPending {
+		t.Fatalf("Status = %q, want %q", got, CellStatusPending)
+	}
 }
 
 func TestテンプレートのBaseをCellへ保持する(t *testing.T) {
@@ -154,5 +157,29 @@ func TestDoneでないCellはCleanできない(t *testing.T) {
 
 	if err := cell.Clean(); err == nil {
 		t.Fatal("doneでないcellなのにCleanできてしまった")
+	}
+}
+
+func TestCellはStatusを更新できる(t *testing.T) {
+	cell := Cell{}
+
+	if err := cell.SetStatus(CellStatusReady); err != nil {
+		t.Fatalf("SetStatusでエラーが返った: %v", err)
+	}
+	if got := cell.Status(); got != CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got, CellStatusReady)
+	}
+}
+
+func TestCellは未対応Statusを拒否する(t *testing.T) {
+	cell := Cell{}
+
+	err := cell.SetStatus("running")
+
+	if err == nil {
+		t.Fatal("未対応statusなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported status "running"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported status "running"`)
 	}
 }

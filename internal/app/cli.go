@@ -35,6 +35,10 @@ var (
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
 	}
+	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, cellName string, status string) (domain.Cell, error) {
+		uc := usecase.SetCellStatusUseCase{State: state}
+		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
+	}
 	runExit = func(ctx context.Context, runner system.Runner) error {
 		if os.Getenv("TMUX") == "" {
 			return nil
@@ -72,16 +76,18 @@ type CommandKind string
 const AppName = "paracell"
 
 const (
-	CommandInit  CommandKind = "init"
-	CommandFork  CommandKind = "fork"
-	CommandClean CommandKind = "clean"
-	CommandList  CommandKind = "ls"
-	CommandView  CommandKind = "view"
+	CommandInit    CommandKind = "init"
+	CommandFork    CommandKind = "fork"
+	CommandClean   CommandKind = "clean"
+	CommandList    CommandKind = "ls"
+	CommandPending CommandKind = "pending"
+	CommandReady   CommandKind = "ready"
+	CommandView    CommandKind = "view"
 	CommandVersion CommandKind = "version"
-	CommandHelp  CommandKind = "help"
+	CommandHelp    CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|ls|view|clean|version|help]\n"
+const usage = "usage: paracell [init|fork|ls|view|clean|pending|ready|version|help]\n"
 
 var (
 	Version   = "dev"
@@ -127,6 +133,16 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell view")
 		}
 		return Command{Kind: CommandView}, nil
+	case "pending":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell pending")
+		}
+		return Command{Kind: CommandPending}, nil
+	case "ready":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell ready")
+		}
+		return Command{Kind: CommandReady}, nil
 	case "version":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell version")
@@ -176,6 +192,20 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return err
 		}
 		_, err = os.Stdout.WriteString(output.FormatCellList(cells))
+		return err
+	case CommandPending:
+		cellName, err := currentCellFromEnv()
+		if err != nil {
+			return err
+		}
+		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.CellStatusPending)
+		return err
+	case CommandReady:
+		cellName, err := currentCellFromEnv()
+		if err != nil {
+			return err
+		}
+		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.CellStatusReady)
 		return err
 	case CommandView:
 		uc := usecase.ViewCellsUseCase{State: stateAdapter}
@@ -228,6 +258,14 @@ func Run(ctx context.Context, args []string, workdir string) error {
 
 func formatVersion() string {
 	return fmt.Sprintf("%s %s\ncommit: %s\nbuilt: %s\n", AppName, Version, Commit, BuildDate)
+}
+
+func currentCellFromEnv() (string, error) {
+	cell := os.Getenv("PARACELL_CELL")
+	if cell == "" {
+		return "", errors.New("PARACELL_CELL is required")
+	}
+	return cell, nil
 }
 
 func projectRootForWorkdir(workdir string) string {

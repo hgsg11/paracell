@@ -169,6 +169,26 @@ func TestMarkCellDoneはStateのCellのDoneを切り替える(t *testing.T) {
 	}
 }
 
+func TestSetCellStatusはStateのCellのStatusを更新する(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cells = []domain.Cell{
+		{ID: "cell-1", Issue: "123", Name: "123"},
+	}
+
+	uc := SetCellStatusUseCase{State: ports}
+	cell, err := uc.Execute(ctx, SetCellStatusInput{Cell: "123", Status: domain.CellStatusReady})
+	if err != nil {
+		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
+	}
+	if got := cell.Status(); got != domain.CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	}
+	if got := ports.cells[0].Status(); got != domain.CellStatusReady {
+		t.Fatalf("stateのcell status = %q, want %q", got, domain.CellStatusReady)
+	}
+}
+
 func TestListCellsはStateのCell一覧を返す(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()

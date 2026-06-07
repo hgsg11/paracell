@@ -52,13 +52,16 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	if err := doneCell.MarkDone(); err != nil {
 		t.Fatalf("MarkDoneでエラーが返った: %v", err)
 	}
+	if err := doneCell.SetStatus(domain.CellStatusReady); err != nil {
+		t.Fatalf("SetStatusでエラーが返った: %v", err)
+	}
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 		doneCell,
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  DONE\n> 123    default   [ ]\n  45678  web       [x]\n\n  exit paracell\n"
+	want := "  NAME   TEMPLATE  STATUS   DONE\n> 123    default   pending  [ ]\n  45678  web       ready    [x]\n\n  exit paracell\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -70,7 +73,7 @@ func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME  TEMPLATE  DONE\n> 123   default   [ ]\n\n  exit paracell\n"
+	want := "  NAME  TEMPLATE  STATUS   DONE\n> 123   default   pending  [ ]\n\n  exit paracell\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}

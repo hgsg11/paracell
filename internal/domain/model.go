@@ -59,8 +59,14 @@ type Cell struct {
 	Source     Source
 	Containers Containers
 	Session    Session
+	status     string
 	done       bool
 }
+
+const (
+	CellStatusPending = "pending"
+	CellStatusReady   = "ready"
+)
 
 func (c Cell) MarshalJSON() ([]byte, error) {
 	type cellJSON struct {
@@ -73,6 +79,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
+		Status     string     `json:"status"`
 		Done       bool       `json:"done"`
 	}
 	return json.Marshal(cellJSON{
@@ -85,6 +92,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Source:     c.Source,
 		Containers: c.Containers,
 		Session:    c.Session,
+		Status:     c.Status(),
 		Done:       c.done,
 	})
 }
@@ -100,6 +108,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
+		Status     string     `json:"status"`
 		Done       bool       `json:"done"`
 	}
 	var decoded cellJSON
@@ -115,6 +124,11 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Source = decoded.Source
 	c.Containers = decoded.Containers
 	c.Session = decoded.Session
+	if decoded.Status == "" {
+		c.status = CellStatusPending
+	} else {
+		c.status = decoded.Status
+	}
 	c.done = decoded.Done
 	return nil
 }
@@ -211,7 +225,8 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 			Name:    prefix,
 			Windows: windows,
 		},
-		done: false,
+		status: CellStatusPending,
+		done:   false,
 	}, nil
 }
 
@@ -237,6 +252,23 @@ func (c *Cell) MarkDone() error {
 
 func (c *Cell) ToggleDone() {
 	c.done = !c.done
+}
+
+func (c *Cell) SetStatus(status string) error {
+	switch status {
+	case CellStatusPending, CellStatusReady:
+		c.status = status
+		return nil
+	default:
+		return fmt.Errorf("unsupported status %q", status)
+	}
+}
+
+func (c Cell) Status() string {
+	if c.status == "" {
+		return CellStatusPending
+	}
+	return c.status
 }
 
 func (c Cell) IsDone() bool {

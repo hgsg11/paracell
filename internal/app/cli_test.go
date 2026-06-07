@@ -137,6 +137,28 @@ func TestCleanコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestPendingコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"pending"})
+
+	if err != nil {
+		t.Fatalf("pending解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandPending {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandPending)
+	}
+}
+
+func TestReadyコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"ready"})
+
+	if err != nil {
+		t.Fatalf("ready解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandReady {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandReady)
+	}
+}
+
 func TestRunはHelpでUsageを出力する(t *testing.T) {
 	dir := t.TempDir()
 
@@ -148,6 +170,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 	want := "usage: paracell [init|fork|ls|view|clean|version|help]\n"
+	want = "usage: paracell [init|fork|ls|view|clean|pending|ready|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -315,8 +338,20 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 	want := []domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
-		{ID: "cell-2", Name: "456", Template: "webapp"},
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+			if err := cell.SetStatus(domain.CellStatusPending); err != nil {
+				t.Fatalf("cell status設定でエラーが返った: %v", err)
+			}
+			return cell
+		}(),
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-2", Name: "456", Template: "webapp"}
+			if err := cell.SetStatus(domain.CellStatusPending); err != nil {
+				t.Fatalf("cell status設定でエラーが返った: %v", err)
+			}
+			return cell
+		}(),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cells = %#v, want %#v", got, want)
@@ -587,6 +622,42 @@ templates: {}
 	}
 	if err.Error() == `exec: "docker": executable file not found in $PATH` {
 		t.Fatalf("container provider未設定なのにdockerが実行された: %v", err)
+	}
+}
+
+func TestRunはReadyでPARACELL_CELLのStatusを更新する(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PARACELL_CELL", "123")
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{
+		{ID: "cell-1", Issue: "123", Name: "123"},
+	}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+
+	if err := Run(context.Background(), []string{"ready"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatalf("state読み込みでエラーが返った: %v", err)
+	}
+	if got := cells[0].Status(); got != domain.CellStatusReady {
+		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	}
+}
+
+func TestRunはPendingでPARACELL_CELLがないと失敗する(t *testing.T) {
+	dir := t.TempDir()
+
+	err := Run(context.Background(), []string{"pending"}, dir)
+
+	if err == nil {
+		t.Fatal("PARACELL_CELLがないのにエラーが返らなかった")
+	}
+	if err.Error() != "PARACELL_CELL is required" {
+		t.Fatalf("error = %q, want %q", err.Error(), "PARACELL_CELL is required")
 	}
 }
 

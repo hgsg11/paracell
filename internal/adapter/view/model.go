@@ -187,8 +187,8 @@ func (m Model) lastSelectableIndex() int {
 
 func (m Model) View() string {
 	var b strings.Builder
-	nameWidth, templateWidth := tableWidths(m.Cells)
-	fmt.Fprintf(&b, "  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth))
+	nameWidth, templateWidth, statusWidth := tableWidths(m.Cells)
+	fmt.Fprintf(&b, "  %s  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth), padded("STATUS", statusWidth))
 	if len(m.Cells) == 0 {
 		b.WriteString("no cells\n")
 	}
@@ -201,7 +201,7 @@ func (m Model) View() string {
 		if cell.IsDone() {
 			done = "[x]"
 		}
-		fmt.Fprintf(&b, "%s %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), done)
+		fmt.Fprintf(&b, "%s %s  %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), padded(cell.Status(), statusWidth), done)
 	}
 	prefix := " "
 	if m.isExitSelected() {
@@ -214,14 +214,16 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func tableWidths(cells []domain.Cell) (int, int) {
+func tableWidths(cells []domain.Cell) (int, int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
+	statusWidth := lipgloss.Width("STATUS")
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
 		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
+		statusWidth = max(statusWidth, lipgloss.Width(cell.Status()))
 	}
-	return nameWidth, templateWidth
+	return nameWidth, templateWidth, statusWidth
 }
 
 func padded(value string, width int) string {
