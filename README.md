@@ -17,6 +17,8 @@ paracell ls
 paracell view
 paracell clean <cell>
 paracell clean <cell> --force
+paracell pending
+paracell ready
 paracell version
 paracell --version
 ```
@@ -76,9 +78,12 @@ Template commands can use:
 - `paracell fork` copies configured files into the cell source before starting containers.
 - `repository.base: main` creates the new cell branch from `main`.
 - `repository.base: current` creates the new cell branch from the current checked-out branch.
+- `containers.network: isolated` creates and uses a cell-specific Docker network.
+- `containers.network: shared` reuses the source container network instead of creating a cell-specific one.
 - `volumeMode: readonly` keeps the current shared read-only volume behavior for non-database services.
 - `volumeMode: copy` clones named Docker volumes for non-database services.
 - `database.copyMode: data` is reserved and is not implemented yet.
+- `paracell pending` and `paracell ready` require `PARACELL_CELL` and update the current cell status.
 - `paracell version` and `paracell --version` show release metadata injected at build time.
 
 ## Release
