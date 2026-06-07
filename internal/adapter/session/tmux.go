@@ -14,7 +14,10 @@ type TmuxAdapter struct {
 
 func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error {
 	if len(cell.Session.Windows) == 0 {
-		return a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-c", cell.Source.Path)
+		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-c", cell.Source.Path); err != nil {
+			return err
+		}
+		return a.configureSessionBindings(ctx, cell)
 	}
 	first := cell.Session.Windows[0]
 	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-n", first.Name, "-c", cell.Source.Path); err != nil {
@@ -31,7 +34,7 @@ func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error 
 			return err
 		}
 	}
-	return nil
+	return a.configureSessionBindings(ctx, cell)
 }
 
 func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, window domain.SessionWindow) error {
@@ -39,6 +42,13 @@ func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, win
 		return nil
 	}
 	return a.Runner.Run(ctx, "tmux", "send-keys", "-t", cell.Session.Name+":"+window.Name, window.Command, "Enter")
+}
+
+func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.Cell) error {
+	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", cell.Session.Name, "key-table", "paracell"); err != nil {
+		return err
+	}
+	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window")
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {

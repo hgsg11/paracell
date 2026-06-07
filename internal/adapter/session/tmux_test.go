@@ -77,7 +77,11 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	if err := adapter.CreateSession(context.Background(), cell); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux new-session -d -s paracell-myapp-123 -c .paracell/cells/123/source"}
+	want := []string{
+		"tmux new-session -d -s paracell-myapp-123 -c .paracell/cells/123/source",
+		"tmux set-option -t paracell-myapp-123 key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -103,6 +107,8 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	want := []string{
 		"tmux new-session -d -s paracell-myapp-123 -n editor -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
+		"tmux set-option -t paracell-myapp-123 key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -133,6 +139,8 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n test -c .paracell/cells/123/source",
 		"tmux send-keys -t paracell-myapp-123:test go test ./... Enter",
+		"tmux set-option -t paracell-myapp-123 key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
