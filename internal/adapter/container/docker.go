@@ -3,9 +3,12 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	"github.com/hgsg11/paracell/internal/domain"
@@ -73,9 +76,12 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			Image:   inspection.Config.Image,
 			Network: firstNetwork(inspection.NetworkSettings.Networks),
 			Env:     append([]string(nil), inspection.Config.Env...),
-			Mounts:  a.cellMounts(cell, inspection.Mounts),
+			Mounts:  a.cellMounts(cell, service, inspection.Mounts),
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
+			return err
+		}
+		if err := a.copyDatabase(ctx, role, source, service, inspection); err != nil {
 			return err
 		}
 	}
@@ -94,7 +100,7 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) cellMounts(cell domain.Cell, mounts []dockerMount) []string {
+func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContainer, mounts []dockerMount) []string {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
@@ -118,6 +124,21 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, mounts []dockerMount) []s
 		}
 		out = append(out, spec)
 	}
+	out = append(out, a.initFileMounts(cell, service)...)
+	return out
+}
+
+func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellContainer) []string {
+	if service.Database == nil {
+		return nil
+	}
+	out := make([]string, 0, len(service.Database.InitFiles))
+	for _, file := range service.Database.InitFiles {
+		clean := filepath.Clean(file)
+		source := filepath.Join(cell.Source.Path, clean)
+		target := filepath.Join("/docker-entrypoint-initdb.d", filepath.Base(clean))
+		out = append(out, source+":"+target+":ro")
+	}
 	return out
 }
 
@@ -131,6 +152,131 @@ func firstNetwork(networks map[string]dockerNetwork) string {
 		return ""
 	}
 	return names[0]
+}
+
+func (a DockerCLIAdapter) copyDatabase(ctx context.Context, role string, source string, service domain.CellContainer, inspection containerInspection) error {
+	if service.Database == nil {
+		return nil
+	}
+	switch service.Database.CopyMode {
+	case "":
+		return nil
+	case "schema":
+		switch service.Database.System {
+		case "mysql":
+			return a.copyMySQLSchema(ctx, source, role, service, inspection)
+		default:
+			return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
+		}
+	case "data":
+		return fmt.Errorf("copyMode %q is not implemented for service %q", service.Database.CopyMode, role)
+	default:
+		return fmt.Errorf("unsupported copyMode %q for service %q", service.Database.CopyMode, role)
+	}
+}
+
+func (a DockerCLIAdapter) copyMySQLSchema(ctx context.Context, source string, role string, service domain.CellContainer, inspection containerInspection) error {
+	conn, err := mysqlConnectionFromEnv(inspection.Config.Env)
+	if err != nil {
+		return fmt.Errorf("mysql schema dump failed for service %q: %w", role, err)
+	}
+	if err := a.waitForMySQL(ctx, service.ContainerName, conn); err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	schema, err := a.Runner.Output(ctx, "docker", mysqlDumpArgs(source, conn)...)
+	if err != nil {
+		return fmt.Errorf("mysql schema dump failed for service %q: %w", role, err)
+	}
+	temp, err := os.CreateTemp("", "paracell-schema-*.sql")
+	if err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.WriteString(schema); err != nil {
+		temp.Close()
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	const containerSchemaPath = "/tmp/paracell-schema.sql"
+	if err := a.Runner.Run(ctx, "docker", "cp", tempPath, service.ContainerName+":"+containerSchemaPath); err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	importCommand := fmt.Sprintf("mysql -u %s", shQuote(conn.User))
+	if conn.Password != "" {
+		importCommand += " " + shQuote("-p"+conn.Password)
+	}
+	importCommand += fmt.Sprintf(" %s < %s", shQuote(conn.Database), shQuote(containerSchemaPath))
+	if err := a.Runner.Run(ctx, "docker", "exec", service.ContainerName, "sh", "-c", importCommand); err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	if err := a.Runner.Run(ctx, "docker", "exec", service.ContainerName, "rm", "-f", containerSchemaPath); err != nil {
+		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
+	}
+	return nil
+}
+
+func (a DockerCLIAdapter) waitForMySQL(ctx context.Context, container string, conn mysqlConnection) error {
+	args := []string{"exec", container, "mysqladmin", "ping", "-h", "127.0.0.1", "-u", conn.User}
+	if conn.Password != "" {
+		args = append(args, "-p"+conn.Password)
+	}
+	args = append(args, "--silent")
+	var lastErr error
+	for i := 0; i < 10; i++ {
+		if err := a.Runner.Run(ctx, "docker", args...); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return lastErr
+}
+
+type mysqlConnection struct {
+	User     string
+	Password string
+	Database string
+}
+
+func mysqlConnectionFromEnv(env []string) (mysqlConnection, error) {
+	values := make(map[string]string, len(env))
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		values[key] = value
+	}
+	conn := mysqlConnection{
+		User:     values["MYSQL_USER"],
+		Password: values["MYSQL_PASSWORD"],
+		Database: values["MYSQL_DATABASE"],
+	}
+	if conn.User == "" {
+		conn.User = "root"
+		conn.Password = values["MYSQL_ROOT_PASSWORD"]
+	}
+	if conn.User == "" || conn.Database == "" {
+		return mysqlConnection{}, fmt.Errorf("MYSQL_USER/MYSQL_DATABASE or MYSQL_ROOT_PASSWORD/MYSQL_DATABASE is required")
+	}
+	return conn, nil
+}
+
+func mysqlDumpArgs(container string, conn mysqlConnection) []string {
+	args := []string{"exec", container, "mysqldump", "--no-data", "-u", conn.User}
+	if conn.Password != "" {
+		args = append(args, "-p"+conn.Password)
+	}
+	args = append(args, conn.Database)
+	return args
+}
+
+func shQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {

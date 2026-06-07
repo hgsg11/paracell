@@ -307,3 +307,202 @@ templates:
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.container "podman"`)
 	}
 }
+
+func TestYAMLConfigはDBCopy設定を読み込む(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          database:
+            system: mysql
+            copyMode: schema
+            initFiles:
+              - docker/mysql/init/001-users.sql
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+
+	service := cfg.Templates["default"].Containers.Services["db"]
+	if service.Database == nil {
+		t.Fatal("database = nil, want non-nil")
+	}
+	if service.Database.System != "mysql" {
+		t.Fatalf("database.system = %q, want %q", service.Database.System, "mysql")
+	}
+	if service.Database.CopyMode != "schema" {
+		t.Fatalf("database.copyMode = %q, want %q", service.Database.CopyMode, "schema")
+	}
+	if len(service.Database.InitFiles) != 1 || service.Database.InitFiles[0] != "docker/mysql/init/001-users.sql" {
+		t.Fatalf("database.initFiles = %#v, want [docker/mysql/init/001-users.sql]", service.Database.InitFiles)
+	}
+}
+
+func TestYAMLConfigは未対応databaseSystemを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          database:
+            system: postgres
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("未対応databaseSystemなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported databaseSystem "postgres" for service "db"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported databaseSystem "postgres" for service "db"`)
+	}
+}
+
+func TestYAMLConfigは未対応copyModeを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          database:
+            system: mysql
+            copyMode: nonsense
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("未対応copyModeなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported copyMode "nonsense" for service "db"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported copyMode "nonsense" for service "db"`)
+	}
+}
+
+func TestYAMLConfigはInitFilesの親ディレクトリ脱出を拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          database:
+            system: mysql
+            copyMode: schema
+            initFiles:
+              - ../secrets.sql
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("不正なinitFiles pathなのにエラーが返らなかった")
+	}
+	if err.Error() != `initFiles path "../secrets.sql" for service "db" must stay within project root` {
+		t.Fatalf("error = %q, want %q", err.Error(), `initFiles path "../secrets.sql" for service "db" must stay within project root`)
+	}
+}
+
+func TestYAMLConfigはDatabase設定をdb以外のRoleで拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+          database:
+            system: mysql
+            copyMode: schema
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("db以外のroleなのにdatabase設定が受理された")
+	}
+	if err.Error() != `database config is only supported for service "db"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `database config is only supported for service "db"`)
+	}
+}

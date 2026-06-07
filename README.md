@@ -45,6 +45,13 @@ templates:
       services:
         web:
           sourceContainer: myapp-web
+        db:
+          sourceContainer: myapp-db
+          database:
+            system: mysql
+            copyMode: schema
+            initFiles:
+              - docker/mysql/init/001-users.sql
     session:
       windows:
         - name: editor
@@ -63,6 +70,7 @@ Template commands can use:
 - `paracell init` generates a default `paracell.yaml`.
 - `paracell ls` reads the stored state and does not require `paracell.yaml`.
 - `paracell fork` copies configured files into the cell source before starting containers.
+- `database.copyMode: data` is reserved and is not implemented yet.
 
 ## Release
 - Homebrew distribution is published to the `hgsg11/homebrew-paracell` tap as a cask.

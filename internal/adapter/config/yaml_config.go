@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -59,6 +60,9 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		if err != nil {
 			return domain.Config{}, err
 		}
+		if err := validateContainerServices(rendered.Containers.Services); err != nil {
+			return domain.Config{}, err
+		}
 		templates[name] = domain.Template{
 			Name:       name,
 			Repository: rendered.Repository,
@@ -80,6 +84,37 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		Providers: providers,
 		Templates: templates,
 	}, nil
+}
+
+func validateContainerServices(services map[string]domain.ContainerServiceTemplate) error {
+	for role, service := range services {
+		if service.Database == nil {
+			continue
+		}
+		if role != "db" {
+			return fmt.Errorf("database config is only supported for service %q", "db")
+		}
+		switch service.Database.System {
+		case "mysql":
+		default:
+			return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
+		}
+		switch service.Database.CopyMode {
+		case "", "schema", "data":
+		default:
+			return fmt.Errorf("unsupported copyMode %q for service %q", service.Database.CopyMode, role)
+		}
+		for _, file := range service.Database.InitFiles {
+			if filepath.IsAbs(file) {
+				return fmt.Errorf("initFiles path %q for service %q must be relative", file, role)
+			}
+			clean := filepath.Clean(file)
+			if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+				return fmt.Errorf("initFiles path %q for service %q must stay within project root", file, role)
+			}
+		}
+	}
+	return nil
 }
 
 func instantiateTemplate(tpl domain.Template, vars *domain.TemplateVars) (domain.Template, error) {

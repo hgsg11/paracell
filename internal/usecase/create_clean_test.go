@@ -187,6 +187,73 @@ func TestListCellsはStateのCell一覧を返す(t *testing.T) {
 	}
 }
 
+func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.config.Templates["dbapp"] = domain.Template{
+		Name: "dbapp",
+		Repository: domain.RepositoryTemplate{
+			BranchPrefix: "feat/",
+			Base:         "main",
+		},
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"db": {
+					SourceContainer: "myapp-db",
+					Database: &domain.DatabaseConfig{
+						System:    "mysql",
+						CopyMode:  "schema",
+						InitFiles: []string{"docker/mysql/init/001-users.sql"},
+					},
+				},
+			},
+		},
+		Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
+	}
+	uc := ForkCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+		IDs:              fixedIDGenerator{id: "cell-1"},
+	}
+
+	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "124", Template: "dbapp"})
+	if err != nil {
+		t.Fatalf("ForkCellでエラーが返った: %v", err)
+	}
+
+	service := cell.Containers.Services["db"]
+	if service.SourceContainer != "myapp-db" {
+		t.Fatalf("SourceContainer = %q, want %q", service.SourceContainer, "myapp-db")
+	}
+	if service.Database == nil {
+		t.Fatal("Database = nil, want non-nil")
+	}
+	if service.Database.System != "mysql" {
+		t.Fatalf("Database.System = %q, want %q", service.Database.System, "mysql")
+	}
+	if service.Database.CopyMode != "schema" {
+		t.Fatalf("Database.CopyMode = %q, want %q", service.Database.CopyMode, "schema")
+	}
+	if !reflect.DeepEqual(service.Database.InitFiles, []string{"docker/mysql/init/001-users.sql"}) {
+		t.Fatalf("Database.InitFiles = %#v, want %#v", service.Database.InitFiles, []string{"docker/mysql/init/001-users.sql"})
+	}
+	wantFileCopy := "files:copy:124:docker/mysql/init/001-users.sql"
+	foundFileCopy := false
+	for _, call := range ports.calls {
+		if call == wantFileCopy {
+			foundFileCopy = true
+			break
+		}
+	}
+	if !foundFileCopy {
+		t.Fatalf("files copy calls = %#v, want %q", ports.calls, wantFileCopy)
+	}
+}
+
 type fakePorts struct {
 	config domain.Config
 	cells  []domain.Cell

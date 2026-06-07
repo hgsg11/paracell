@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -79,6 +80,156 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
+func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			"CREATE TABLE users (id bigint primary key);",
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Source: domain.Source{
+			Path: "/project/.paracell/cells/123/source",
+		},
+		Containers: domain.Containers{
+			Services: map[string]domain.CellContainer{
+				"db": {
+					ContainerName:   "paracell-myapp-123-db",
+					SourceContainer: "myapp-db",
+					Database: &domain.DatabaseConfig{
+						System:   "mysql",
+						CopyMode: "schema",
+					},
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"db": {SourceContainer: "myapp-db"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantOutputCalls := []string{
+		`docker inspect -f {{json .}} myapp-db`,
+		`docker exec myapp-db mysqldump --no-data -u app -psecret myapp`,
+	}
+	if !reflect.DeepEqual(runner.outputCalls, wantOutputCalls) {
+		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
+	}
+	if len(runner.runCalls) != 5 {
+		t.Fatalf("run calls length = %d, want 5 (%#v)", len(runner.runCalls), runner.runCalls)
+	}
+	if got := runner.runCalls[0]; got != "docker run -d --name paracell-myapp-123-db --network myapp_default -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret mysql:8" {
+		t.Fatalf("first run call = %q", got)
+	}
+	if got := runner.runCalls[1]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u app -psecret --silent" {
+		t.Fatalf("wait run call = %q", got)
+	}
+	if got := runner.runCalls[2]; !strings.HasPrefix(got, "docker cp ") || !strings.HasSuffix(got, " paracell-myapp-123-db:/tmp/paracell-schema.sql") {
+		t.Fatalf("cp run call = %q", got)
+	}
+	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db sh -c mysql -u 'app' '-psecret' 'myapp' < '/tmp/paracell-schema.sql'" {
+		t.Fatalf("import run call = %q", got)
+	}
+	if got := runner.runCalls[4]; got != "docker exec paracell-myapp-123-db rm -f /tmp/paracell-schema.sql" {
+		t.Fatalf("cleanup run call = %q", got)
+	}
+}
+
+func TestCreateContainersはDataCopyを未実装エラーにする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Containers: domain.Containers{
+			Services: map[string]domain.CellContainer{
+				"db": {
+					ContainerName:   "paracell-myapp-123-db",
+					SourceContainer: "myapp-db",
+					Database: &domain.DatabaseConfig{
+						System:   "mysql",
+						CopyMode: "data",
+					},
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"db": {SourceContainer: "myapp-db"},
+			},
+		},
+	}
+
+	err := adapter.CreateContainers(context.Background(), cell, template)
+	if err == nil {
+		t.Fatal("data copyなのにエラーが返らなかった")
+	}
+	if err.Error() != `copyMode "data" is not implemented for service "db"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `copyMode "data" is not implemented for service "db"`)
+	}
+}
+
+func TestCreateContainersはInitFilesをCellSource経由でMountする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Source: domain.Source{
+			Path: "/project/.paracell/cells/123/source",
+		},
+		Containers: domain.Containers{
+			Services: map[string]domain.CellContainer{
+				"db": {
+					ContainerName:   "paracell-myapp-123-db",
+					SourceContainer: "myapp-db",
+					Database: &domain.DatabaseConfig{
+						System:    "mysql",
+						InitFiles: []string{"docker/mysql/init/001-users.sql"},
+					},
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"db": {SourceContainer: "myapp-db"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	if len(runner.runCalls) != 1 {
+		t.Fatalf("run calls length = %d, want 1", len(runner.runCalls))
+	}
+	got := runner.runCalls[0]
+	wantMount := "-v /project/.paracell/cells/123/source/docker/mysql/init/001-users.sql:/docker-entrypoint-initdb.d/001-users.sql:ro"
+	if !strings.Contains(got, wantMount) {
+		t.Fatalf("run call = %q, want init mount %q", got, wantMount)
 	}
 }
 

@@ -28,8 +28,15 @@ type ContainerTemplate struct {
 	Services map[string]ContainerServiceTemplate `yaml:"services" json:"services"`
 }
 
+type DatabaseConfig struct {
+	System    string   `yaml:"system,omitempty" json:"system,omitempty"`
+	CopyMode  string   `yaml:"copyMode,omitempty" json:"copyMode,omitempty"`
+	InitFiles []string `yaml:"initFiles,omitempty" json:"initFiles,omitempty"`
+}
+
 type ContainerServiceTemplate struct {
-	SourceContainer string `yaml:"sourceContainer" json:"sourceContainer"`
+	SourceContainer string          `yaml:"sourceContainer" json:"sourceContainer"`
+	Database        *DatabaseConfig `yaml:"database,omitempty" json:"database,omitempty"`
 }
 
 type SessionTemplate struct {
@@ -118,6 +125,7 @@ type Containers struct {
 type CellContainer struct {
 	ContainerName   string
 	SourceContainer string
+	Database        *DatabaseConfig
 }
 
 func (c *CellContainer) Rename(name string) error {
@@ -158,9 +166,18 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 	prefix := fmt.Sprintf("paracell-%s-%s", project, name)
 	services := make(map[string]CellContainer, len(template.Containers.Services))
 	for role, service := range template.Containers.Services {
+		var database *DatabaseConfig
+		if service.Database != nil {
+			database = &DatabaseConfig{
+				System:    service.Database.System,
+				CopyMode:  service.Database.CopyMode,
+				InitFiles: append([]string(nil), service.Database.InitFiles...),
+			}
+		}
 		services[role] = CellContainer{
 			ContainerName:   fmt.Sprintf("%s-%s", prefix, role),
 			SourceContainer: service.SourceContainer,
+			Database:        database,
 		}
 	}
 	windows := make([]SessionWindow, 0, len(template.Session.Windows))

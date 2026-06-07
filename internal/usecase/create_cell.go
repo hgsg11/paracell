@@ -62,7 +62,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	if u.Files != nil {
-		if err := u.Files.CopyFiles(ctx, cell, template); err != nil {
+		if err := u.Files.CopyFiles(ctx, cell, templateWithInitFiles(template)); err != nil {
 			return domain.Cell{}, err
 		}
 	}
@@ -77,4 +77,27 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	return cell, nil
+}
+
+func templateWithInitFiles(template domain.Template) domain.Template {
+	merged := template
+	files := append([]string(nil), template.Files...)
+	seen := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		seen[file] = struct{}{}
+	}
+	for _, service := range template.Containers.Services {
+		if service.Database == nil {
+			continue
+		}
+		for _, file := range service.Database.InitFiles {
+			if _, ok := seen[file]; ok {
+				continue
+			}
+			files = append(files, file)
+			seen[file] = struct{}{}
+		}
+	}
+	merged.Files = files
+	return merged
 }
