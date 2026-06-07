@@ -62,7 +62,14 @@ type DockerCLIAdapter struct {
 }
 
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
-	for role, service := range cell.Containers.Services {
+	network := cellNetworkName(cell)
+	if network != "" {
+		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
+			return err
+		}
+	}
+	for _, role := range sortedServiceRoles(cell.Containers.Services) {
+		service := cell.Containers.Services[role]
 		source := template.Containers.Services[role].SourceContainer
 		if source == "" {
 			source = service.SourceContainer
@@ -78,7 +85,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		args := BuildDockerRunArgs(RunSpec{
 			Name:    service.ContainerName,
 			Image:   inspection.Config.Image,
-			Network: firstNetwork(inspection.NetworkSettings.Networks),
+			Network: network,
 			Env:     append([]string(nil), inspection.Config.Env...),
 			Mounts:  mounts,
 		})
@@ -205,18 +212,6 @@ func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, ta
 		"-c",
 		"cp -a /from/. /to/",
 	)
-}
-
-func firstNetwork(networks map[string]dockerNetwork) string {
-	names := make([]string, 0, len(networks))
-	for name := range networks {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	if len(names) == 0 {
-		return ""
-	}
-	return names[0]
 }
 
 func (a DockerCLIAdapter) copyDatabase(ctx context.Context, role string, source string, service domain.CellContainer, inspection containerInspection) error {
@@ -353,17 +348,38 @@ func copiedVolumeName(container string, destination string) string {
 	return container + "-" + name
 }
 
-func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
+func cellNetworkName(cell domain.Cell) string {
 	for _, service := range cell.Containers.Services {
+		if idx := strings.LastIndex(service.ContainerName, "-"); idx > 0 {
+			return service.ContainerName[:idx]
+		}
+	}
+	return cell.Containers.Network
+}
+
+func sortedServiceRoles(services map[string]domain.CellContainer) []string {
+	roles := make([]string, 0, len(services))
+	for role := range services {
+		roles = append(roles, role)
+	}
+	sort.Strings(roles)
+	return roles
+}
+
+func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
+	for _, role := range sortedServiceRoles(cell.Containers.Services) {
+		service := cell.Containers.Services[role]
 		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
+	}
+	if network := cellNetworkName(cell); network != "" {
+		_ = a.Runner.Run(ctx, "docker", "network", "rm", network)
 	}
 	return nil
 }
 
 type containerInspection struct {
-	Config          dockerConfig          `json:"Config"`
-	Mounts          []dockerMount         `json:"Mounts"`
-	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
+	Config dockerConfig  `json:"Config"`
+	Mounts []dockerMount `json:"Mounts"`
 }
 
 type dockerConfig struct {
@@ -378,9 +394,3 @@ type dockerMount struct {
 	Destination string `json:"Destination"`
 	RW          bool   `json:"RW"`
 }
-
-type dockerNetworkSettings struct {
-	Networks map[string]dockerNetwork `json:"Networks"`
-}
-
-type dockerNetwork struct{}
