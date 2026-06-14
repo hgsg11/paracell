@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      gomod-minor:
+        patterns:
+          - "*"
     allow:
       - dependency-name: "*"
         update-types:
