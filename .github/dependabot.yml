@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-minor
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-minor
