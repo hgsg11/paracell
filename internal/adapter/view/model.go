@@ -1,8 +1,10 @@
 package view
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ type Model struct {
 	Quitting       bool
 	AwaitingDelete bool
 	Error          string
+	Width          int
 	Result         Result
 	Enter          func(domain.Cell) tea.Cmd
 	Delete         func(domain.Cell) error
@@ -52,6 +55,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		key := msg.String()
+		if key == "q" {
+			m.Quitting = true
+			m.Result = Result{Action: ActionQuit}
+			return m, tea.Quit
+		}
 		if m.AwaitingDelete {
 			m.AwaitingDelete = false
 			if key == "d" {
@@ -115,11 +123,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, EnterFailureCmd(cell, errors.New("enter handler is not configured"))
 			}
 			return m, enter(cell)
-		case "q":
-			m.Quitting = true
-			m.Result = Result{Action: ActionQuit}
-			return m, tea.Quit
 		}
+	case tea.WindowSizeMsg:
+		m.Width = msg.Width
 	case enterResultMsg:
 		if msg.err != nil {
 			m.Error = msg.err.Error()
@@ -182,9 +188,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cells, err := m.Reload()
 		if err != nil {
 			m.Error = err.Error()
-			return m, m.refreshCmd()
+			return m, nil
 		}
-		m.Error = ""
 		selectedID := ""
 		if m.Selected >= 0 && m.Selected < len(m.Cells) {
 			selectedID = m.Cells[m.Selected].ID
@@ -237,9 +242,7 @@ func (m Model) View() string {
 		prefix = ">"
 	}
 	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
-	if m.Error != "" {
-		fmt.Fprintf(&b, "\nerror: %s\n", m.Error)
-	}
+	b.WriteString(errorLine(m.Error, m.Width))
 	return b.String()
 }
 
@@ -256,7 +259,40 @@ func tableWidths(cells []domain.Cell) (int, int, int) {
 }
 
 func padded(value string, width int) string {
-	return lipgloss.NewStyle().Width(width).Render(value)
+	padding := width - lipgloss.Width(value)
+	if padding <= 0 {
+		return value
+	}
+	return value + strings.Repeat(" ", padding)
+}
+
+func errorLine(message string, width int) string {
+	if message == "" {
+		return "\n"
+	}
+	line := "error: " + singleLine(message)
+	if width <= 0 {
+		width = 80
+	}
+	return clipWidth(line, width) + "\n"
+}
+
+func singleLine(value string) string {
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func clipWidth(value string, width int) string {
+	if lipgloss.Width(value) <= width {
+		return value
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if lipgloss.Width(b.String()+string(r)) > width {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (m Model) refreshCmd() tea.Cmd {
@@ -274,9 +310,52 @@ type enterResultMsg struct {
 }
 
 func EnterProcessCmd(cell domain.Cell, cmd *exec.Cmd) tea.Cmd {
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return tea.Exec(newCapturedExecCommand(cmd), func(err error) tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
 	})
+}
+
+type capturedExecCommand struct {
+	cmd    *exec.Cmd
+	stderr bytes.Buffer
+}
+
+func newCapturedExecCommand(cmd *exec.Cmd) *capturedExecCommand {
+	wrapped := &capturedExecCommand{cmd: cmd}
+	if wrapped.cmd.Stderr == nil {
+		wrapped.cmd.Stderr = &wrapped.stderr
+	}
+	return wrapped
+}
+
+func (c *capturedExecCommand) SetStdin(r io.Reader) {
+	if c.cmd.Stdin == nil {
+		c.cmd.Stdin = r
+	}
+}
+
+func (c *capturedExecCommand) SetStdout(w io.Writer) {
+	if c.cmd.Stdout == nil {
+		c.cmd.Stdout = w
+	}
+}
+
+func (c *capturedExecCommand) SetStderr(io.Writer) {
+	if c.cmd.Stderr == nil {
+		c.cmd.Stderr = &c.stderr
+	}
+}
+
+func (c *capturedExecCommand) Run() error {
+	err := c.cmd.Run()
+	if err == nil {
+		return nil
+	}
+	output := strings.TrimSpace(c.stderr.String())
+	if output == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, output)
 }
 
 func EnterFailureCmd(cell domain.Cell, err error) tea.Cmd {

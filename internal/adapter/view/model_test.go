@@ -1,11 +1,17 @@
 package view
 
 import (
+	"errors"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/domain"
 )
+
+var errTestReload = errors.New("reload failed")
 
 func TestModelはjで選択を下げる(t *testing.T) {
 	model := NewModel([]domain.Cell{
@@ -61,7 +67,7 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n"
+	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -73,7 +79,7 @@ func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n"
+	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -214,6 +220,110 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
+	}
+}
+
+func TestModelはRefresh失敗時に次のポーリングを予約しない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Reload = func() ([]domain.Cell, error) {
+		return nil, errTestReload
+	}
+
+	next, cmd := model.Update(refreshMsg{})
+	got := next.(Model)
+
+	if got.Error != errTestReload.Error() {
+		t.Fatalf("error = %q, want %q", got.Error, errTestReload.Error())
+	}
+	if cmd != nil {
+		t.Fatal("refresh失敗時に次のポーリングコマンドが返った")
+	}
+}
+
+func TestModelはRefresh成功時に既存エラーを保持する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Error = "attach failed"
+	model.Reload = func() ([]domain.Cell, error) {
+		return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
+	}
+
+	next, cmd := model.Update(refreshMsg{})
+	got := next.(Model)
+
+	if got.Error != "attach failed" {
+		t.Fatalf("error = %q, want %q", got.Error, "attach failed")
+	}
+	if cmd == nil {
+		t.Fatal("refresh成功で次のポーリングコマンドが返らなかった")
+	}
+}
+
+func TestModelViewはエラー行を常に一行分だけ予約する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	withoutError := model.View()
+	model.Error = "attach failed"
+	withError := model.View()
+
+	if strings.Count(withoutError, "\n") != strings.Count(withError, "\n") {
+		t.Fatalf("line count changed: without=%q with=%q", withoutError, withError)
+	}
+	if !strings.HasSuffix(withError, "error: attach failed\n") {
+		t.Fatalf("view = %q, want error line suffix", withError)
+	}
+}
+
+func TestModelは移動してもエラー表示を保持する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.Error = "attach failed"
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := next.(Model)
+
+	if got.Selected != 1 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 1)
+	}
+	if got.Error != "attach failed" {
+		t.Fatalf("error = %q, want %q", got.Error, "attach failed")
+	}
+	if cmd != nil {
+		t.Fatal("error保持中の移動でコマンドが返った")
+	}
+}
+
+func TestModelViewはエラーの改行を潰して幅で切り詰める(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Width = 20
+	model.Error = "first line\nsecond line is very long"
+
+	got := model.View()
+	if !strings.HasSuffix(got, "error: first line se\n") {
+		t.Fatalf("view = %q, want clipped single-line error", got)
+	}
+}
+
+func TestCapturedExecCommandはStderrを端末へ直結せずエラーへ含める(t *testing.T) {
+	cmd := exec.Command("sh", "-c", "echo noisy stderr >&2; exit 7")
+	wrapped := newCapturedExecCommand(cmd)
+	wrapped.SetStderr(os.Stderr)
+
+	err := wrapped.Run()
+	if err == nil {
+		t.Fatal("Run error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "noisy stderr") {
+		t.Fatalf("error = %q, want stderr output included", err.Error())
 	}
 }
 
