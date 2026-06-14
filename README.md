@@ -1,35 +1,48 @@
 # paracell
 
-`paracell` is a Go CLI for creating isolated per-issue development cells from a project repo.
+issue ごとに、git worktree・tmux session・container・状態管理をまとめて作る CLI です。
 
-Each cell is made from:
+`paracell fork 123 --template default` で issue 用の作業部屋を作り、`paracell` から入る・見る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
 
-- a git worktree under `.paracell/cells/<cell>/source`
-- container processes based on the configured template
-- a detached tmux session
+## できること
 
-## Commands
+- 🧩 issue ごとの git worktree と branch を作る
+- 🪟 tmux session / window / 初期コマンドを template 化する
+- 📦 container、volume、network、`.env` などを cell ごとに用意する
+- 👀 `ready` / `pending` / `done` を TUI で見る
+- 🤖 agent hooks から状態を自動更新する
 
-```text
-paracell init
-paracell fork <issue> --template <template>
-paracell ls
-paracell view
-paracell clean <cell>
-paracell clean <cell> --force
-paracell pending
-paracell ready
-paracell version
-paracell --version
+## ユースケース
+
+| ユースケース | paracell なし | paracell あり |
+| --- | --- | --- |
+| 🛠️ ローカル開発環境を作る | branch、作業ディレクトリ、tmux、container を手でそろえる | `paracell fork <issue>` で cell としてまとめて作る |
+| 🔍 レビュー用に動作確認する | レビュー対象ごとに checkout や環境切り替えをする | review 用 cell を作り、今の作業環境と分けて確認する |
+| 🧯 レビュー指摘を修正する | 元の作業環境に戻り、必要な window や service を開き直す | 対象 cell に入り直して、そのまま修正を続ける |
+| 🤖 agent に修正を任せる | 進行中か完了かをログやメモで追う | hooks で `pending` / `ready` を呼び、TUI に状態を出す |
+| 🧹 作業環境を片付ける | worktree、tmux session、container を個別に消す | `paracell clean <cell>` でまとめて片付ける |
+
+## インストール
+
+```sh
+brew install --cask hgsg11/homebrew-paracell/paracell
 ```
 
-## Files
+または:
 
-- `paracell.yaml`: project configuration and templates
-- `.paracell/state.json`: created cell state
-- `.paracell/`: runtime data for the project
+```sh
+go build -o paracell ./cmd/paracell
+```
 
-## Example Config
+## クイックスタート
+
+```sh
+paracell init
+paracell fork 123 --template default
+paracell view
+```
+
+`paracell init` は `paracell.yaml` を作ります。template を編集して、作りたい cell の形を決めます。
 
 ```yaml
 project:
@@ -51,41 +64,68 @@ templates:
         web:
           sourceContainer: myapp-web
           volumeMode: copy
-        db:
-          sourceContainer: myapp-db
-          database:
-            system: mysql
-            copyMode: schema
-            initFiles:
-              - docker/mysql/init/001-users.sql
     session:
       windows:
         - name: editor
           command: nvim {{.issue}}
+        - name: test
+          command: go test ./...
 ```
 
-## Template Variables
+## TUI
 
-Template commands can use:
+```text
+  NAME  TEMPLATE  STATUS   DONE
+> 123   default   ready    [ ]
+  456   default   pending  [x]
 
-- `{{.issue}}`
-- `{{.name}}`
+  exit paracell
+```
 
-## Notes
+- `j` / `k`: 移動
+- `l`: cell に入る
+- `enter`: done を切り替える
+- `d` `d`: clean
+- `q`: 閉じる
 
-- `paracell init` generates a default `paracell.yaml`.
-- `paracell ls` reads the stored state and does not require `paracell.yaml`.
-- `paracell fork` copies configured files into the cell source before starting containers.
-- `repository.base: main` creates the new cell branch from `main`.
-- `repository.base: current` creates the new cell branch from the current checked-out branch.
-- `containers.network: isolated` creates and uses a cell-specific Docker network.
-- `containers.network: shared` reuses the source container network instead of creating a cell-specific one.
-- `volumeMode: readonly` keeps the current shared read-only volume behavior for non-database services.
-- `volumeMode: copy` clones named Docker volumes for non-database services.
-- `database.copyMode: data` is reserved and is not implemented yet.
-- `paracell pending` and `paracell ready` require `PARACELL_CELL` and update the current cell status.
-- `paracell version` and `paracell --version` show release metadata injected at build time.
+tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
-## Release
-- Homebrew distribution is published to the `hgsg11/homebrew-paracell` tap as a cask.
-- Install with `brew install --cask hgsg11/homebrew-paracell/paracell`.
+## コマンド
+
+```text
+paracell init
+paracell fork <issue> --template <template>
+paracell view
+paracell ls
+paracell clean <cell> [--force]
+paracell pending
+paracell ready
+paracell version
+paracell --version
+```
+
+- `fork`: issue 用の cell を作る
+- `view`: TUI で cell を操作する
+- `ls`: cell 一覧を出す
+- `clean`: cell の worktree / container / session を片付ける
+- `pending` / `ready`: `PARACELL_CELL` の status を変える
+
+## 設定メモ
+
+- `repository.base: current`: 現在の branch から cell branch を作る
+- `repository.base: main`: `main` から cell branch を作る
+- `files`: cell の source にコピーするファイル
+- `containers.network: isolated`: cell 用 Docker network を作る
+- `containers.network: shared`: source container の network を使う
+- `volumeMode: copy`: named volume を複製する
+- `volumeMode: readonly`: 共有 volume を read-only で使う
+- `database.copyMode: schema`: DB schema を cell に用意する
+- `database.copyMode: data`: 予約済み。まだ未実装
+
+tmux command では `{{.issue}}` と `{{.name}}` を使えます。
+
+## ファイル
+
+- `paracell.yaml`: 設定と template
+- `.paracell/state.json`: cell の状態
+- `.paracell/cells/<cell>/source`: cell の git worktree
