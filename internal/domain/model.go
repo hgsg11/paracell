@@ -22,7 +22,14 @@ type TemplateVars struct {
 type RepositoryTemplate struct {
 	BranchPrefix string `yaml:"branchPrefix" json:"branchPrefix"`
 	Base         string `yaml:"base" json:"base"`
+	BranchMode   string `yaml:"branchMode,omitempty" json:"branchMode,omitempty"`
 }
+
+const (
+	RepositoryBranchModeCreate  = "create"
+	RepositoryBranchModeReuse   = "reuse"
+	RepositoryBranchModeRequire = "require"
+)
 
 type ContainerTemplate struct {
 	Network  string                              `yaml:"network,omitempty" json:"network,omitempty"`
@@ -62,6 +69,7 @@ type Cell struct {
 	Template   string
 	Base       string
 	Branch     string
+	BranchMode string
 	Source     Source
 	Containers Containers
 	Session    Session
@@ -82,6 +90,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Template   string     `json:"template"`
 		Base       string     `json:"base"`
 		Branch     string     `json:"branch"`
+		BranchMode string     `json:"branchMode,omitempty"`
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
@@ -95,6 +104,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Template:   c.Template,
 		Base:       c.Base,
 		Branch:     c.Branch,
+		BranchMode: c.BranchMode,
 		Source:     c.Source,
 		Containers: c.Containers,
 		Session:    c.Session,
@@ -111,6 +121,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 		Template   string     `json:"template"`
 		Base       string     `json:"base"`
 		Branch     string     `json:"branch"`
+		BranchMode string     `json:"branchMode,omitempty"`
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
@@ -127,6 +138,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Template = decoded.Template
 	c.Base = decoded.Base
 	c.Branch = decoded.Branch
+	c.BranchMode = decoded.BranchMode
 	c.Source = decoded.Source
 	c.Containers = decoded.Containers
 	c.Session = decoded.Session
@@ -215,12 +227,13 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 	}
 
 	return Cell{
-		ID:       id,
-		Issue:    issue,
-		Name:     name,
-		Template: template.Name,
-		Base:     template.Repository.Base,
-		Branch:   template.Repository.BranchPrefix + issue,
+		ID:         id,
+		Issue:      issue,
+		Name:       name,
+		Template:   template.Name,
+		Base:       template.Repository.Base,
+		Branch:     template.Repository.BranchPrefix + issue,
+		BranchMode: template.Repository.BranchMode,
 		Source: Source{
 			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
 		},

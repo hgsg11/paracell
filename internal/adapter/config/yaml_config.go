@@ -92,9 +92,14 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 func validateRepositoryBase(name string, repository domain.RepositoryTemplate) error {
 	switch repository.Base {
 	case "", "main", "current":
-		return nil
 	default:
 		return fmt.Errorf("unsupported repository.base %q for template %q", repository.Base, name)
+	}
+	switch repository.BranchMode {
+	case "", domain.RepositoryBranchModeCreate, domain.RepositoryBranchModeReuse, domain.RepositoryBranchModeRequire:
+		return nil
+	default:
+		return fmt.Errorf("unsupported repository.branchMode %q for template %q", repository.BranchMode, name)
 	}
 }
 

@@ -56,6 +56,7 @@ templates:
     repository:
       branchPrefix: feat/
       base: current
+      branchMode: create
     files:
       - .env
     containers:
@@ -114,6 +115,9 @@ paracell --version
 
 - `repository.base: current`: 現在の branch から cell branch を作る
 - `repository.base: main`: `main` から cell branch を作る
+- `repository.branchMode: create`: cell branch を新規作成する。既存 branch があれば失敗する
+- `repository.branchMode: reuse`: 既存 branch があればその branch の worktree を作り、なければ新規作成する
+- `repository.branchMode: require`: 既存 branch の worktree だけを作る。branch がなければ失敗する
 - `files`: cell の source にコピーするファイル
 - `containers.network: isolated`: cell 用 Docker network を作る
 - `containers.network: shared`: source container の network を使う

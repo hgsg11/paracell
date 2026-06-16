@@ -9,6 +9,7 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 		Repository: RepositoryTemplate{
 			BranchPrefix: "feat/",
 			Base:         "main",
+			BranchMode:   "reuse",
 		},
 		Containers: ContainerTemplate{
 			Services: map[string]ContainerServiceTemplate{
@@ -35,6 +36,9 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	}
 	if cell.Branch != "feat/123" {
 		t.Fatalf("ブランチ名 = %q, want %q", cell.Branch, "feat/123")
+	}
+	if cell.BranchMode != "reuse" {
+		t.Fatalf("branch mode = %q, want %q", cell.BranchMode, "reuse")
 	}
 	if cell.Source.Path != ".paracell/cells/123/source" {
 		t.Fatalf("source path = %q, want %q", cell.Source.Path, ".paracell/cells/123/source")

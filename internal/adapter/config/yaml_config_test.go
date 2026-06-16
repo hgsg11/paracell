@@ -650,6 +650,72 @@ templates:
 	}
 }
 
+func TestYAMLConfigはRepositoryBranchModeReuseを読み込む(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+      branchMode: reuse
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if got := cfg.Templates["default"].Repository.BranchMode; got != "reuse" {
+		t.Fatalf("repository.branchMode = %q, want %q", got, "reuse")
+	}
+}
+
+func TestYAMLConfigは不正なRepositoryBranchModeを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+      branchMode: overwrite
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("不正なrepository.branchModeなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported repository.branchMode "overwrite" for template "default"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported repository.branchMode "overwrite" for template "default"`)
+	}
+}
+
 func TestYAMLConfigは空でない不正なRepositoryBaseを拒否する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
