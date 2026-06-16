@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,8 +23,21 @@ type RunSpec struct {
 	Entrypoint []string
 	Command    []string
 	WorkDir    string
+	User       string
+	Tty        bool
+	OpenStdin  bool
+	Health     HealthcheckSpec
 	Mounts     []string
 	Ports      map[string]string
+}
+
+type HealthcheckSpec struct {
+	Disabled    bool
+	Command     string
+	Interval    time.Duration
+	Timeout     time.Duration
+	StartPeriod time.Duration
+	Retries     int
 }
 
 func BuildDockerRunArgs(spec RunSpec) []string {
@@ -40,6 +54,15 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 	if spec.WorkDir != "" {
 		args = append(args, "-w", spec.WorkDir)
 	}
+	if spec.User != "" {
+		args = append(args, "--user", spec.User)
+	}
+	if spec.Tty {
+		args = append(args, "-t")
+	}
+	if spec.OpenStdin {
+		args = append(args, "-i")
+	}
 	for _, mount := range spec.Mounts {
 		args = append(args, "-v", mount)
 	}
@@ -51,8 +74,32 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 	for _, host := range hostPorts {
 		args = append(args, "-p", host+":"+spec.Ports[host])
 	}
+	args = appendHealthcheckArgs(args, spec.Health)
 	args = append(args, spec.Image)
 	args = append(args, spec.Command...)
+	return args
+}
+
+func appendHealthcheckArgs(args []string, health HealthcheckSpec) []string {
+	if health.Disabled {
+		return append(args, "--no-healthcheck")
+	}
+	if health.Command == "" {
+		return args
+	}
+	args = append(args, "--health-cmd", health.Command)
+	if health.Interval > 0 {
+		args = append(args, "--health-interval", health.Interval.String())
+	}
+	if health.Timeout > 0 {
+		args = append(args, "--health-timeout", health.Timeout.String())
+	}
+	if health.StartPeriod > 0 {
+		args = append(args, "--health-start-period", health.StartPeriod.String())
+	}
+	if health.Retries > 0 {
+		args = append(args, "--health-retries", strconv.Itoa(health.Retries))
+	}
 	return args
 }
 
@@ -87,11 +134,19 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			runNetwork = firstNetwork(inspection.NetworkSettings.Networks)
 		}
 		args := BuildDockerRunArgs(RunSpec{
-			Name:    service.ContainerName,
-			Image:   inspection.Config.Image,
-			Network: runNetwork,
-			Env:     append([]string(nil), inspection.Config.Env...),
-			Mounts:  mounts,
+			Name:       service.ContainerName,
+			Image:      inspection.Config.Image,
+			Network:    runNetwork,
+			Env:        append([]string(nil), inspection.Config.Env...),
+			Entrypoint: append([]string(nil), inspection.Config.Entrypoint...),
+			Command:    append([]string(nil), inspection.Config.Cmd...),
+			WorkDir:    inspection.Config.WorkingDir,
+			User:       inspection.Config.User,
+			Tty:        inspection.Config.Tty,
+			OpenStdin:  inspection.Config.OpenStdin,
+			Health:     inspection.Config.Healthcheck.toSpec(),
+			Mounts:     mounts,
+			Ports:      portsFromBindings(inspection.HostConfig.PortBindings),
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
@@ -401,13 +456,65 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 
 type containerInspection struct {
 	Config          dockerConfig          `json:"Config"`
+	HostConfig      dockerHostConfig      `json:"HostConfig"`
 	Mounts          []dockerMount         `json:"Mounts"`
 	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
 }
 
 type dockerConfig struct {
-	Image string   `json:"Image"`
-	Env   []string `json:"Env"`
+	Image       string             `json:"Image"`
+	Env         []string           `json:"Env"`
+	Entrypoint  []string           `json:"Entrypoint"`
+	Cmd         []string           `json:"Cmd"`
+	WorkingDir  string             `json:"WorkingDir"`
+	User        string             `json:"User"`
+	Tty         bool               `json:"Tty"`
+	OpenStdin   bool               `json:"OpenStdin"`
+	Healthcheck *dockerHealthcheck `json:"Healthcheck"`
+}
+
+type dockerHostConfig struct {
+	PortBindings map[string][]dockerPortBinding `json:"PortBindings"`
+}
+
+type dockerPortBinding struct {
+	HostIP   string `json:"HostIp"`
+	HostPort string `json:"HostPort"`
+}
+
+type dockerHealthcheck struct {
+	Test        []string `json:"Test"`
+	Interval    int64    `json:"Interval"`
+	Timeout     int64    `json:"Timeout"`
+	StartPeriod int64    `json:"StartPeriod"`
+	Retries     int      `json:"Retries"`
+}
+
+func (h *dockerHealthcheck) toSpec() HealthcheckSpec {
+	if h == nil || len(h.Test) == 0 {
+		return HealthcheckSpec{}
+	}
+	if len(h.Test) == 1 && h.Test[0] == "NONE" {
+		return HealthcheckSpec{Disabled: true}
+	}
+	command := ""
+	switch h.Test[0] {
+	case "CMD-SHELL":
+		if len(h.Test) > 1 {
+			command = h.Test[1]
+		}
+	case "CMD":
+		if len(h.Test) > 1 {
+			command = strings.Join(h.Test[1:], " ")
+		}
+	}
+	return HealthcheckSpec{
+		Command:     command,
+		Interval:    time.Duration(h.Interval),
+		Timeout:     time.Duration(h.Timeout),
+		StartPeriod: time.Duration(h.StartPeriod),
+		Retries:     h.Retries,
+	}
 }
 
 type dockerMount struct {
@@ -423,3 +530,26 @@ type dockerNetworkSettings struct {
 }
 
 type dockerNetwork struct{}
+
+func portsFromBindings(bindings map[string][]dockerPortBinding) map[string]string {
+	if len(bindings) == 0 {
+		return nil
+	}
+	ports := map[string]string{}
+	for containerPort, hostBindings := range bindings {
+		for _, binding := range hostBindings {
+			if binding.HostPort == "" {
+				continue
+			}
+			host := binding.HostPort
+			if binding.HostIP != "" {
+				host = binding.HostIP + ":" + host
+			}
+			ports[host] = strings.TrimSuffix(containerPort, "/tcp")
+		}
+	}
+	if len(ports) == 0 {
+		return nil
+	}
+	return ports
+}

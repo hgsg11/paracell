@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -18,8 +19,17 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		Entrypoint: []string{"/docker-entrypoint.sh"},
 		Command:    []string{"nginx", "-g", "daemon off;"},
 		WorkDir:    "/app",
-		Mounts:     []string{"/tmp/src:/app"},
-		Ports:      map[string]string{"8080": "80"},
+		User:       "node",
+		Tty:        true,
+		OpenStdin:  true,
+		Health: HealthcheckSpec{
+			Command:  "curl -f http://localhost:8080/health || exit 1",
+			Interval: 30 * time.Second,
+			Timeout:  5 * time.Second,
+			Retries:  3,
+		},
+		Mounts: []string{"/tmp/src:/app"},
+		Ports:  map[string]string{"8080": "80"},
 	}
 
 	args := BuildDockerRunArgs(spec)
@@ -31,8 +41,15 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		"-e", "APP_ENV=dev",
 		"--entrypoint", "/docker-entrypoint.sh",
 		"-w", "/app",
+		"--user", "node",
+		"-t",
+		"-i",
 		"-v", "/tmp/src:/app",
 		"-p", "8080:80",
+		"--health-cmd", "curl -f http://localhost:8080/health || exit 1",
+		"--health-interval", "30s",
+		"--health-timeout", "5s",
+		"--health-retries", "3",
 		"nginx:latest",
 		"nginx", "-g", "daemon off;",
 	}
@@ -44,7 +61,7 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 func TestCreateContainersはSourceContainerの設定を復元して作成する(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
-			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev","PATH=/usr/bin"]},"Mounts":[{"Type":"bind","Source":"/project","Destination":"/app","RW":true},{"Type":"bind","Source":"/project/config","Destination":"/config","RW":false},{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev","PATH=/usr/bin"],"Entrypoint":["/docker-entrypoint.sh"],"Cmd":["npm","run","dev"],"WorkingDir":"/app","User":"node","Tty":true,"OpenStdin":true,"Healthcheck":{"Test":["CMD-SHELL","curl -f http://localhost:3000/health || exit 1"],"Interval":30000000000,"Timeout":5000000000,"Retries":3}},"HostConfig":{"PortBindings":{"3000/tcp":[{"HostIp":"","HostPort":"13000"}]}},"Mounts":[{"Type":"bind","Source":"/project","Destination":"/app","RW":true},{"Type":"bind","Source":"/project/config","Destination":"/config","RW":false},{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
@@ -78,7 +95,7 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 13000:3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
