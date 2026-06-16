@@ -58,7 +58,7 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	if err := doneCell.MarkDone(); err != nil {
 		t.Fatalf("MarkDoneでエラーが返った: %v", err)
 	}
-	if err := doneCell.SetStatus(domain.CellStatusReady); err != nil {
+	if err := doneCell.SetStatus(domain.Ready); err != nil {
 		t.Fatalf("SetStatusでエラーが返った: %v", err)
 	}
 	model := NewModel([]domain.Cell{
@@ -207,7 +207,7 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 	})
 	model.Reload = func() ([]domain.Cell, error) {
 		cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
-		if err := cell.SetStatus(domain.CellStatusReady); err != nil {
+		if err := cell.SetStatus(domain.Ready); err != nil {
 			t.Fatalf("SetStatusでエラーが返った: %v", err)
 		}
 		return []domain.Cell{cell}, nil
@@ -215,8 +215,8 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if got.Cells[0].Status() != domain.CellStatusReady {
-		t.Fatalf("Status = %q, want %q", got.Cells[0].Status(), domain.CellStatusReady)
+	if got.Cells[0].Status() != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got.Cells[0].Status(), domain.Ready)
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")

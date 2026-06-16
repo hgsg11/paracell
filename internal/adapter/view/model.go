@@ -235,7 +235,7 @@ func (m Model) View() string {
 		if cell.IsDone() {
 			done = "[x]"
 		}
-		fmt.Fprintf(&b, "%s %s  %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), padded(cell.Status(), statusWidth), done)
+		fmt.Fprintf(&b, "%s %s  %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), padded(string(cell.Status()), statusWidth), done)
 	}
 	prefix := " "
 	if m.isExitSelected() {
@@ -253,7 +253,7 @@ func tableWidths(cells []domain.Cell) (int, int, int) {
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
 		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
-		statusWidth = max(statusWidth, lipgloss.Width(cell.Status()))
+		statusWidth = max(statusWidth, lipgloss.Width(string(cell.Status())))
 	}
 	return nameWidth, templateWidth, statusWidth
 }

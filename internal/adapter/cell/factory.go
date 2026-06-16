@@ -1,51 +1,49 @@
-package domain
+package cell
 
 import (
 	"errors"
 	"fmt"
+
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
-type CellFactory struct{}
+type Factory struct{}
 
-func NewCellFactory() CellFactory {
-	return CellFactory{}
-}
-
-func (f CellFactory) NewCell(id string, issue string, template Template, project string) (Cell, error) {
+func (f Factory) NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error) {
 	if id == "" {
-		return Cell{}, errors.New("cell id is required")
+		return domain.Cell{}, errors.New("cell id is required")
 	}
 	if issue == "" {
-		return Cell{}, errors.New("issue is required")
+		return domain.Cell{}, errors.New("issue is required")
 	}
 	if template.Name == "" {
-		return Cell{}, errors.New("template name is required")
+		return domain.Cell{}, errors.New("template name is required")
 	}
 	name := issue
 	prefix := fmt.Sprintf("paracell-%s-%s", project, name)
-	services := make(map[string]CellContainer, len(template.Containers.Services))
+	services := make(map[string]domain.CellContainer, len(template.Containers.Services))
 	for role, service := range template.Containers.Services {
-		var database *DatabaseConfig
+		var database *domain.DatabaseConfig
 		if service.Database != nil {
-			database = &DatabaseConfig{
+			database = &domain.DatabaseConfig{
 				System:    service.Database.System,
 				CopyMode:  service.Database.CopyMode,
 				InitFiles: append([]string(nil), service.Database.InitFiles...),
 			}
 		}
-		services[role] = CellContainer{
+		services[role] = domain.CellContainer{
 			ContainerName:   fmt.Sprintf("%s-%s", prefix, role),
 			SourceContainer: service.SourceContainer,
 			VolumeMode:      service.VolumeMode,
 			Database:        database,
 		}
 	}
-	windows := make([]SessionWindow, 0, len(template.Session.Windows))
+	windows := make([]domain.SessionWindow, 0, len(template.Session.Windows))
 	for _, window := range template.Session.Windows {
-		windows = append(windows, SessionWindow{Name: window.Name, Command: window.Command})
+		windows = append(windows, domain.SessionWindow{Name: window.Name, Command: window.Command})
 	}
 
-	return Cell{
+	return domain.Cell{
 		ID:         id,
 		Issue:      issue,
 		Name:       name,
@@ -53,19 +51,17 @@ func (f CellFactory) NewCell(id string, issue string, template Template, project
 		Base:       template.Repository.Base,
 		Branch:     template.Repository.BranchPrefix + issue,
 		BranchMode: template.Repository.BranchMode,
-		Source: Source{
+		Source: domain.Source{
 			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
 		},
-		Containers: Containers{
+		Containers: domain.Containers{
 			Network:     prefix,
-			NetworkMode: template.Containers.Network,
+			NetworkMode: string(template.Containers.Network),
 			Services:    services,
 		},
-		Session: Session{
+		Session: domain.Session{
 			Name:    prefix,
 			Windows: windows,
 		},
-		status: CellStatusReady,
-		done:   false,
 	}, nil
 }

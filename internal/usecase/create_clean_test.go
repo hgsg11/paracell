@@ -16,6 +16,7 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
+		CellFactory:      ports,
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
@@ -55,6 +56,7 @@ func TestForkCellは同じIssueがある場合に失敗する(t *testing.T) {
 	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
+		CellFactory:      ports,
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
@@ -177,15 +179,15 @@ func TestSetCellStatusはStateのCellのStatusを更新する(t *testing.T) {
 	}
 
 	uc := SetCellStatusUseCase{State: ports}
-	cell, err := uc.Execute(ctx, SetCellStatusInput{Cell: "123", Status: domain.CellStatusReady})
+	cell, err := uc.Execute(ctx, SetCellStatusInput{Cell: "123", Status: domain.Ready})
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
 	}
-	if got := cell.Status(); got != domain.CellStatusReady {
-		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	if got := cell.Status(); got != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
-	if got := ports.cells[0].Status(); got != domain.CellStatusReady {
-		t.Fatalf("stateのcell status = %q, want %q", got, domain.CellStatusReady)
+	if got := ports.cells[0].Status(); got != domain.Ready {
+		t.Fatalf("stateのcell status = %q, want %q", got, domain.Ready)
 	}
 }
 
@@ -233,6 +235,7 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
+		CellFactory:      ports,
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
@@ -296,6 +299,7 @@ func TestCreateCellはVolumeModeをCellへ保持する(t *testing.T) {
 	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
+		CellFactory:      ports,
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
@@ -326,6 +330,7 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 	uc := ForkCellUseCase{
 		Config:           ports,
 		State:            ports,
+		CellFactory:      ports,
 		SourceFactory:    ports,
 		ContainerFactory: ports,
 		SessionFactory:   ports,
@@ -430,6 +435,39 @@ func (f *fakePorts) Container(provider domain.ProviderConfig) (ContainerPort, er
 func (f *fakePorts) Session(provider domain.ProviderConfig) (SessionPort, error) {
 	f.calls = append(f.calls, "factory:session:"+provider.Session)
 	return f, nil
+}
+
+func (f *fakePorts) NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error) {
+	cell := domain.Cell{
+		ID:       id,
+		Issue:    issue,
+		Name:     issue,
+		Template: template.Name,
+		Base:     template.Repository.Base,
+		Branch:   template.Repository.BranchPrefix + issue,
+		Source: domain.Source{
+			Path: ".paracell/cells/" + issue + "/source",
+		},
+		Containers: domain.Containers{
+			Network:  "paracell-" + project + "-" + issue,
+			Services: map[string]domain.CellContainer{},
+		},
+		Session: domain.Session{
+			Name: "paracell-" + project + "-" + issue,
+		},
+	}
+	for role, service := range template.Containers.Services {
+		cell.Containers.Services[role] = domain.CellContainer{
+			ContainerName:   "paracell-" + project + "-" + issue + "-" + role,
+			SourceContainer: service.SourceContainer,
+			VolumeMode:      service.VolumeMode,
+			Database:        service.Database,
+		}
+	}
+	for _, window := range template.Session.Windows {
+		cell.Session.Windows = append(cell.Session.Windows, domain.SessionWindow{Name: window.Name, Command: window.Command})
+	}
+	return cell, nil
 }
 
 func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) error {

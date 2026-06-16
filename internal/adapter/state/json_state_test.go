@@ -28,7 +28,7 @@ func TestCellを保存して読み戻せる(t *testing.T) {
 	if err := cell.MarkDone(); err != nil {
 		t.Fatalf("Cellをdoneにできなかった: %v", err)
 	}
-	if err := cell.SetStatus(domain.CellStatusReady); err != nil {
+	if err := cell.SetStatus(domain.Ready); err != nil {
 		t.Fatalf("Cellをreadyにできなかった: %v", err)
 	}
 
@@ -49,8 +49,8 @@ func TestCellを保存して読み戻せる(t *testing.T) {
 	if !cells[0].IsDone() {
 		t.Fatal("IsDone = false, want true")
 	}
-	if got := cells[0].Status(); got != domain.CellStatusReady {
-		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	if got := cells[0].Status(); got != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
 }
 
@@ -65,8 +65,8 @@ func TestCellは未設定StatusならReadyとして読み戻せる(t *testing.T)
 	if err != nil {
 		t.Fatalf("state読み込みでエラーが返った: %v", err)
 	}
-	if got := cells[0].Status(); got != domain.CellStatusReady {
-		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	if got := cells[0].Status(); got != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
 }
 

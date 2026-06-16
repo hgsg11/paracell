@@ -55,3 +55,7 @@ type SessionProviderFactory interface {
 type IDGenerator interface {
 	NewID() string
 }
+
+type CellFactory interface {
+	NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error)
+}

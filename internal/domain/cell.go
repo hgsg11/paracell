@@ -17,13 +17,15 @@ type Cell struct {
 	Source     Source
 	Containers Containers
 	Session    Session
-	status     string
+	status     CellStatus
 	done       bool
 }
 
+type CellStatus string
+
 const (
-	CellStatusPending = "pending"
-	CellStatusReady   = "ready"
+	Pending CellStatus = "pending"
+	Ready   CellStatus = "ready"
 )
 
 func (c Cell) MarshalJSON() ([]byte, error) {
@@ -38,7 +40,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
-		Status     string     `json:"status"`
+		Status     CellStatus `json:"status"`
 		Done       bool       `json:"done"`
 	}
 	return json.Marshal(cellJSON{
@@ -69,7 +71,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 		Source     Source     `json:"source"`
 		Containers Containers `json:"containers"`
 		Session    Session    `json:"session"`
-		Status     string     `json:"status"`
+		Status     CellStatus `json:"status"`
 		Done       bool       `json:"done"`
 	}
 	var decoded cellJSON
@@ -87,7 +89,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Containers = decoded.Containers
 	c.Session = decoded.Session
 	if decoded.Status == "" {
-		c.status = CellStatusReady
+		c.status = Ready
 	} else {
 		c.status = decoded.Status
 	}
@@ -154,9 +156,9 @@ func (c *Cell) ToggleDone() {
 	c.done = !c.done
 }
 
-func (c *Cell) SetStatus(status string) error {
+func (c *Cell) SetStatus(status CellStatus) error {
 	switch status {
-	case CellStatusPending, CellStatusReady:
+	case Pending, Ready:
 		c.status = status
 		return nil
 	default:
@@ -164,9 +166,9 @@ func (c *Cell) SetStatus(status string) error {
 	}
 }
 
-func (c Cell) Status() string {
+func (c Cell) Status() CellStatus {
 	if c.status == "" {
-		return CellStatusReady
+		return Ready
 	}
 	return c.status
 }

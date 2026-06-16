@@ -105,7 +105,7 @@ func validateRepositoryBase(name string, repository domain.RepositoryTemplate) e
 
 func validateContainerTemplate(containers domain.ContainerTemplate) error {
 	switch containers.Network {
-	case "", domain.ContainerNetworkModeIsolated, domain.ContainerNetworkModeShared:
+	case "", domain.ContainerNetworkIsolated, domain.ContainerNetworkShared:
 	default:
 		return fmt.Errorf("unsupported containers.network %q", containers.Network)
 	}

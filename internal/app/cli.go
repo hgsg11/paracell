@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	celladapter "github.com/hgsg11/paracell/internal/adapter/cell"
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/files"
 	"github.com/hgsg11/paracell/internal/adapter/id"
@@ -35,7 +36,7 @@ var (
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
 	}
-	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, cellName string, status string) (domain.Cell, error) {
+	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, cellName string, status domain.CellStatus) (domain.Cell, error) {
 		uc := usecase.SetCellStatusUseCase{State: state}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
@@ -198,14 +199,14 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.CellStatusPending)
+		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.Pending)
 		return err
 	case CommandReady:
 		cellName, err := currentCellFromEnv()
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.CellStatusReady)
+		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.Ready)
 		return err
 	case CommandView:
 		uc := usecase.ViewCellsUseCase{State: stateAdapter}
@@ -236,6 +237,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		uc := usecase.ForkCellUseCase{
 			Config:           configAdapter,
 			State:            stateAdapter,
+			CellFactory:      celladapter.Factory{},
 			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
 			Files:            files.CopyAdapter{Root: workdir},
 			ContainerFactory: provider.Factory{Runner: runner, Root: workdir},

@@ -341,14 +341,14 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	want := []domain.Cell{
 		func() domain.Cell {
 			cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
-			if err := cell.SetStatus(domain.CellStatusReady); err != nil {
+			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
 		}(),
 		func() domain.Cell {
 			cell := domain.Cell{ID: "cell-2", Name: "456", Template: "webapp"}
-			if err := cell.SetStatus(domain.CellStatusReady); err != nil {
+			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
@@ -646,8 +646,8 @@ func TestRunはReadyでPARACELL_CELLのStatusを更新する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("state読み込みでエラーが返った: %v", err)
 	}
-	if got := cells[0].Status(); got != domain.CellStatusReady {
-		t.Fatalf("Status = %q, want %q", got, domain.CellStatusReady)
+	if got := cells[0].Status(); got != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
 }
 

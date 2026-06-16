@@ -9,7 +9,7 @@ import (
 
 type SetCellStatusInput struct {
 	Cell   string
-	Status string
+	Status domain.CellStatus
 }
 
 type SetCellStatusUseCase struct {

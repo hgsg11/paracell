@@ -130,7 +130,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			return err
 		}
 		runNetwork := network
-		if cell.Containers.NetworkMode == domain.ContainerNetworkModeShared {
+		if cell.Containers.NetworkMode == string(domain.ContainerNetworkShared) {
 			runNetwork = firstNetwork(inspection.NetworkSettings.Networks)
 		}
 		args := BuildDockerRunArgs(RunSpec{
@@ -417,7 +417,7 @@ func cellNetworkName(cell domain.Cell) string {
 }
 
 func shouldCreateIsolatedNetwork(mode string) bool {
-	return mode == "" || mode == domain.ContainerNetworkModeIsolated
+	return mode == "" || mode == string(domain.ContainerNetworkIsolated)
 }
 
 func firstNetwork(networks map[string]dockerNetwork) string {
@@ -446,7 +446,7 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 		service := cell.Containers.Services[role]
 		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
 	}
-	if cell.Containers.NetworkMode == domain.ContainerNetworkModeIsolated || cell.Containers.NetworkMode == "" {
+	if cell.Containers.NetworkMode == string(domain.ContainerNetworkIsolated) || cell.Containers.NetworkMode == "" {
 		if network := cellNetworkName(cell); network != "" {
 			_ = a.Runner.Run(ctx, "docker", "network", "rm", network)
 		}

@@ -15,6 +15,7 @@ type ForkCellInput struct {
 type ForkCellUseCase struct {
 	Config           ConfigPort
 	State            CellStatePort
+	CellFactory      CellFactory
 	SourceFactory    SourceProviderFactory
 	Files            FilePort
 	ContainerFactory ContainerProviderFactory
@@ -42,7 +43,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := (domain.CellUniquenessChecker{}).EnsureUnique(existing, input.Issue, name); err != nil {
 		return domain.Cell{}, err
 	}
-	cell, err := domain.NewCellFactory().NewCell(u.IDs.NewID(), input.Issue, template, cfg.Project.Name)
+	cell, err := u.CellFactory.NewCell(u.IDs.NewID(), input.Issue, template, cfg.Project.Name)
 	if err != nil {
 		return domain.Cell{}, err
 	}

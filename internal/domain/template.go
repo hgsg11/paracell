@@ -26,14 +26,16 @@ const (
 )
 
 type ContainerTemplate struct {
-	Network  string                              `yaml:"network,omitempty" json:"network,omitempty"`
+	Network  ContainerNetwork                    `yaml:"network,omitempty" json:"network,omitempty"`
 	Services map[string]ContainerServiceTemplate `yaml:"services" json:"services"`
 }
 
 const (
-	ContainerNetworkModeIsolated = "isolated"
-	ContainerNetworkModeShared   = "shared"
+	ContainerNetworkIsolated ContainerNetwork = "isolated"
+	ContainerNetworkShared   ContainerNetwork = "shared"
 )
+
+type ContainerNetwork string
 
 type ContainerServiceTemplate struct {
 	SourceContainer string          `yaml:"sourceContainer" json:"sourceContainer"`
