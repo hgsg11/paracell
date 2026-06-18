@@ -2,7 +2,9 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	"github.com/hgsg11/paracell/internal/domain"
@@ -52,7 +54,14 @@ func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.C
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
-	return a.Runner.Run(ctx, "tmux", "kill-session", "-t", cell.Session.Name)
+	err := a.Runner.Run(ctx, "tmux", "kill-session", "-t", cell.Session.Name)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "can't find session") {
+		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
+	}
+	return err
 }
 
 func (a TmuxAdapter) EnterSession(ctx context.Context, cell domain.Cell) error {

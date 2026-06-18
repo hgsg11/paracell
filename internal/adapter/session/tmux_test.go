@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -9,12 +10,17 @@ import (
 )
 
 type fakeRunner struct {
-	calls []string
+	calls  []string
+	errors map[string]error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
 	_ = ctx
-	r.calls = append(r.calls, name+" "+joinArgs(args))
+	call := name + " " + joinArgs(args)
+	r.calls = append(r.calls, call)
+	if r.errors != nil && r.errors[call] != nil {
+		return r.errors[call]
+	}
 	return nil
 }
 
@@ -150,5 +156,20 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestCleanSessionは見つからないSessionをnotFound扱いにする(t *testing.T) {
+	runner := &fakeRunner{
+		errors: map[string]error{
+			"tmux kill-session -t paracell-myapp-123": errors.New("exit status 1: can't find session: paracell-myapp-123"),
+		},
+	}
+	adapter := TmuxAdapter{Runner: runner}
+	cell := domain.Cell{Session: domain.Session{Name: "paracell-myapp-123"}}
+
+	err := adapter.CleanSession(context.Background(), cell)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want domain.ErrNotFound", err)
 	}
 }

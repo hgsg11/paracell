@@ -123,6 +123,23 @@ func TestCreateSourceはBranchModeRequireで既存Branchを使う(t *testing.T) 
 	}
 }
 
+func TestCleanSourceは見つからないWorktreeをnotFound扱いにする(t *testing.T) {
+	runner := &fakeRunner{
+		runErrors: map[string]error{
+			"git worktree remove --force .paracell/cells/123/source": errors.New("fatal: '.paracell/cells/123/source' is not a working tree"),
+		},
+	}
+	adapter := GitSourceAdapter{Runner: runner}
+	cell := domain.Cell{
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
+	}
+
+	err := adapter.CleanSource(context.Background(), cell)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want domain.ErrNotFound", err)
+	}
+}
+
 type fakeRunner struct {
 	runCalls  []string
 	runErrors map[string]error

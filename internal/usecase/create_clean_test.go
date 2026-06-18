@@ -3,6 +3,7 @@ package usecase
 import (
 	"bytes"
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 	"text/template"
@@ -137,6 +138,86 @@ func TestCleanCellはDoneでないCellをCleanしない(t *testing.T) {
 	}
 	if err.Error() != "完了済みではないので消せない" {
 		t.Fatalf("error = %q, want %q", err.Error(), "完了済みではないので消せない")
+	}
+}
+
+func TestCleanCellは削除対象が既に無ければ他も消してStateから消す(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cleanSessionErr = domain.ErrNotFound
+	ports.cleanContainersErr = domain.ErrNotFound
+	ports.cleanSourceErr = domain.ErrNotFound
+	ports.cells = []domain.Cell{
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123"}
+			if err := cell.MarkDone(); err != nil {
+				t.Fatalf("Cellをdoneにできなかった: %v", err)
+			}
+			return cell
+		}(),
+	}
+	uc := CleanCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+	}
+
+	err := uc.Execute(ctx, CleanCellInput{Cell: "123"})
+	if err != nil {
+		t.Fatalf("CleanCellでエラーが返った: %v", err)
+	}
+	wantCalls := []string{
+		"factory:session:tmux",
+		"factory:container:docker",
+		"factory:source:git",
+		"session:clean:123",
+		"containers:clean:123",
+		"source:clean:123",
+		"state:save:0",
+	}
+	if !reflect.DeepEqual(ports.calls, wantCalls) {
+		t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, wantCalls)
+	}
+}
+
+func TestCleanCellは削除エラーなら途中で止める(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.cleanSessionErr = errors.New("tmux permission denied")
+	ports.cells = []domain.Cell{
+		func() domain.Cell {
+			cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123"}
+			if err := cell.MarkDone(); err != nil {
+				t.Fatalf("Cellをdoneにできなかった: %v", err)
+			}
+			return cell
+		}(),
+	}
+	uc := CleanCellUseCase{
+		Config:           ports,
+		State:            ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+	}
+
+	err := uc.Execute(ctx, CleanCellInput{Cell: "123"})
+	if err == nil {
+		t.Fatal("削除エラーなのに成功した")
+	}
+	if err.Error() != "tmux permission denied" {
+		t.Fatalf("error = %q, want %q", err.Error(), "tmux permission denied")
+	}
+	wantCalls := []string{
+		"factory:session:tmux",
+		"factory:container:docker",
+		"factory:source:git",
+		"session:clean:123",
+	}
+	if !reflect.DeepEqual(ports.calls, wantCalls) {
+		t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, wantCalls)
 	}
 }
 
@@ -348,9 +429,12 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 }
 
 type fakePorts struct {
-	config domain.Config
-	cells  []domain.Cell
-	calls  []string
+	config             domain.Config
+	cells              []domain.Cell
+	calls              []string
+	cleanSourceErr     error
+	cleanContainersErr error
+	cleanSessionErr    error
 }
 
 func newFakePorts() *fakePorts {
@@ -477,7 +561,7 @@ func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) error {
 
 func (f *fakePorts) CleanSource(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "source:clean:"+cell.Name)
-	return nil
+	return f.cleanSourceErr
 }
 
 func (f *fakePorts) CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
@@ -492,7 +576,7 @@ func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, temp
 
 func (f *fakePorts) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "containers:clean:"+cell.Name)
-	return nil
+	return f.cleanContainersErr
 }
 
 func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
@@ -506,7 +590,7 @@ func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
 
 func (f *fakePorts) CleanSession(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "session:clean:"+cell.Name)
-	return nil
+	return f.cleanSessionErr
 }
 
 func (f *fakePorts) EnterSession(ctx context.Context, cell domain.Cell) error {

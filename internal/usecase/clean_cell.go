@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -55,16 +56,26 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err != nil {
 		return err
 	}
-	if err := session.CleanSession(ctx, target); err != nil {
+	if err := ignoreNotFound(session.CleanSession(ctx, target)); err != nil {
 		return err
 	}
-	if err := containers.CleanContainers(ctx, target); err != nil {
+	if err := ignoreNotFound(containers.CleanContainers(ctx, target)); err != nil {
 		return err
 	}
-	if err := source.CleanSource(ctx, target); err != nil {
+	if err := ignoreNotFound(source.CleanSource(ctx, target)); err != nil {
 		return err
 	}
 	next := append([]domain.Cell{}, cells[:index]...)
 	next = append(next, cells[index+1:]...)
 	return u.State.SaveCells(ctx, next)
+}
+
+func ignoreNotFound(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	return err
 }

@@ -2,6 +2,8 @@ package source
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	"github.com/hgsg11/paracell/internal/domain"
@@ -30,5 +32,12 @@ func (a GitSourceAdapter) branchExists(ctx context.Context, branch string) bool 
 }
 
 func (a GitSourceAdapter) CleanSource(ctx context.Context, cell domain.Cell) error {
-	return a.Runner.Run(ctx, "git", "worktree", "remove", "--force", cell.Source.Path)
+	err := a.Runner.Run(ctx, "git", "worktree", "remove", "--force", cell.Source.Path)
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "is not a working tree") {
+		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
+	}
+	return err
 }

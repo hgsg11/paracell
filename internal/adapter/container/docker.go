@@ -444,14 +444,23 @@ func sortedServiceRoles(services map[string]domain.CellContainer) []string {
 func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	for _, role := range sortedServiceRoles(cell.Containers.Services) {
 		service := cell.Containers.Services[role]
-		_ = a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName)
+		if err := a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName); err != nil && !isMissingDockerResourceError(err) {
+			return err
+		}
 	}
 	if cell.Containers.NetworkMode == string(domain.ContainerNetworkIsolated) || cell.Containers.NetworkMode == "" {
 		if network := cellNetworkName(cell); network != "" {
-			_ = a.Runner.Run(ctx, "docker", "network", "rm", network)
+			if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func isMissingDockerResourceError(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no such container") || strings.Contains(message, "not found")
 }
 
 type containerInspection struct {

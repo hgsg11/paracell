@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -370,15 +371,44 @@ func TestCleanContainersはコンテナ削除後にセルネットワークを�
 	}
 }
 
+func TestCleanContainersは見つからないContainerとNetworkを無視する(t *testing.T) {
+	runner := &fakeRunner{
+		runErrors: map[string]error{
+			"docker rm -f paracell-myapp-123-web":  errors.New("Error response from daemon: No such container: paracell-myapp-123-web"),
+			"docker network rm paracell-myapp-123": errors.New("Error response from daemon: network paracell-myapp-123 not found"),
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Network:     "paracell-myapp-123",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web"},
+			},
+		},
+	}
+
+	err := adapter.CleanContainers(context.Background(), cell)
+	if !errors.Is(err, domain.ErrNotFound) && err != nil {
+		t.Fatalf("error = %v, want nil or domain.ErrNotFound-consumed behavior", err)
+	}
+}
+
 type fakeRunner struct {
 	outputs     []string
 	outputCalls []string
 	runCalls    []string
+	runErrors   map[string]error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
 	_ = ctx
-	r.runCalls = append(r.runCalls, name+" "+joinArgs(args))
+	call := name + " " + joinArgs(args)
+	r.runCalls = append(r.runCalls, call)
+	if r.runErrors != nil && r.runErrors[call] != nil {
+		return r.runErrors[call]
+	}
 	return nil
 }
 
