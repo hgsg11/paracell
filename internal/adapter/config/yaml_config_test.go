@@ -683,6 +683,39 @@ templates:
 	}
 }
 
+func TestYAMLConfigは未対応ContainerNetworkを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      network: isolate
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("未対応containers.networkなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported containers.network "isolate"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported containers.network "isolate"`)
+	}
+}
+
 func TestYAMLConfigは不正なRepositoryBranchModeを拒否する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")

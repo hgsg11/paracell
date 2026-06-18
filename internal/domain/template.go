@@ -1,5 +1,12 @@
 package domain
 
+import (
+	"encoding/json"
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 type Template struct {
 	Name       string
 	Repository RepositoryTemplate
@@ -36,6 +43,45 @@ const (
 )
 
 type ContainerNetwork string
+
+func (n ContainerNetwork) String() string {
+	return string(n)
+}
+
+func (n ContainerNetwork) Validate() error {
+	switch n {
+	case "", ContainerNetworkIsolated, ContainerNetworkShared:
+		return nil
+	default:
+		return fmt.Errorf("unsupported containers.network %q", n)
+	}
+}
+
+func (n *ContainerNetwork) UnmarshalYAML(value *yaml.Node) error {
+	var raw string
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	next := ContainerNetwork(raw)
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	*n = next
+	return nil
+}
+
+func (n *ContainerNetwork) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	next := ContainerNetwork(raw)
+	if err := next.Validate(); err != nil {
+		return err
+	}
+	*n = next
+	return nil
+}
 
 type ContainerServiceTemplate struct {
 	SourceContainer string          `yaml:"sourceContainer" json:"sourceContainer"`
