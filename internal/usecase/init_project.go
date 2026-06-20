@@ -48,7 +48,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) 
 				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{
 					{
 						Name:    "planning",
-						Command: `codex "Read GitHub issue #{{.issue}} first. Use superpowers:brainstorming to turn it into an approved design spec, then use superpowers:writing-plans to create the implementation plan. Work from the current repository context and ask the user for any approvals required by those skills."`,
+						Command: `codex "Read GitHub issue #{{.issue}} first. Use superpowers:brainstorming to refine the design and use the structure of superpowers:writing-plans to make the issue body implementation-ready, but do not save separate .md design or plan files. Update the GitHub issue itself so its body is the single source of truth for design, implementation direction, and acceptance criteria."`,
 					},
 				}},
 			},
@@ -62,7 +62,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) 
 				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{
 					{
 						Name:    "implementation",
-						Command: `codex "Read GitHub issue #{{.issue}} and the existing implementation plan first. Use superpowers:executing-plans to implement without subagents. Before claiming completion, use superpowers:verification-before-completion. Then use superpowers:finishing-a-development-branch, create a pull request, and report the PR URL to the user."`,
+						Command: `codex "Read GitHub issue #{{.issue}} and treat its body as the single source of truth. Use superpowers:executing-plans to implement without subagents. Before claiming completion, use superpowers:verification-before-completion. Then use superpowers:finishing-a-development-branch, create a pull request, and report the PR URL to the user."`,
 					},
 				}},
 			},
