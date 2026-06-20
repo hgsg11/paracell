@@ -1,0 +1,6 @@
+approval_policy = "never"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "medium"
+
+[features]
+multi_agent = false

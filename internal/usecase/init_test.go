@@ -45,6 +45,32 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if len(template.Session.Windows) != 0 {
 		t.Fatalf("session windows length = %d, want 0", len(template.Session.Windows))
 	}
+	planning := cfg.Templates["planning"]
+	if planning.Repository.Base != "main" {
+		t.Fatalf("planning repository.base = %q, want %q", planning.Repository.Base, "main")
+	}
+	if planning.Repository.BranchPrefix != "" {
+		t.Fatalf("planning repository.branchPrefix = %q, want empty", planning.Repository.BranchPrefix)
+	}
+	if len(planning.Session.Windows) != 1 {
+		t.Fatalf("planning session windows length = %d, want 1", len(planning.Session.Windows))
+	}
+	if planning.Session.Windows[0].Command == "" {
+		t.Fatal("planning session command is empty")
+	}
+	implementation := cfg.Templates["implementation"]
+	if implementation.Repository.Base != "main" {
+		t.Fatalf("implementation repository.base = %q, want %q", implementation.Repository.Base, "main")
+	}
+	if implementation.Repository.BranchPrefix != "" {
+		t.Fatalf("implementation repository.branchPrefix = %q, want empty", implementation.Repository.BranchPrefix)
+	}
+	if len(implementation.Session.Windows) != 1 {
+		t.Fatalf("implementation session windows length = %d, want 1", len(implementation.Session.Windows))
+	}
+	if implementation.Session.Windows[0].Command == "" {
+		t.Fatal("implementation session command is empty")
+	}
 }
 
 func TestInitは既存設定がある場合に失敗する(t *testing.T) {

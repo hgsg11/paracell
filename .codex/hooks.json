@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .codex/hooks/git_command_guard.py",
+            "statusMessage": "Checking repository git policy"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -lc 'if [ -n \"$PARACELL_CELL\" ] && command -v paracell >/dev/null 2>&1; then paracell pending >/dev/null 2>&1 || true; fi'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -lc 'if [ -n \"$PARACELL_CELL\" ] && command -v paracell >/dev/null 2>&1; then paracell ready >/dev/null 2>&1 || true; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}
