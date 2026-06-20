@@ -134,8 +134,9 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			return err
 		}
 		runNetwork := network
+		extraNetworks := []string(nil)
 		if cell.Containers.NetworkMode == string(domain.ContainerNetworkShared) {
-			runNetwork = firstNetwork(inspection.NetworkSettings.Networks)
+			runNetwork, extraNetworks = sharedNetworks(inspection.NetworkSettings.Networks)
 		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:         service.ContainerName,
@@ -154,6 +155,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
+		}
+		for _, extraNetwork := range extraNetworks {
+			if err := a.Runner.Run(ctx, "docker", "network", "connect", extraNetwork, service.ContainerName); err != nil {
+				return err
+			}
 		}
 		if err := a.copyDatabase(ctx, role, source, service, inspection); err != nil {
 			return err
@@ -424,16 +430,16 @@ func shouldCreateIsolatedNetwork(mode string) bool {
 	return mode == "" || mode == string(domain.ContainerNetworkIsolated)
 }
 
-func firstNetwork(networks map[string]dockerNetwork) string {
+func sharedNetworks(networks map[string]dockerNetwork) (string, []string) {
 	names := make([]string, 0, len(networks))
 	for name := range networks {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	if len(names) == 0 {
-		return ""
+		return "", nil
 	}
-	return names[0]
+	return names[0], names[1:]
 }
 
 func sortedServiceRoles(services map[string]domain.CellContainer) []string {

@@ -162,6 +162,47 @@ func TestCreateContainersはSharedNetworkで元ネットワークを使う(t *te
 	}
 }
 
+func TestCreateContainersはSharedNetworkで元コンテナの全Networkを使う(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev"]},"Mounts":[],"NetworkSettings":{"Networks":{"bridge":{},"myapp_default":{},"shared_front":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: "/project/.paracell/cells/123/source"},
+		Containers: domain.Containers{
+			NetworkMode: "shared",
+			Network:     "shared",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Network: "shared",
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantRunCalls := []string{
+		"docker run -d --name paracell-myapp-123-web --network bridge -e APP_ENV=dev myapp-web:latest",
+		"docker network connect myapp_default paracell-myapp-123-web",
+		"docker network connect shared_front paracell-myapp-123-web",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
 func TestCreateContainersは元Containerの内部Portだけをコピーする(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
