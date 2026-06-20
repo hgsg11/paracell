@@ -29,8 +29,8 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 			Timeout:  5 * time.Second,
 			Retries:  3,
 		},
-		Mounts: []string{"/tmp/src:/app"},
-		Ports:  map[string]string{"8080": "80"},
+		Mounts:       []string{"/tmp/src:/app"},
+		ExposedPorts: []string{"80"},
 	}
 
 	args := BuildDockerRunArgs(spec)
@@ -46,13 +46,33 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		"-t",
 		"-i",
 		"-v", "/tmp/src:/app",
-		"-p", "8080:80",
+		"-p", "80",
 		"--health-cmd", "curl -f http://localhost:8080/health || exit 1",
 		"--health-interval", "30s",
 		"--health-timeout", "5s",
 		"--health-retries", "3",
 		"nginx:latest",
 		"nginx", "-g", "daemon off;",
+	}
+	if !reflect.DeepEqual(args, want) {
+		t.Fatalf("docker run args = %#v, want %#v", args, want)
+	}
+}
+
+func TestBuildDockerRunArgsは内部Portだけを公開できる(t *testing.T) {
+	spec := RunSpec{
+		Name:         "paracell-myapp-123-web",
+		Image:        "nginx:latest",
+		ExposedPorts: []string{"3000"},
+	}
+
+	args := BuildDockerRunArgs(spec)
+
+	want := []string{
+		"run", "-d",
+		"--name", "paracell-myapp-123-web",
+		"-p", "3000",
+		"nginx:latest",
 	}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("docker run args = %#v, want %#v", args, want)
@@ -96,7 +116,7 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 13000:3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -180,6 +200,46 @@ func TestCreateContainersはSharedNetworkで元コンテナの全Networkを使�
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
+func TestCreateContainersは元Containerの内部Portだけをコピーする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev"]},"HostConfig":{"PortBindings":{"3000/tcp":[{"HostIp":"","HostPort":"13000"}]}},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: "/project/.paracell/cells/123/source"},
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	if len(runner.runCalls) != 2 {
+		t.Fatalf("run calls length = %d, want 2 (%#v)", len(runner.runCalls), runner.runCalls)
+	}
+	if got := runner.runCalls[1]; strings.Contains(got, "-p 13000:3000") {
+		t.Fatalf("run call = %q, want no copied host port binding", got)
+	}
+	if got := runner.runCalls[1]; !strings.Contains(got, " -p 3000 ") {
+		t.Fatalf("run call = %q, want copied container port only", got)
 	}
 }
 
