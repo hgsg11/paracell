@@ -50,7 +50,10 @@ func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.C
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", cell.Session.Name, "key-table", "paracell"); err != nil {
 		return err
 	}
-	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window")
+	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
+		return err
+	}
+	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "paracell view")
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {

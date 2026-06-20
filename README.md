@@ -91,6 +91,10 @@ templates:
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
+paracell が作成した tmux session の中では、`C-p` で `paracell view` を popup で開けます。popup から `l` を押すと、選択した cell の tmux session に切り替わります。
+
+`C-p` の popup は tmux の `display-popup` 対応版を前提にしています。
+
 ## コマンド
 
 ```text
