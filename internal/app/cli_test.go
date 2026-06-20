@@ -653,6 +653,7 @@ func TestRunはReadyでPARACELL_CELLのStatusを更新する(t *testing.T) {
 
 func TestRunはPendingでPARACELL_CELLがないと失敗する(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("PARACELL_CELL", "")
 
 	err := Run(context.Background(), []string{"pending"}, dir)
 
