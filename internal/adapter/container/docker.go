@@ -16,19 +16,20 @@ import (
 )
 
 type RunSpec struct {
-	Name       string
-	Image      string
-	Network    string
-	Env        []string
-	Entrypoint []string
-	Command    []string
-	WorkDir    string
-	User       string
-	Tty        bool
-	OpenStdin  bool
-	Health     HealthcheckSpec
-	Mounts     []string
-	Ports      map[string]string
+	Name         string
+	Image        string
+	Network      string
+	Env          []string
+	Entrypoint   []string
+	Command      []string
+	WorkDir      string
+	User         string
+	Tty          bool
+	OpenStdin    bool
+	Health       HealthcheckSpec
+	Mounts       []string
+	Ports        map[string]string
+	ExposedPorts []string
 }
 
 type HealthcheckSpec struct {
@@ -73,6 +74,9 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 	sort.Strings(hostPorts)
 	for _, host := range hostPorts {
 		args = append(args, "-p", host+":"+spec.Ports[host])
+	}
+	for _, port := range spec.ExposedPorts {
+		args = append(args, "-p", port)
 	}
 	args = appendHealthcheckArgs(args, spec.Health)
 	args = append(args, spec.Image)
@@ -134,19 +138,19 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			runNetwork = firstNetwork(inspection.NetworkSettings.Networks)
 		}
 		args := BuildDockerRunArgs(RunSpec{
-			Name:       service.ContainerName,
-			Image:      inspection.Config.Image,
-			Network:    runNetwork,
-			Env:        append([]string(nil), inspection.Config.Env...),
-			Entrypoint: append([]string(nil), inspection.Config.Entrypoint...),
-			Command:    append([]string(nil), inspection.Config.Cmd...),
-			WorkDir:    inspection.Config.WorkingDir,
-			User:       inspection.Config.User,
-			Tty:        inspection.Config.Tty,
-			OpenStdin:  inspection.Config.OpenStdin,
-			Health:     inspection.Config.Healthcheck.toSpec(),
-			Mounts:     mounts,
-			Ports:      portsFromBindings(inspection.HostConfig.PortBindings),
+			Name:         service.ContainerName,
+			Image:        inspection.Config.Image,
+			Network:      runNetwork,
+			Env:          append([]string(nil), inspection.Config.Env...),
+			Entrypoint:   append([]string(nil), inspection.Config.Entrypoint...),
+			Command:      append([]string(nil), inspection.Config.Cmd...),
+			WorkDir:      inspection.Config.WorkingDir,
+			User:         inspection.Config.User,
+			Tty:          inspection.Config.Tty,
+			OpenStdin:    inspection.Config.OpenStdin,
+			Health:       inspection.Config.Healthcheck.toSpec(),
+			Mounts:       mounts,
+			ExposedPorts: exposedPortsFromBindings(inspection.HostConfig.PortBindings),
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
@@ -557,6 +561,21 @@ func portsFromBindings(bindings map[string][]dockerPortBinding) map[string]strin
 			ports[host] = strings.TrimSuffix(containerPort, "/tcp")
 		}
 	}
+	if len(ports) == 0 {
+		return nil
+	}
+	return ports
+}
+
+func exposedPortsFromBindings(bindings map[string][]dockerPortBinding) []string {
+	if len(bindings) == 0 {
+		return nil
+	}
+	ports := make([]string, 0, len(bindings))
+	for containerPort := range bindings {
+		ports = append(ports, strings.TrimSuffix(containerPort, "/tcp"))
+	}
+	sort.Strings(ports)
 	if len(ports) == 0 {
 		return nil
 	}
