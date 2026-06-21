@@ -53,7 +53,7 @@ func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.C
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
 		return err
 	}
-	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "paracell view")
+	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "-d", cell.Source.Path, "paracell", "view")
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
