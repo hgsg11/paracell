@@ -258,7 +258,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return runMarkDone(ctx, stateAdapter, cell)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
-				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, issue, template, workdir)
+				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, issue, template, workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})

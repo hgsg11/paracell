@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hgsg11/paracell/internal/adapter/provider"
 	"github.com/hgsg11/paracell/internal/adapter/state"
+	"github.com/hgsg11/paracell/internal/adapter/system"
 	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
 	"github.com/hgsg11/paracell/internal/domain"
 	"github.com/hgsg11/paracell/internal/usecase"
@@ -502,6 +504,85 @@ templates:
 	}
 	if !called {
 		t.Fatal("runForkが呼ばれなかった")
+	}
+}
+
+func TestRunはViewからのForkでQuietRunnerを使う(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalView := runView
+	defer func() { runView = originalView }()
+	originalFork := runFork
+	defer func() { runFork = originalFork }()
+
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+		_ = ctx
+		_ = cfg
+		_ = state
+		_ = issue
+		_ = template
+		_ = root
+		sourceFactory, ok := source.(provider.Factory)
+		if !ok {
+			t.Fatalf("source factory type = %T, want provider.Factory", source)
+		}
+		if _, ok := sourceFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("source runner type = %T, want system.CaptureRunner", sourceFactory.Runner)
+		}
+		containerFactory, ok := container.(provider.Factory)
+		if !ok {
+			t.Fatalf("container factory type = %T, want provider.Factory", container)
+		}
+		if _, ok := containerFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("container runner type = %T, want system.CaptureRunner", containerFactory.Runner)
+		}
+		sessionFactory, ok := session.(provider.Factory)
+		if !ok {
+			t.Fatalf("session factory type = %T, want provider.Factory", session)
+		}
+		if _, ok := sessionFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("session runner type = %T, want system.CaptureRunner", sessionFactory.Runner)
+		}
+		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
+	}
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = templates
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		cmd := fork("123", "default")
+		if cmd == nil {
+			t.Fatal("fork handlerがコマンドを返さなかった")
+		}
+		_ = cmd()
+		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 }
 
