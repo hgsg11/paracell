@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -94,7 +96,8 @@ func (a TmuxAdapter) ensureRootSession(ctx context.Context, name string) error {
 	if err == nil {
 		return nil
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "can't find session") {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) && !strings.Contains(strings.ToLower(err.Error()), "can't find session") {
 		return err
 	}
 	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", name, "-c", "."); err != nil {
