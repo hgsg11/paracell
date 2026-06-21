@@ -67,7 +67,7 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n"
+	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n  TEMPLATES\n  no templates\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -79,7 +79,7 @@ func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n"
+	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n  TEMPLATES\n  no templates\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -421,5 +421,132 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 	updated, _ := next.(Model).Update(cmd())
 	if updated.(Model).Cells[0].IsDone() {
 		t.Fatal("IsDone = true, want false")
+	}
+}
+
+func TestModelはtabでTemplate一覧へフォーカスを切り替える(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got := next.(Model)
+
+	if got.Focus != FocusTemplates {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusTemplates)
+	}
+}
+
+func TestModelはTemplate一覧でyyするとIssue入力モードへ入る(t *testing.T) {
+	model := NewModel(nil, []string{"default", "planning"})
+	model.Focus = FocusTemplates
+	model.TemplateSelected = 1
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got := next.(Model)
+	if !got.AwaitingFork {
+		t.Fatal("AwaitingFork = false, want true")
+	}
+	if cmd != nil {
+		t.Fatal("最初のyでコマンドが返った")
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got = next.(Model)
+	if !got.IssueInputActive {
+		t.Fatal("IssueInputActive = false, want true")
+	}
+	if got.ForkTemplate != "planning" {
+		t.Fatalf("ForkTemplate = %q, want %q", got.ForkTemplate, "planning")
+	}
+}
+
+func TestModelはIssue入力中にEnterでForkHandlerを呼ぶ(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.IssueInputActive = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "123"
+	called := false
+	model.Fork = func(issue string, template string) tea.Cmd {
+		called = true
+		if issue != "123" {
+			t.Fatalf("issue = %q, want %q", issue, "123")
+		}
+		if template != "default" {
+			t.Fatalf("template = %q, want %q", template, "default")
+		}
+		return func() tea.Msg {
+			return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
+		}
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enterでforkコマンドが返らなかった")
+	}
+	if !called {
+		t.Fatal("Fork handlerが呼ばれなかった")
+	}
+
+	updated, _ := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if got.IssueInputActive {
+		t.Fatal("IssueInputActive = true, want false")
+	}
+}
+
+func TestModelはIssue入力中にEscで入力を破棄する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.IssueInputActive = true
+	model.AwaitingFork = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "123"
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := next.(Model)
+
+	if got.IssueInputActive {
+		t.Fatal("IssueInputActive = true, want false")
+	}
+	if got.AwaitingFork {
+		t.Fatal("AwaitingFork = true, want false")
+	}
+	if got.IssueInput != "" {
+		t.Fatalf("IssueInput = %q, want empty", got.IssueInput)
+	}
+}
+
+func TestModelはIssue入力中に文字入力とBackspaceができる(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.IssueInputActive = true
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1', '2', '3'}})
+	got := next.(Model)
+	if got.IssueInput != "123" {
+		t.Fatalf("IssueInput = %q, want %q", got.IssueInput, "123")
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	got = next.(Model)
+	if got.IssueInput != "12" {
+		t.Fatalf("IssueInput = %q, want %q", got.IssueInput, "12")
+	}
+}
+
+func TestModelViewはTemplate一覧を下段に表示する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+
+	got := model.View()
+
+	if !strings.Contains(got, "TEMPLATES") {
+		t.Fatalf("view = %q, want template section", got)
+	}
+	if !strings.Contains(got, "default") || !strings.Contains(got, "planning") {
+		t.Fatalf("view = %q, want template names", got)
 	}
 }

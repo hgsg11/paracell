@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 
 	tea "github.com/charmbracelet/bubbletea"
 	celladapter "github.com/hgsg11/paracell/internal/adapter/cell"
@@ -65,6 +66,19 @@ var (
 			return exec.CommandContext(ctx, "tmux", "switch-client", "-t", cell.Session.Name), nil
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-t", cell.Session.Name), nil
+	}
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+		uc := usecase.ForkCellUseCase{
+			Config:           cfg,
+			State:            state,
+			CellFactory:      celladapter.Factory{},
+			SourceFactory:    source,
+			Files:            files.CopyAdapter{Root: root},
+			ContainerFactory: container,
+			SessionFactory:   session,
+			IDs:              id.RandomGenerator{},
+		}
+		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template})
 	}
 )
 
@@ -219,12 +233,16 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
 	case CommandView:
+		loaded, err := configAdapter.Load(ctx, nil)
+		if err != nil {
+			return err
+		}
 		uc := usecase.ViewCellsUseCase{State: stateAdapter}
 		cells, err := uc.Execute(ctx)
 		if err != nil {
 			return err
 		}
-		_, err = runView(ctx, cells, func() ([]domain.Cell, error) {
+		_, err = runView(ctx, cells, templateNames(loaded.Templates), func() ([]domain.Cell, error) {
 			return stateAdapter.LoadCells(ctx)
 		}, func(cell domain.Cell) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, configAdapter, cell)
@@ -238,6 +256,11 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return runClean(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
+		}, func(issue string, template string) tea.Cmd {
+			return func() tea.Msg {
+				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, issue, template, workdir)
+				return viewadapter.ForkResultCmd(cell, err)()
+			}
 		})
 		if err != nil {
 			return err
@@ -297,4 +320,13 @@ func projectRootForWorkdir(workdir string) string {
 			return workdir
 		}
 	}
+}
+
+func templateNames(templates map[string]domain.Template) []string {
+	names := make([]string, 0, len(templates))
+	for name := range templates {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

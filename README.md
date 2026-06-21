@@ -84,9 +84,12 @@ templates:
 ```
 
 - `j` / `k`: 移動
+- `tab`: cell 一覧と template 一覧のフォーカス切り替え
 - `l`: cell に入る
 - `enter`: done を切り替える
 - `d` `d`: clean
+- template 一覧で `y` `y`: issue 番号入力モード
+- issue 番号入力後 `enter`: fork
 - `q`: 閉じる
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
