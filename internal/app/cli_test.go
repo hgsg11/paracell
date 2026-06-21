@@ -272,6 +272,31 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	}
 }
 
+func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootのStateを読む(t *testing.T) {
+	dir := t.TempDir()
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{
+		{Name: "123", Template: "default"},
+		{Name: "456", Template: "webapp"},
+	}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+	t.Setenv("PARACELL_ROOT", dir)
+
+	other := t.TempDir()
+	output, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"ls"}, other)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
 func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	dir := t.TempDir()
 
