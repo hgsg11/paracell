@@ -72,6 +72,31 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 	}
 }
 
+func TestEnterRootSessionはSessionがなければ作成してAttachする(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{
+		errors: map[string]error{
+			"tmux has-session -t paracell-myapp-root": errors.New("exit status 1: can't find session: paracell-myapp-root"),
+		},
+	}
+	adapter := TmuxAdapter{Runner: runner}
+
+	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux has-session -t paracell-myapp-root",
+		"tmux new-session -d -s paracell-myapp-root -c .",
+		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux attach-session -t paracell-myapp-root",
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
 func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
