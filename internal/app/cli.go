@@ -32,6 +32,13 @@ var (
 		_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell})
 		return err
 	}
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		uc := usecase.EnterRootSessionUseCase{
+			Config:         cfg,
+			SessionFactory: factory,
+		}
+		return uc.Execute(ctx)
+	}
 	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
@@ -83,6 +90,7 @@ const (
 	CommandList    CommandKind = "ls"
 	CommandPending CommandKind = "pending"
 	CommandReady   CommandKind = "ready"
+	CommandRoot    CommandKind = "root"
 	CommandView    CommandKind = "view"
 	CommandVersion CommandKind = "version"
 	CommandHelp    CommandKind = "help"
@@ -106,7 +114,7 @@ type Command struct {
 
 func ParseCommand(args []string) (Command, error) {
 	if len(args) == 0 {
-		return Command{Kind: CommandView}, nil
+		return Command{Kind: CommandRoot}, nil
 	}
 	switch args[0] {
 	case "--version":
@@ -208,6 +216,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		}
 		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.Ready)
 		return err
+	case CommandRoot:
+		return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
 	case CommandView:
 		uc := usecase.ViewCellsUseCase{State: stateAdapter}
 		cells, err := uc.Execute(ctx)

@@ -104,8 +104,8 @@ func Test引数なしはViewコマンドとして解析する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("引数なし解析でエラーが返った: %v", err)
 	}
-	if cmd.Kind != CommandView {
-		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandView)
+	if cmd.Kind != CommandRoot {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandRoot)
 	}
 }
 
@@ -381,6 +381,90 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cells = %#v, want %#v", got, want)
+	}
+}
+
+func TestRunは引数なしでRootSessionEnterを実行する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates: {}
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalRoot := runEnterRoot
+	defer func() { runEnterRoot = originalRoot }()
+	originalView := runView
+	defer func() { runView = originalView }()
+
+	called := false
+	var gotProject string
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		loaded, err := cfg.Load(ctx, nil)
+		if err != nil {
+			return err
+		}
+		_ = factory
+		called = true
+		gotProject = loaded.Project.Name
+		return nil
+	}
+	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+		t.Fatal("viewが呼ばれた")
+		return viewadapter.Result{}, nil
+	}
+
+	if err := Run(context.Background(), nil, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !called {
+		t.Fatal("root session enterが呼ばれなかった")
+	}
+	if gotProject != "myapp" {
+		t.Fatalf("project = %q, want %q", gotProject, "myapp")
+	}
+}
+
+func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
+	dir := t.TempDir()
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
+	}
+
+	originalRoot := runEnterRoot
+	defer func() { runEnterRoot = originalRoot }()
+	originalView := runView
+	defer func() { runView = originalView }()
+
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		t.Fatal("root enterが呼ばれた")
+		return nil
+	}
+	called := false
+	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		called = true
+		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !called {
+		t.Fatal("viewが呼ばれなかった")
 	}
 }
 

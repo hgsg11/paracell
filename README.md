@@ -2,7 +2,7 @@
 
 issue ごとに、git worktree・tmux session・container・状態管理をまとめて作る CLI です。
 
-`paracell fork 123 --template default` で issue 用の作業部屋を作り、`paracell` から入る・見る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
+`paracell fork 123 --template default` で issue 用の作業部屋を作り、`paracell` で project 用 root tmux session に入り、そこから cell を見る・入る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
 
 ## できること
 
@@ -39,7 +39,7 @@ go build -o paracell ./cmd/paracell
 ```sh
 paracell init
 paracell fork 123 --template default
-paracell view
+paracell
 ```
 
 `paracell init` は `paracell.yaml` を作ります。template を編集して、作りたい cell の形を決めます。
@@ -90,6 +90,8 @@ templates:
 - `q`: 閉じる
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
+
+`paracell` を引数なしで実行すると、project ごとの root tmux session に入ります。そこで `C-p` を押すと `paracell view` を popup で開けます。
 
 paracell が作成した tmux session の中では、`C-p` で `paracell view` を popup で開けます。popup から `l` を押すと、選択した cell の tmux session に切り替わります。
 

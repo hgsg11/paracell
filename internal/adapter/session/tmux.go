@@ -2,8 +2,10 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -48,7 +50,11 @@ func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, win
 }
 
 func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.Cell) error {
-	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", cell.Session.Name, "key-table", "paracell"); err != nil {
+	return a.configureBindings(ctx, cell.Session.Name)
+}
+
+func (a TmuxAdapter) configureBindings(ctx context.Context, target string) error {
+	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "key-table", "paracell"); err != nil {
 		return err
 	}
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
@@ -73,4 +79,34 @@ func (a TmuxAdapter) EnterSession(ctx context.Context, cell domain.Cell) error {
 		return a.Runner.Run(ctx, "tmux", "switch-client", "-t", cell.Session.Name)
 	}
 	return a.Runner.Run(ctx, "tmux", "attach-session", "-t", cell.Session.Name)
+}
+
+func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.ProjectConfig) error {
+	name := rootSessionName(project.Name)
+	if err := a.ensureRootSession(ctx, name); err != nil {
+		return err
+	}
+	if os.Getenv("TMUX") != "" {
+		return a.Runner.Run(ctx, "tmux", "switch-client", "-t", name)
+	}
+	return a.Runner.Run(ctx, "tmux", "attach-session", "-t", name)
+}
+
+func (a TmuxAdapter) ensureRootSession(ctx context.Context, name string) error {
+	err := a.Runner.Run(ctx, "tmux", "has-session", "-t", name)
+	if err == nil {
+		return nil
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) && !strings.Contains(strings.ToLower(err.Error()), "can't find session") {
+		return err
+	}
+	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", name, "-c", "."); err != nil {
+		return err
+	}
+	return a.configureBindings(ctx, name)
+}
+
+func rootSessionName(project string) string {
+	return "paracell-" + project + "-root"
 }
