@@ -39,7 +39,7 @@ func (f Factory) Container(provider domain.ProviderConfig) (usecase.ContainerPor
 func (f Factory) Session(provider domain.ProviderConfig) (usecase.SessionPort, error) {
 	switch provider.Session {
 	case "tmux":
-		return session.TmuxAdapter{Runner: f.Runner}, nil
+		return session.TmuxAdapter{Runner: f.Runner, Root: f.Root}, nil
 	default:
 		return nil, fmt.Errorf("unsupported providers.session %q", provider.Session)
 	}

@@ -12,17 +12,18 @@ import (
 
 type TmuxAdapter struct {
 	Runner system.Runner
+	Root   string
 }
 
 func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error {
 	if len(cell.Session.Windows) == 0 {
-		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-c", cell.Source.Path); err != nil {
+		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-c", cell.Source.Path); err != nil {
 			return err
 		}
 		return a.configureSessionBindings(ctx, cell)
 	}
 	first := cell.Session.Windows[0]
-	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-n", first.Name, "-c", cell.Source.Path); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", cell.Source.Path); err != nil {
 		return err
 	}
 	if err := a.runWindowCommand(ctx, cell, first); err != nil {
@@ -53,7 +54,7 @@ func (a TmuxAdapter) configureSessionBindings(ctx context.Context, cell domain.C
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
 		return err
 	}
-	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "paracell view")
+	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "paracell", "view")
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {

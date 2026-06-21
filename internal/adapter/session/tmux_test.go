@@ -74,7 +74,7 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 
 func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) {
 	runner := &fakeRunner{}
-	adapter := TmuxAdapter{Runner: runner}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
 		Issue:   "123",
 		Name:    "123",
@@ -86,7 +86,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -c .paracell/cells/123/source",
+		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -E paracell view",
@@ -98,7 +98,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 
 func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	runner := &fakeRunner{}
-	adapter := TmuxAdapter{Runner: runner}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
 		Issue:  "123",
 		Name:   "123",
@@ -116,7 +116,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -n editor -c .paracell/cells/123/source",
+		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -n editor -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
@@ -129,7 +129,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 
 func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *testing.T) {
 	runner := &fakeRunner{}
-	adapter := TmuxAdapter{Runner: runner}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
 		Issue:  "123",
 		Name:   "123",
@@ -148,7 +148,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -n editor -c .paracell/cells/123/source",
+		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -n editor -c .paracell/cells/123/source",
 		"tmux send-keys -t paracell-myapp-123:editor nvim . Enter",
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n test -c .paracell/cells/123/source",

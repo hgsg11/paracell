@@ -273,6 +273,12 @@ func currentCellFromEnv() (string, error) {
 }
 
 func projectRootForWorkdir(workdir string) string {
+	if root := os.Getenv("PARACELL_ROOT"); root != "" {
+		if abs, err := filepath.Abs(root); err == nil {
+			return abs
+		}
+		return filepath.Clean(root)
+	}
 	for dir := filepath.Clean(workdir); ; dir = filepath.Dir(dir) {
 		if filepath.Base(dir) == "source" {
 			cellDir := filepath.Dir(dir)
