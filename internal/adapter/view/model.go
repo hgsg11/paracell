@@ -15,6 +15,7 @@ import (
 )
 
 type Action string
+type FocusArea string
 
 const (
 	ActionNone   Action = ""
@@ -22,6 +23,10 @@ const (
 	ActionExit   Action = "exit"
 	ActionEnter  Action = "enter"
 	ActionDelete Action = "delete"
+
+	FocusCells     FocusArea = "cells"
+	FocusExit      FocusArea = "exit"
+	FocusTemplates FocusArea = "templates"
 )
 
 type Result struct {
@@ -29,22 +34,42 @@ type Result struct {
 	Cell   domain.Cell
 }
 
-type Model struct {
-	Cells          []domain.Cell
-	Selected       int
-	Quitting       bool
-	AwaitingDelete bool
-	Error          string
-	Width          int
-	Result         Result
-	Enter          func(domain.Cell) tea.Cmd
-	Delete         func(domain.Cell) error
-	MarkDone       func(domain.Cell) (domain.Cell, error)
-	Reload         func() ([]domain.Cell, error)
+type forkResultMsg struct {
+	cell domain.Cell
+	err  error
 }
 
-func NewModel(cells []domain.Cell) Model {
-	return Model{Cells: append([]domain.Cell(nil), cells...)}
+type Model struct {
+	Cells            []domain.Cell
+	Templates        []string
+	Focus            FocusArea
+	Selected         int
+	TemplateSelected int
+	Quitting         bool
+	AwaitingDelete   bool
+	AwaitingFork     bool
+	IssueInputActive bool
+	ForkTemplate     string
+	IssueInput       string
+	Error            string
+	Width            int
+	Result           Result
+	Enter            func(domain.Cell) tea.Cmd
+	Fork             func(issue string, template string) tea.Cmd
+	Delete           func(domain.Cell) error
+	MarkDone         func(domain.Cell) (domain.Cell, error)
+	Reload           func() ([]domain.Cell, error)
+}
+
+func NewModel(cells []domain.Cell, templates ...[]string) Model {
+	model := Model{
+		Cells: append([]domain.Cell(nil), cells...),
+		Focus: FocusCells,
+	}
+	if len(templates) > 0 {
+		model.Templates = append([]string(nil), templates[0]...)
+	}
+	return model
 }
 
 func (m Model) Init() tea.Cmd {
@@ -55,6 +80,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		key := msg.String()
+		if m.IssueInputActive {
+			switch msg.Type {
+			case tea.KeyRunes:
+				m.IssueInput += string(msg.Runes)
+				return m, nil
+			case tea.KeyBackspace:
+				if len(m.IssueInput) > 0 {
+					m.IssueInput = m.IssueInput[:len(m.IssueInput)-1]
+				}
+				return m, nil
+			case tea.KeyEnter:
+				if strings.TrimSpace(m.IssueInput) == "" {
+					m.Error = "issue is required"
+					return m, nil
+				}
+				if m.Fork == nil {
+					return m, nil
+				}
+				return m, m.Fork(m.IssueInput, m.ForkTemplate)
+			case tea.KeyEsc:
+				m.IssueInputActive = false
+				m.AwaitingFork = false
+				m.ForkTemplate = ""
+				m.IssueInput = ""
+				return m, nil
+			}
+		}
+		if key == "tab" {
+			if m.Focus == FocusCells {
+				m.Focus = FocusExit
+			} else if m.Focus == FocusExit {
+				m.Focus = FocusTemplates
+			} else {
+				m.Focus = FocusCells
+			}
+			return m, nil
+		}
 		if key == "q" {
 			m.Quitting = true
 			m.Result = Result{Action: ActionQuit}
@@ -83,19 +145,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch key {
 		case "j":
-			if m.Selected < m.lastSelectableIndex() {
+			if m.Focus == FocusTemplates {
+				if m.TemplateSelected < m.lastTemplateIndex() {
+					m.TemplateSelected++
+				}
+			} else if m.Focus == FocusCells && m.Selected < m.lastSelectableIndex() {
 				m.Selected++
 			}
 		case "k":
-			if m.Selected > 0 {
+			if m.Focus == FocusTemplates {
+				if m.TemplateSelected > 0 {
+					m.TemplateSelected--
+				}
+			} else if m.Focus == FocusCells && m.Selected > 0 {
 				m.Selected--
 			}
 		case "d":
+			if m.Focus != FocusCells {
+				return m, nil
+			}
 			m.AwaitingDelete = true
 			return m, nil
+		case "y":
+			if m.Focus == FocusTemplates {
+				if m.AwaitingFork {
+					m.IssueInputActive = true
+					if len(m.Templates) > 0 && m.TemplateSelected < len(m.Templates) {
+						m.ForkTemplate = m.Templates[m.TemplateSelected]
+					}
+					return m, nil
+				}
+				m.AwaitingFork = true
+				return m, nil
+			}
 		case "enter":
-			if m.isExitSelected() {
+			if m.Focus == FocusExit {
 				m.Error = "exit paracell cannot be marked done"
+				return m, nil
+			}
+			if m.Focus != FocusCells {
 				return m, nil
 			}
 			if len(m.Cells) == 0 {
@@ -112,10 +200,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return markDoneResultMsg{cell: updated, err: err}
 			}
 		case "l":
-			if m.isExitSelected() {
+			if m.Focus == FocusExit {
 				m.Result = Result{Action: ActionExit}
 				m.Quitting = true
 				return m, tea.Quit
+			}
+			if m.Focus != FocusCells {
+				return m, nil
 			}
 			cell := m.Cells[m.Selected]
 			enter := m.Enter
@@ -181,6 +272,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Cells[index] = msg.cell
 		return m, nil
+	case forkResultMsg:
+		if msg.err != nil {
+			m.Error = msg.err.Error()
+			return m, nil
+		}
+		m.Error = ""
+		if m.Reload != nil {
+			cells, err := m.Reload()
+			if err != nil {
+				m.Error = err.Error()
+				return m, nil
+			}
+			m.Cells = cells
+		}
+		m.IssueInputActive = false
+		m.AwaitingFork = false
+		m.ForkTemplate = ""
+		m.IssueInput = ""
+		return m, nil
 	case refreshMsg:
 		if m.Reload == nil {
 			return m, m.refreshCmd()
@@ -211,24 +321,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) lastTemplateIndex() int {
+	if len(m.Templates) == 0 {
+		return 0
+	}
+	return len(m.Templates) - 1
+}
+
 func (m Model) isExitSelected() bool {
-	return m.Selected == len(m.Cells)
+	return m.Focus == FocusExit
 }
 
 func (m Model) lastSelectableIndex() int {
-	return len(m.Cells)
+	if len(m.Cells) == 0 {
+		return 0
+	}
+	return len(m.Cells) - 1
 }
 
 func (m Model) View() string {
 	var b strings.Builder
+	b.WriteString("  TEMPLATES\n")
+	if len(m.Templates) == 0 {
+		prefix := " "
+		if m.Focus == FocusTemplates {
+			prefix = ">"
+		}
+		fmt.Fprintf(&b, "%s no templates\n", prefix)
+	} else {
+		for i, template := range m.Templates {
+			prefix := " "
+			if m.Focus == FocusTemplates && i == m.TemplateSelected {
+				prefix = ">"
+			}
+			fmt.Fprintf(&b, "%s %s\n", prefix, template)
+		}
+	}
+	b.WriteString("\n")
 	nameWidth, templateWidth, statusWidth := tableWidths(m.Cells)
 	fmt.Fprintf(&b, "  %s  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth), padded("STATUS", statusWidth))
 	if len(m.Cells) == 0 {
-		b.WriteString("no cells\n")
+		prefix := " "
+		if m.Focus == FocusCells {
+			prefix = ">"
+		}
+		fmt.Fprintf(&b, "%s no cells\n", prefix)
 	}
 	for i, cell := range m.Cells {
 		prefix := " "
-		if i == m.Selected {
+		if m.Focus == FocusCells && i == m.Selected {
 			prefix = ">"
 		}
 		done := "[ ]"
@@ -242,7 +383,7 @@ func (m Model) View() string {
 		prefix = ">"
 	}
 	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
-	b.WriteString(errorLine(m.Error, m.Width))
+	b.WriteString(statusLine(m))
 	return b.String()
 }
 
@@ -275,6 +416,20 @@ func errorLine(message string, width int) string {
 		width = 80
 	}
 	return clipWidth(line, width) + "\n"
+}
+
+func statusLine(m Model) string {
+	if m.IssueInputActive {
+		return clipWidth("issue: "+m.IssueInput, widthOrDefault(m.Width)) + "\n"
+	}
+	return errorLine(m.Error, m.Width)
+}
+
+func widthOrDefault(width int) int {
+	if width <= 0 {
+		return 80
+	}
+	return width
 }
 
 func singleLine(value string) string {
@@ -361,6 +516,12 @@ func (c *capturedExecCommand) Run() error {
 func EnterFailureCmd(cell domain.Cell, err error) tea.Cmd {
 	return func() tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
+	}
+}
+
+func ForkResultCmd(cell domain.Cell, err error) tea.Cmd {
+	return func() tea.Msg {
+		return forkResultMsg{cell: cell, err: err}
 	}
 }
 

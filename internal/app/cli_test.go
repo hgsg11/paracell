@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hgsg11/paracell/internal/adapter/provider"
 	"github.com/hgsg11/paracell/internal/adapter/state"
+	"github.com/hgsg11/paracell/internal/adapter/system"
 	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
 	"github.com/hgsg11/paracell/internal/domain"
 	"github.com/hgsg11/paracell/internal/usecase"
@@ -321,6 +323,25 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
 
 	original := runView
 	defer func() { runView = original }()
@@ -330,13 +351,15 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
+		_ = templates
 		_ = reload
 		_ = enter
 		_ = exit
 		_ = clean
 		_ = markDone
+		_ = fork
 		got = append([]domain.Cell(nil), cells...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
@@ -384,6 +407,210 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	}
 }
 
+func TestRunはViewにTemplate一覧を渡す(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+  planning:
+    repository:
+      branchPrefix: ""
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalView := runView
+	defer func() { runView = originalView }()
+
+	var gotTemplates []string
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		_ = fork
+		gotTemplates = append([]string(nil), templates...)
+		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !reflect.DeepEqual(gotTemplates, []string{"default", "planning"}) {
+		t.Fatalf("templates = %#v, want %#v", gotTemplates, []string{"default", "planning"})
+	}
+}
+
+func TestRunはViewからForkHandlerを呼べる(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalView := runView
+	defer func() { runView = originalView }()
+	originalFork := runFork
+	defer func() { runFork = originalFork }()
+
+	var called bool
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+		_ = ctx
+		_ = cfg
+		_ = source
+		_ = container
+		_ = session
+		_ = state
+		_ = root
+		called = true
+		if issue != "123" {
+			t.Fatalf("issue = %q, want %q", issue, "123")
+		}
+		if template != "default" {
+			t.Fatalf("template = %q, want %q", template, "default")
+		}
+		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
+	}
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = templates
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		cmd := fork("123", "default")
+		if cmd == nil {
+			t.Fatal("fork handlerがコマンドを返さなかった")
+		}
+		_ = cmd()
+		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !called {
+		t.Fatal("runForkが呼ばれなかった")
+	}
+}
+
+func TestRunはViewからのForkでQuietRunnerを使う(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalView := runView
+	defer func() { runView = originalView }()
+	originalFork := runFork
+	defer func() { runFork = originalFork }()
+
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+		_ = ctx
+		_ = cfg
+		_ = state
+		_ = issue
+		_ = template
+		_ = root
+		sourceFactory, ok := source.(provider.Factory)
+		if !ok {
+			t.Fatalf("source factory type = %T, want provider.Factory", source)
+		}
+		if _, ok := sourceFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("source runner type = %T, want system.CaptureRunner", sourceFactory.Runner)
+		}
+		containerFactory, ok := container.(provider.Factory)
+		if !ok {
+			t.Fatalf("container factory type = %T, want provider.Factory", container)
+		}
+		if _, ok := containerFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("container runner type = %T, want system.CaptureRunner", containerFactory.Runner)
+		}
+		sessionFactory, ok := session.(provider.Factory)
+		if !ok {
+			t.Fatalf("session factory type = %T, want provider.Factory", session)
+		}
+		if _, ok := sessionFactory.Runner.(system.CaptureRunner); !ok {
+			t.Fatalf("session runner type = %T, want system.CaptureRunner", sessionFactory.Runner)
+		}
+		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
+	}
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = templates
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		cmd := fork("123", "default")
+		if cmd == nil {
+			t.Fatal("fork handlerがコマンドを返さなかった")
+		}
+		_ = cmd()
+		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+}
+
 func TestRunは引数なしでRootSessionEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -415,7 +642,14 @@ templates: {}
 		gotProject = loaded.Project.Name
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = templates
+		_ = reload
+		_ = enter
+		_ = exit
+		_ = clean
+		_ = markDone
+		_ = fork
 		t.Fatal("viewが呼ばれた")
 		return viewadapter.Result{}, nil
 	}
@@ -437,6 +671,25 @@ func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 	if err := store.SaveCells(context.Background(), []domain.Cell{}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
 
 	originalRoot := runEnterRoot
 	defer func() { runEnterRoot = originalRoot }()
@@ -448,14 +701,16 @@ func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
+		_ = templates
 		_ = reload
 		_ = enter
 		_ = exit
 		_ = clean
 		_ = markDone
+		_ = fork
 		called = true
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
@@ -496,12 +751,14 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
+		_ = templates
 		_ = reload
 		_ = exit
 		_ = clean
 		_ = markDone
+		_ = fork
 		cmd := enter(cells[0])
 		if cmd == nil {
 			t.Fatal("enterでコマンドが返らなかった")
@@ -567,12 +824,14 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error)) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
+		_ = templates
 		_ = reload
 		_ = enter
 		_ = exit
 		_ = markDone
+		_ = fork
 		if err := clean(cells[0]); err != nil {
 			t.Fatalf("cleanでエラーが返った: %v", err)
 		}

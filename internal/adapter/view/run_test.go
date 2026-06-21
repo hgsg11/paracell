@@ -40,14 +40,14 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		if cell.Name != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
-	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
+	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil }, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -80,11 +80,11 @@ func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
-	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil })
+	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil }, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -119,6 +119,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	result, err := Run(
 		context.Background(),
 		cells,
+		nil,
 		func() ([]domain.Cell, error) { return cells, nil },
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error { return nil },
@@ -129,6 +130,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 			}
 			return cell, nil
 		},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
@@ -149,7 +151,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
 		return programFunc(func() (tea.Model, error) {
-			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyTab})
 			_ = cmd
 			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 			if cmd == nil {
@@ -162,6 +164,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	result, err := Run(
 		context.Background(),
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		nil,
 		func() ([]domain.Cell, error) {
 			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
 		},
@@ -172,6 +175,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		},
 		func(cell domain.Cell) error { return nil },
 		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
@@ -181,6 +185,54 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	}
 	if result.Action != ActionExit {
 		t.Fatalf("action = %q, want %q", result.Action, ActionExit)
+	}
+}
+
+func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) {
+	original := newProgram
+	defer func() { newProgram = original }()
+
+	reloaded := false
+	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
+		_ = opts
+		return programFunc(func() (tea.Model, error) {
+			m := model.(Model)
+			m.Focus = FocusTemplates
+			m.IssueInputActive = true
+			m.ForkTemplate = "default"
+			m.IssueInput = "123"
+			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil {
+				t.Fatal("Enterでforkコマンドが返らなかった")
+			}
+			updated, _ = updated.(Model).Update(cmd())
+			return updated, nil
+		})
+	}
+
+	_, err := Run(
+		context.Background(),
+		nil,
+		[]string{"default"},
+		func() ([]domain.Cell, error) {
+			reloaded = true
+			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
+		},
+		func(cell domain.Cell) tea.Cmd { return nil },
+		func() error { return nil },
+		func(cell domain.Cell) error { return nil },
+		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
+		func(issue string, template string) tea.Cmd {
+			return func() tea.Msg {
+				return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
+			}
+		},
+	)
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !reloaded {
+		t.Fatal("reloadが呼ばれなかった")
 	}
 }
 

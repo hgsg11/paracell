@@ -48,8 +48,8 @@ func TestModelは境界で選択を超えない(t *testing.T) {
 	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
 	got := next.(Model)
-	if got.Selected != 1 {
-		t.Fatalf("selected = %d, want %d", got.Selected, 1)
+	if got.Selected != 0 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 0)
 	}
 }
 
@@ -67,7 +67,7 @@ func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n"
+	want := "  TEMPLATES\n  no templates\n\n  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -79,7 +79,7 @@ func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
 	})
 
 	got := model.View()
-	want := "  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n"
+	want := "  TEMPLATES\n  no templates\n\n  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n"
 	if got != want {
 		t.Fatalf("view = %q, want %q", got, want)
 	}
@@ -331,21 +331,16 @@ func TestModelはExitParacellをCleanできない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
-	model.Selected = 1
+	model.Focus = FocusExit
 	model.Delete = func(cell domain.Cell) error {
 		t.Fatalf("exit paracellでdelete handlerが呼ばれた: %#v", cell)
 		return nil
 	}
 
 	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-	next, cmd := next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
-
-	if cmd != nil {
-		t.Fatal("exit paracellのddでコマンドが返った")
-	}
 	got := next.(Model)
-	if got.Error != "exit paracell cannot be cleaned" {
-		t.Fatalf("error = %q, want %q", got.Error, "exit paracell cannot be cleaned")
+	if got.AwaitingDelete {
+		t.Fatal("AwaitingDelete = true, want false")
 	}
 }
 
@@ -353,7 +348,7 @@ func TestModelはExitParacellをDoneにできない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
-	model.Selected = 1
+	model.Focus = FocusExit
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
 		t.Fatalf("exit paracellでmark done handlerが呼ばれた: %#v", cell)
 		return cell, nil
@@ -373,6 +368,7 @@ func TestModelはExitParacellをDoneにできない(t *testing.T) {
 func TestModelはdのあと別キーなら削除待機を解除する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
 	})
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
@@ -421,5 +417,186 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 	updated, _ := next.(Model).Update(cmd())
 	if updated.(Model).Cells[0].IsDone() {
 		t.Fatal("IsDone = true, want false")
+	}
+}
+
+func TestModelはtabでTemplate一覧へフォーカスを切り替える(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got := next.(Model)
+
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+}
+
+func TestModelはtabでTemplateCellExitを巡回する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got := next.(Model)
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got = next.(Model)
+	if got.Focus != FocusTemplates {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusTemplates)
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyTab})
+	got = next.(Model)
+	if got.Focus != FocusCells {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusCells)
+	}
+}
+
+func TestModelはExitParacellでjk移動しない(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusExit
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := next.(Model)
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+	if got.Selected != 0 {
+		t.Fatalf("selected = %d, want %d", got.Selected, 0)
+	}
+	if got.TemplateSelected != 0 {
+		t.Fatalf("template selected = %d, want %d", got.TemplateSelected, 0)
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	got = next.(Model)
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+}
+
+func TestModelはTemplate一覧でyyするとIssue入力モードへ入る(t *testing.T) {
+	model := NewModel(nil, []string{"default", "planning"})
+	model.Focus = FocusTemplates
+	model.TemplateSelected = 1
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got := next.(Model)
+	if !got.AwaitingFork {
+		t.Fatal("AwaitingFork = false, want true")
+	}
+	if cmd != nil {
+		t.Fatal("最初のyでコマンドが返った")
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	got = next.(Model)
+	if !got.IssueInputActive {
+		t.Fatal("IssueInputActive = false, want true")
+	}
+	if got.ForkTemplate != "planning" {
+		t.Fatalf("ForkTemplate = %q, want %q", got.ForkTemplate, "planning")
+	}
+}
+
+func TestModelはIssue入力中にEnterでForkHandlerを呼ぶ(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.IssueInputActive = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "123"
+	called := false
+	model.Fork = func(issue string, template string) tea.Cmd {
+		called = true
+		if issue != "123" {
+			t.Fatalf("issue = %q, want %q", issue, "123")
+		}
+		if template != "default" {
+			t.Fatalf("template = %q, want %q", template, "default")
+		}
+		return func() tea.Msg {
+			return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
+		}
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enterでforkコマンドが返らなかった")
+	}
+	if !called {
+		t.Fatal("Fork handlerが呼ばれなかった")
+	}
+
+	updated, _ := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if got.IssueInputActive {
+		t.Fatal("IssueInputActive = true, want false")
+	}
+}
+
+func TestModelはIssue入力中にEscで入力を破棄する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.IssueInputActive = true
+	model.AwaitingFork = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "123"
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	got := next.(Model)
+
+	if got.IssueInputActive {
+		t.Fatal("IssueInputActive = true, want false")
+	}
+	if got.AwaitingFork {
+		t.Fatal("AwaitingFork = true, want false")
+	}
+	if got.IssueInput != "" {
+		t.Fatalf("IssueInput = %q, want empty", got.IssueInput)
+	}
+}
+
+func TestModelはIssue入力中に文字入力とBackspaceができる(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.IssueInputActive = true
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1', '2', '3'}})
+	got := next.(Model)
+	if got.IssueInput != "123" {
+		t.Fatalf("IssueInput = %q, want %q", got.IssueInput, "123")
+	}
+
+	next, _ = got.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	got = next.(Model)
+	if got.IssueInput != "12" {
+		t.Fatalf("IssueInput = %q, want %q", got.IssueInput, "12")
+	}
+}
+
+func TestModelViewはTemplate一覧を下段に表示する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+
+	got := model.View()
+
+	if !strings.Contains(got, "TEMPLATES") {
+		t.Fatalf("view = %q, want template section", got)
+	}
+	if !strings.HasPrefix(got, "  TEMPLATES\n") {
+		t.Fatalf("view = %q, want template section first", got)
+	}
+	if !strings.Contains(got, "default") || !strings.Contains(got, "planning") {
+		t.Fatalf("view = %q, want template names", got)
 	}
 }
