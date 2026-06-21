@@ -151,7 +151,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
 		return programFunc(func() (tea.Model, error) {
-			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyTab})
 			_ = cmd
 			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
 			if cmd == nil {

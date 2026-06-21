@@ -25,6 +25,7 @@ const (
 	ActionDelete Action = "delete"
 
 	FocusCells     FocusArea = "cells"
+	FocusExit      FocusArea = "exit"
 	FocusTemplates FocusArea = "templates"
 )
 
@@ -108,6 +109,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if key == "tab" {
 			if m.Focus == FocusCells {
+				m.Focus = FocusExit
+			} else if m.Focus == FocusExit {
 				m.Focus = FocusTemplates
 			} else {
 				m.Focus = FocusCells
@@ -146,7 +149,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.TemplateSelected < m.lastTemplateIndex() {
 					m.TemplateSelected++
 				}
-			} else if m.Selected < m.lastSelectableIndex() {
+			} else if m.Focus == FocusCells && m.Selected < m.lastSelectableIndex() {
 				m.Selected++
 			}
 		case "k":
@@ -154,10 +157,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.TemplateSelected > 0 {
 					m.TemplateSelected--
 				}
-			} else if m.Selected > 0 {
+			} else if m.Focus == FocusCells && m.Selected > 0 {
 				m.Selected--
 			}
 		case "d":
+			if m.Focus != FocusCells {
+				return m, nil
+			}
 			m.AwaitingDelete = true
 			return m, nil
 		case "y":
@@ -173,8 +179,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		case "enter":
-			if m.isExitSelected() {
+			if m.Focus == FocusExit {
 				m.Error = "exit paracell cannot be marked done"
+				return m, nil
+			}
+			if m.Focus != FocusCells {
 				return m, nil
 			}
 			if len(m.Cells) == 0 {
@@ -191,10 +200,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return markDoneResultMsg{cell: updated, err: err}
 			}
 		case "l":
-			if m.isExitSelected() {
+			if m.Focus == FocusExit {
 				m.Result = Result{Action: ActionExit}
 				m.Quitting = true
 				return m, tea.Quit
+			}
+			if m.Focus != FocusCells {
+				return m, nil
 			}
 			cell := m.Cells[m.Selected]
 			enter := m.Enter
@@ -317,23 +329,47 @@ func (m Model) lastTemplateIndex() int {
 }
 
 func (m Model) isExitSelected() bool {
-	return m.Selected == len(m.Cells)
+	return m.Focus == FocusExit
 }
 
 func (m Model) lastSelectableIndex() int {
-	return len(m.Cells)
+	if len(m.Cells) == 0 {
+		return 0
+	}
+	return len(m.Cells) - 1
 }
 
 func (m Model) View() string {
 	var b strings.Builder
+	b.WriteString("  TEMPLATES\n")
+	if len(m.Templates) == 0 {
+		prefix := " "
+		if m.Focus == FocusTemplates {
+			prefix = ">"
+		}
+		fmt.Fprintf(&b, "%s no templates\n", prefix)
+	} else {
+		for i, template := range m.Templates {
+			prefix := " "
+			if m.Focus == FocusTemplates && i == m.TemplateSelected {
+				prefix = ">"
+			}
+			fmt.Fprintf(&b, "%s %s\n", prefix, template)
+		}
+	}
+	b.WriteString("\n")
 	nameWidth, templateWidth, statusWidth := tableWidths(m.Cells)
 	fmt.Fprintf(&b, "  %s  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth), padded("STATUS", statusWidth))
 	if len(m.Cells) == 0 {
-		b.WriteString("no cells\n")
+		prefix := " "
+		if m.Focus == FocusCells {
+			prefix = ">"
+		}
+		fmt.Fprintf(&b, "%s no cells\n", prefix)
 	}
 	for i, cell := range m.Cells {
 		prefix := " "
-		if i == m.Selected {
+		if m.Focus == FocusCells && i == m.Selected {
 			prefix = ">"
 		}
 		done := "[ ]"
@@ -347,18 +383,6 @@ func (m Model) View() string {
 		prefix = ">"
 	}
 	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
-	b.WriteString("\n  TEMPLATES\n")
-	if len(m.Templates) == 0 {
-		b.WriteString("  no templates\n")
-	} else {
-		for i, template := range m.Templates {
-			prefix := " "
-			if m.Focus == FocusTemplates && i == m.TemplateSelected {
-				prefix = ">"
-			}
-			fmt.Fprintf(&b, "%s %s\n", prefix, template)
-		}
-	}
 	b.WriteString(statusLine(m))
 	return b.String()
 }
