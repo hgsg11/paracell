@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 )
 
 var errTestReload = errors.New("reload failed")
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestModelはjで選択を下げる(t *testing.T) {
 	model := NewModel([]domain.Cell{
@@ -80,7 +82,7 @@ func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
 	}
 }
 
-func TestModelViewはCell一覧にNameStatusDoneを表示する(t *testing.T) {
+func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testing.T) {
 	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
 	if err := cell.SetStatus(domain.Pending); err != nil {
 		t.Fatalf("SetStatus failed: %v", err)
@@ -89,14 +91,53 @@ func TestModelViewはCell一覧にNameStatusDoneを表示する(t *testing.T) {
 
 	got := model.View()
 
-	if !strings.Contains(got, "123") {
-		t.Fatal("name not shown")
+	if !strings.Contains(got, "> 123") {
+		t.Fatalf("name not shown at row start: %q", got)
 	}
-	if !strings.Contains(got, "pending") {
-		t.Fatal("status not shown")
+	if !strings.Contains(got, "default") {
+		t.Fatal("template not shown")
 	}
 	if !strings.Contains(got, "[ ]") {
 		t.Fatal("done checkbox not shown")
+	}
+	if !strings.Contains(got, "[ ]  ..") {
+		t.Fatalf("pending status not shown at row end: %q", got)
+	}
+}
+
+func TestModelViewは選択中Cell行をReverse表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+
+	got := model.View()
+
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("selected row should contain ansi style: %q", got)
+	}
+	if !strings.Contains(got, "> 123") {
+		t.Fatalf("selected row content missing: %q", got)
+	}
+	if strings.Contains(got, "> 456") {
+		t.Fatalf("unselected row should not be marked selected: %q", got)
+	}
+}
+
+func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+	if err := cell.SetStatus(domain.Ready); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+
+	got := model.View()
+
+	if strings.Contains(got, "✓") {
+		t.Fatalf("ready status should be blank: %q", got)
+	}
+	if !strings.Contains(got, "default   [ ]") {
+		t.Fatalf("ready row layout unexpected: %q", got)
 	}
 }
 
@@ -153,6 +194,46 @@ func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
 	if strings.Contains(got, "Selected") {
 		t.Fatalf("view = %q, should not render Selected section", got)
 	}
+}
+
+func TestModelViewは選択中Exit行をReverse表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Focus = FocusExit
+
+	got := model.View()
+
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("selected exit row should contain ansi style: %q", got)
+	}
+	if !strings.Contains(got, "> exit paracell") {
+		t.Fatalf("selected exit row content missing: %q", got)
+	}
+}
+
+func TestJoinSideBySideはANSI付き行でも区切り位置を揃える(t *testing.T) {
+	left := []string{"left", renderSelectedLine("> right")}
+	right := []string{"A", "B"}
+
+	got := joinSideBySide(left, right, " | ")
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("line count = %d, want 2", len(lines))
+	}
+
+	firstSep := strings.Index(stripANSI(lines[0]), " | ")
+	secondSep := strings.Index(stripANSI(lines[1]), " | ")
+	if firstSep < 0 || secondSep < 0 {
+		t.Fatalf("separator missing: %q", got)
+	}
+	if firstSep != secondSep {
+		t.Fatalf("separator misaligned: first=%d second=%d output=%q", firstSep, secondSep, got)
+	}
+}
+
+func stripANSI(value string) string {
+	return ansiPattern.ReplaceAllString(value, "")
 }
 
 func TestModelはqで終了する(t *testing.T) {
@@ -290,6 +371,28 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
+	}
+}
+
+func TestModelはRefreshでPendingStatusのアニメーションを進める(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+	if err := cell.SetStatus(domain.Pending); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+
+	first := model.View()
+	next, _ := model.Update(refreshMsg{})
+	second := next.(Model).View()
+
+	if first == second {
+		t.Fatalf("view did not animate: first=%q second=%q", first, second)
+	}
+	if !strings.Contains(first, "[ ]  ..") {
+		t.Fatalf("first frame = %q, want initial pending frame", first)
+	}
+	if !strings.Contains(second, "[ ]  o.") {
+		t.Fatalf("second frame = %q, want advanced pending frame", second)
 	}
 }
 

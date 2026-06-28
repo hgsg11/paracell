@@ -45,6 +45,7 @@ type Model struct {
 	Focus            FocusArea
 	Selected         int
 	TemplateSelected int
+	StatusFrame      int
 	Quitting         bool
 	AwaitingDelete   bool
 	AwaitingFork     bool
@@ -71,6 +72,8 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 	}
 	return model
 }
+
+var pendingStatusFrames = []string{"..", "o.", ".o"}
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -310,6 +313,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.IssueInput = ""
 		return m, nil
 	case refreshMsg:
+		m.StatusFrame = (m.StatusFrame + 1) % len(pendingStatusFrames)
 		if m.Reload == nil {
 			return m, m.refreshCmd()
 		}
@@ -389,7 +393,11 @@ func renderSplitLayout(m Model) string {
 func renderTemplatesPane(m Model) []string {
 	lines := []string{""}
 	if len(m.Templates) == 0 {
-		lines = append(lines, "  no templates")
+		line := "  no templates"
+		if m.Focus == FocusTemplates {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
 		return lines
 	}
 	for i, template := range m.Templates {
@@ -397,20 +405,28 @@ func renderTemplatesPane(m Model) []string {
 		if m.Focus == FocusTemplates && i == m.TemplateSelected {
 			prefix = ">"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s", prefix, template))
+		line := fmt.Sprintf("%s %s", prefix, template)
+		if m.Focus == FocusTemplates && i == m.TemplateSelected {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }
 
 func renderCellsPane(m Model) []string {
 	lines := []string{""}
-	nameWidth, statusWidth := cellWidths(m.Cells)
+	nameWidth, templateWidth := cellWidths(m.Cells)
 	if len(m.Cells) == 0 {
 		prefix := " "
 		if m.Focus == FocusCells {
 			prefix = ">"
 		}
-		lines = append(lines, fmt.Sprintf("%s no cells", prefix))
+		line := fmt.Sprintf("%s no cells", prefix)
+		if m.Focus == FocusCells {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
 		return lines
 	}
 	for i, cell := range m.Cells {
@@ -422,7 +438,11 @@ func renderCellsPane(m Model) []string {
 		if cell.IsDone() {
 			done = "[x]"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s  %s  %s", prefix, padded(cell.Name, nameWidth), padded(string(cell.Status()), statusWidth), done))
+		line := fmt.Sprintf("%s %s  %s  %s  %s", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), done, renderCellStatus(cell, m.StatusFrame))
+		if m.Focus == FocusCells && i == m.Selected {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }
@@ -432,7 +452,11 @@ func renderExitLine(m Model) string {
 	if m.isExitSelected() {
 		prefix = ">"
 	}
-	return fmt.Sprintf("%s exit paracell\n", prefix)
+	line := fmt.Sprintf("%s exit paracell", prefix)
+	if m.isExitSelected() {
+		line = renderSelectedLine(line)
+	}
+	return line + "\n"
 }
 
 func joinSideBySide(left []string, right []string, separator string) string {
@@ -449,7 +473,10 @@ func joinSideBySide(left []string, right []string, separator string) string {
 		if i < len(right) {
 			rightLine = right[i]
 		}
-		fmt.Fprintf(&b, "%-*s%s%-*s\n", leftWidth, leftLine, separator, rightWidth, rightLine)
+		b.WriteString(padded(leftLine, leftWidth))
+		b.WriteString(separator)
+		b.WriteString(padded(rightLine, rightWidth))
+		b.WriteByte('\n')
 	}
 	return b.String()
 }
@@ -464,12 +491,27 @@ func maxLineWidth(lines []string) int {
 
 func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
-	statusWidth := lipgloss.Width("STATUS")
+	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
-		statusWidth = max(statusWidth, lipgloss.Width(string(cell.Status())))
+		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
 	}
-	return nameWidth, statusWidth
+	return nameWidth, templateWidth
+}
+
+func renderCellStatus(cell domain.Cell, frame int) string {
+	switch cell.Status() {
+	case domain.Pending:
+		return pendingStatusFrames[frame%len(pendingStatusFrames)]
+	case domain.Ready:
+		return ""
+	default:
+		return "  "
+	}
+}
+
+func renderSelectedLine(value string) string {
+	return "\x1b[7m" + value + "\x1b[0m"
 }
 
 func padded(value string, width int) string {
