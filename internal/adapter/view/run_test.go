@@ -40,7 +40,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		if cell.Name != "123" {
@@ -53,6 +53,9 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	}
 	if len(got.Cells) != 1 || got.Cells[0].Name != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
+	}
+	if got.CurrentCell != "123" {
+		t.Fatalf("current cell = %q, want %q", got.CurrentCell, "123")
 	}
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
@@ -80,7 +83,7 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
@@ -120,6 +123,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		context.Background(),
 		cells,
 		nil,
+		"",
 		func() ([]domain.Cell, error) { return cells, nil },
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error { return nil },
@@ -165,6 +169,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		context.Background(),
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		nil,
+		"",
 		func() ([]domain.Cell, error) {
 			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
 		},
@@ -214,6 +219,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		context.Background(),
 		nil,
 		[]string{"default"},
+		"",
 		func() ([]domain.Cell, error) {
 			reloaded = true
 			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil

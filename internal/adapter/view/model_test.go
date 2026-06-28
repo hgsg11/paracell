@@ -88,11 +88,15 @@ func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testi
 		t.Fatalf("SetStatus failed: %v", err)
 	}
 	model := NewModel([]domain.Cell{cell})
+	model.CurrentCell = "123"
 
 	got := model.View()
 
-	if !strings.Contains(got, "> 123") {
-		t.Fatalf("name not shown at row start: %q", got)
+	if !strings.Contains(got, "* 123") {
+		t.Fatalf("current cell marker not shown at row start: %q", got)
+	}
+	if strings.Contains(got, "> 123") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
 	}
 	if !strings.Contains(got, "default") {
 		t.Fatal("template not shown")
@@ -116,11 +120,43 @@ func TestModelViewは選択中Cell行をReverse表示する(t *testing.T) {
 	if !strings.Contains(got, "\x1b[") {
 		t.Fatalf("selected row should contain ansi style: %q", got)
 	}
-	if !strings.Contains(got, "> 123") {
+	if !strings.Contains(got, " 123") {
 		t.Fatalf("selected row content missing: %q", got)
 	}
-	if strings.Contains(got, "> 456") {
-		t.Fatalf("unselected row should not be marked selected: %q", got)
+	if strings.Contains(got, "> 123") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
+	}
+}
+
+func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.CurrentCell = "456"
+
+	got := model.View()
+
+	if !strings.Contains(got, "* 456") {
+		t.Fatalf("current cell marker missing: %q", got)
+	}
+	if strings.Contains(got, "* 123") {
+		t.Fatalf("marker should not appear on other rows: %q", got)
+	}
+}
+
+func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "very-long-template-name"},
+	})
+
+	got := model.View()
+
+	if !strings.Contains(got, "very-long-tem...") {
+		t.Fatalf("template should be ellipsized: %q", got)
+	}
+	if strings.Contains(got, "very-long-template-name") {
+		t.Fatalf("full template should not be shown: %q", got)
 	}
 }
 
@@ -207,8 +243,60 @@ func TestModelViewは選択中Exit行をReverse表示する(t *testing.T) {
 	if !strings.Contains(got, "\x1b[") {
 		t.Fatalf("selected exit row should contain ansi style: %q", got)
 	}
-	if !strings.Contains(got, "> exit paracell") {
+	if !strings.Contains(got, "exit paracell") {
 		t.Fatalf("selected exit row content missing: %q", got)
+	}
+	if strings.Contains(got, "> exit paracell") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
+	}
+}
+
+func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+
+	got := model.View()
+	plain := stripANSI(got)
+	lines := strings.Split(plain, "\n")
+
+	if !strings.Contains(got, "planning") {
+		t.Fatalf("template list missing: %q", got)
+	}
+	planningIndex := -1
+	blankIndex := -1
+	for i, line := range lines {
+		if strings.Contains(line, "planning") {
+			planningIndex = i
+		}
+		if planningIndex >= 0 && i > planningIndex && strings.HasPrefix(line, "          │") {
+			blankIndex = i
+			break
+		}
+	}
+	if planningIndex < 0 || blankIndex != planningIndex+1 {
+		t.Fatalf("blank issue row should be placed directly under templates: %q", got)
+	}
+}
+
+func TestModelViewはIssue入力中にTemplate一覧の下へ内容を表示する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+	model.IssueInputActive = true
+	model.IssueInput = "456"
+
+	got := model.View()
+
+	if !strings.Contains(got, "issue: 456") {
+		t.Fatalf("issue input should be shown in template pane: %q", got)
+	}
+	if strings.HasSuffix(got, "issue: 456\n") {
+		t.Fatalf("issue input should not replace bottom status line: %q", got)
 	}
 }
 

@@ -242,7 +242,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = runView(ctx, cells, templateNames(loaded.Templates), func() ([]domain.Cell, error) {
+		_, err = runView(ctx, cells, templateNames(loaded.Templates), os.Getenv("PARACELL_CELL"), func() ([]domain.Cell, error) {
 			return stateAdapter.LoadCells(ctx)
 		}, func(cell domain.Cell) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, configAdapter, cell)

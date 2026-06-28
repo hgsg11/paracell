@@ -42,6 +42,7 @@ type forkResultMsg struct {
 type Model struct {
 	Cells            []domain.Cell
 	Templates        []string
+	CurrentCell      string
 	Focus            FocusArea
 	Selected         int
 	TemplateSelected int
@@ -74,6 +75,7 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 }
 
 var pendingStatusFrames = []string{"..", "o.", ".o"}
+const maxTemplateDisplayWidth = 16
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -391,26 +393,24 @@ func renderSplitLayout(m Model) string {
 }
 
 func renderTemplatesPane(m Model) []string {
-	lines := []string{""}
+	lines := []string{}
 	if len(m.Templates) == 0 {
-		line := "  no templates"
+		line := "no templates"
 		if m.Focus == FocusTemplates {
 			line = renderSelectedLine(line)
 		}
 		lines = append(lines, line)
+		lines = append(lines, renderIssueInputLine(m))
 		return lines
 	}
 	for i, template := range m.Templates {
-		prefix := " "
-		if m.Focus == FocusTemplates && i == m.TemplateSelected {
-			prefix = ">"
-		}
-		line := fmt.Sprintf("%s %s", prefix, template)
+		line := template
 		if m.Focus == FocusTemplates && i == m.TemplateSelected {
 			line = renderSelectedLine(line)
 		}
 		lines = append(lines, line)
 	}
+	lines = append(lines, renderIssueInputLine(m))
 	return lines
 }
 
@@ -418,11 +418,7 @@ func renderCellsPane(m Model) []string {
 	lines := []string{""}
 	nameWidth, templateWidth := cellWidths(m.Cells)
 	if len(m.Cells) == 0 {
-		prefix := " "
-		if m.Focus == FocusCells {
-			prefix = ">"
-		}
-		line := fmt.Sprintf("%s no cells", prefix)
+		line := "no cells"
 		if m.Focus == FocusCells {
 			line = renderSelectedLine(line)
 		}
@@ -430,15 +426,11 @@ func renderCellsPane(m Model) []string {
 		return lines
 	}
 	for i, cell := range m.Cells {
-		prefix := " "
-		if m.Focus == FocusCells && i == m.Selected {
-			prefix = ">"
-		}
 		done := "[ ]"
 		if cell.IsDone() {
 			done = "[x]"
 		}
-		line := fmt.Sprintf("%s %s  %s  %s  %s", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), done, renderCellStatus(cell, m.StatusFrame))
+		line := fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(cell.Name, nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame))
 		if m.Focus == FocusCells && i == m.Selected {
 			line = renderSelectedLine(line)
 		}
@@ -448,11 +440,7 @@ func renderCellsPane(m Model) []string {
 }
 
 func renderExitLine(m Model) string {
-	prefix := " "
-	if m.isExitSelected() {
-		prefix = ">"
-	}
-	line := fmt.Sprintf("%s exit paracell", prefix)
+	line := "exit paracell"
 	if m.isExitSelected() {
 		line = renderSelectedLine(line)
 	}
@@ -494,7 +482,7 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
-		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
 }
@@ -512,6 +500,37 @@ func renderCellStatus(cell domain.Cell, frame int) string {
 
 func renderSelectedLine(value string) string {
 	return "\x1b[7m" + value + "\x1b[0m"
+}
+
+func renderIssueInputLine(m Model) string {
+	if m.IssueInputActive {
+		return "issue: " + m.IssueInput
+	}
+	return ""
+}
+
+func currentCellMarker(cell domain.Cell, currentCell string) string {
+	if currentCell != "" && cell.Name == currentCell {
+		return "*"
+	}
+	return " "
+}
+
+func ellipsize(value string, width int) string {
+	if width <= 0 || lipgloss.Width(value) <= width {
+		return value
+	}
+	if width <= 3 {
+		return strings.Repeat(".", width)
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if lipgloss.Width(b.String()+string(r)+"...") > width {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + "..."
 }
 
 func padded(value string, width int) string {
@@ -534,9 +553,6 @@ func errorLine(message string, width int) string {
 }
 
 func statusLine(m Model) string {
-	if m.IssueInputActive {
-		return clipWidth("issue: "+m.IssueInput, widthOrDefault(m.Width)) + "\n"
-	}
 	return errorLine(m.Error, m.Width)
 }
 
