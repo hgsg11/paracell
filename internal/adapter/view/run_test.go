@@ -15,7 +15,7 @@ type fakeProgram struct {
 
 func (p fakeProgram) Run() (tea.Model, error) {
 	model := p.model.(Model)
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if cmd != nil {
 		msg := cmd()
 		updated, _ = updated.(Model).Update(msg)
@@ -26,7 +26,7 @@ func (p fakeProgram) Run() (tea.Model, error) {
 	return updated, nil
 }
 
-func TestRunはl成功で結果を返す(t *testing.T) {
+func TestRunはspace成功で結果を返す(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -62,7 +62,7 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	}
 }
 
-func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T) {
+func TestRunはspace失敗後もエラーを表示して継続できる(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -153,7 +153,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		return programFunc(func() (tea.Model, error) {
 			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyTab})
 			_ = cmd
-			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeySpace})
 			if cmd == nil {
 				t.Fatal("exit選択で終了コマンドが返らなかった")
 			}

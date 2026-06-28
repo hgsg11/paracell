@@ -144,6 +144,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch key {
+		case "h":
+			switch m.Focus {
+			case FocusCells:
+				m.Focus = FocusTemplates
+			case FocusTemplates:
+				m.Focus = FocusExit
+			case FocusExit:
+				m.Focus = FocusTemplates
+			}
+		case "l":
+			switch m.Focus {
+			case FocusTemplates:
+				m.Focus = FocusCells
+			case FocusCells:
+				m.Focus = FocusExit
+			case FocusExit:
+				m.Focus = FocusCells
+			}
 		case "j":
 			if m.Focus == FocusTemplates {
 				if m.TemplateSelected < m.lastTemplateIndex() {
@@ -199,7 +217,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				updated, err := markDone(cell)
 				return markDoneResultMsg{cell: updated, err: err}
 			}
-		case "l":
+		case " ":
 			if m.Focus == FocusExit {
 				m.Result = Result{Action: ActionExit}
 				m.Quitting = true
@@ -341,31 +359,59 @@ func (m Model) lastSelectableIndex() int {
 
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString("  TEMPLATES\n")
+	b.WriteString(renderHeaderLine(m))
+	b.WriteString(renderSplitLayout(m))
+	b.WriteString(renderExitLine(m))
+	b.WriteString(statusLine(m))
+	return b.String()
+}
+
+func renderHeaderLine(m Model) string {
+	focus := "cells"
+	switch m.Focus {
+	case FocusTemplates:
+		focus = "templates"
+	case FocusExit:
+		focus = "exit"
+	}
+	return fmt.Sprintf("paracell / %s\n", focus)
+}
+
+func renderSplitLayout(m Model) string {
+	left := renderTemplatesPane(m)
+	right := renderCellsPane(m)
+	var b strings.Builder
+	b.WriteString(joinSideBySide(left, right, "  │  "))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func renderTemplatesPane(m Model) []string {
+	lines := []string{""}
 	if len(m.Templates) == 0 {
+		lines = append(lines, "  no templates")
+		return lines
+	}
+	for i, template := range m.Templates {
 		prefix := " "
-		if m.Focus == FocusTemplates {
+		if m.Focus == FocusTemplates && i == m.TemplateSelected {
 			prefix = ">"
 		}
-		fmt.Fprintf(&b, "%s no templates\n", prefix)
-	} else {
-		for i, template := range m.Templates {
-			prefix := " "
-			if m.Focus == FocusTemplates && i == m.TemplateSelected {
-				prefix = ">"
-			}
-			fmt.Fprintf(&b, "%s %s\n", prefix, template)
-		}
+		lines = append(lines, fmt.Sprintf("%s %s", prefix, template))
 	}
-	b.WriteString("\n")
-	nameWidth, templateWidth, statusWidth := tableWidths(m.Cells)
-	fmt.Fprintf(&b, "  %s  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth), padded("STATUS", statusWidth))
+	return lines
+}
+
+func renderCellsPane(m Model) []string {
+	lines := []string{""}
+	nameWidth, statusWidth := cellWidths(m.Cells)
 	if len(m.Cells) == 0 {
 		prefix := " "
 		if m.Focus == FocusCells {
 			prefix = ">"
 		}
-		fmt.Fprintf(&b, "%s no cells\n", prefix)
+		lines = append(lines, fmt.Sprintf("%s no cells", prefix))
+		return lines
 	}
 	for i, cell := range m.Cells {
 		prefix := " "
@@ -376,27 +422,54 @@ func (m Model) View() string {
 		if cell.IsDone() {
 			done = "[x]"
 		}
-		fmt.Fprintf(&b, "%s %s  %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), padded(string(cell.Status()), statusWidth), done)
+		lines = append(lines, fmt.Sprintf("%s %s  %s  %s", prefix, padded(cell.Name, nameWidth), padded(string(cell.Status()), statusWidth), done))
 	}
+	return lines
+}
+
+func renderExitLine(m Model) string {
 	prefix := " "
 	if m.isExitSelected() {
 		prefix = ">"
 	}
-	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
-	b.WriteString(statusLine(m))
+	return fmt.Sprintf("%s exit paracell\n", prefix)
+}
+
+func joinSideBySide(left []string, right []string, separator string) string {
+	leftWidth := maxLineWidth(left)
+	rightWidth := maxLineWidth(right)
+	lineCount := max(len(left), len(right))
+	var b strings.Builder
+	for i := 0; i < lineCount; i++ {
+		leftLine := ""
+		if i < len(left) {
+			leftLine = left[i]
+		}
+		rightLine := ""
+		if i < len(right) {
+			rightLine = right[i]
+		}
+		fmt.Fprintf(&b, "%-*s%s%-*s\n", leftWidth, leftLine, separator, rightWidth, rightLine)
+	}
 	return b.String()
 }
 
-func tableWidths(cells []domain.Cell) (int, int, int) {
+func maxLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		width = max(width, lipgloss.Width(line))
+	}
+	return width
+}
+
+func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
-	templateWidth := lipgloss.Width("TEMPLATE")
 	statusWidth := lipgloss.Width("STATUS")
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
-		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
 		statusWidth = max(statusWidth, lipgloss.Width(string(cell.Status())))
 	}
-	return nameWidth, templateWidth, statusWidth
+	return nameWidth, statusWidth
 }
 
 func padded(value string, width int) string {
