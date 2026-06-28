@@ -42,9 +42,11 @@ type forkResultMsg struct {
 type Model struct {
 	Cells            []domain.Cell
 	Templates        []string
+	CurrentCell      string
 	Focus            FocusArea
 	Selected         int
 	TemplateSelected int
+	StatusFrame      int
 	Quitting         bool
 	AwaitingDelete   bool
 	AwaitingFork     bool
@@ -71,6 +73,9 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 	}
 	return model
 }
+
+var pendingStatusFrames = []string{"..", "o.", ".o"}
+const maxTemplateDisplayWidth = 16
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -144,6 +149,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		switch key {
+		case "h":
+			switch m.Focus {
+			case FocusCells:
+				m.Focus = FocusTemplates
+			case FocusTemplates:
+				m.Focus = FocusExit
+			case FocusExit:
+				m.Focus = FocusTemplates
+			}
+		case "l":
+			switch m.Focus {
+			case FocusTemplates:
+				m.Focus = FocusCells
+			case FocusCells:
+				m.Focus = FocusExit
+			case FocusExit:
+				m.Focus = FocusCells
+			}
 		case "j":
 			if m.Focus == FocusTemplates {
 				if m.TemplateSelected < m.lastTemplateIndex() {
@@ -199,7 +222,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				updated, err := markDone(cell)
 				return markDoneResultMsg{cell: updated, err: err}
 			}
-		case "l":
+		case " ":
 			if m.Focus == FocusExit {
 				m.Result = Result{Action: ActionExit}
 				m.Quitting = true
@@ -292,6 +315,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.IssueInput = ""
 		return m, nil
 	case refreshMsg:
+		m.StatusFrame = (m.StatusFrame + 1) % len(pendingStatusFrames)
 		if m.Reload == nil {
 			return m, m.refreshCmd()
 		}
@@ -341,62 +365,172 @@ func (m Model) lastSelectableIndex() int {
 
 func (m Model) View() string {
 	var b strings.Builder
-	b.WriteString("  TEMPLATES\n")
-	if len(m.Templates) == 0 {
-		prefix := " "
-		if m.Focus == FocusTemplates {
-			prefix = ">"
-		}
-		fmt.Fprintf(&b, "%s no templates\n", prefix)
-	} else {
-		for i, template := range m.Templates {
-			prefix := " "
-			if m.Focus == FocusTemplates && i == m.TemplateSelected {
-				prefix = ">"
-			}
-			fmt.Fprintf(&b, "%s %s\n", prefix, template)
-		}
-	}
-	b.WriteString("\n")
-	nameWidth, templateWidth, statusWidth := tableWidths(m.Cells)
-	fmt.Fprintf(&b, "  %s  %s  %s  DONE\n", padded("NAME", nameWidth), padded("TEMPLATE", templateWidth), padded("STATUS", statusWidth))
-	if len(m.Cells) == 0 {
-		prefix := " "
-		if m.Focus == FocusCells {
-			prefix = ">"
-		}
-		fmt.Fprintf(&b, "%s no cells\n", prefix)
-	}
-	for i, cell := range m.Cells {
-		prefix := " "
-		if m.Focus == FocusCells && i == m.Selected {
-			prefix = ">"
-		}
-		done := "[ ]"
-		if cell.IsDone() {
-			done = "[x]"
-		}
-		fmt.Fprintf(&b, "%s %s  %s  %s  %s\n", prefix, padded(cell.Name, nameWidth), padded(cell.Template, templateWidth), padded(string(cell.Status()), statusWidth), done)
-	}
-	prefix := " "
-	if m.isExitSelected() {
-		prefix = ">"
-	}
-	fmt.Fprintf(&b, "\n%s exit paracell\n", prefix)
+	b.WriteString(renderHeaderLine(m))
+	b.WriteString(renderSplitLayout(m))
+	b.WriteString(renderExitLine(m))
 	b.WriteString(statusLine(m))
 	return b.String()
 }
 
-func tableWidths(cells []domain.Cell) (int, int, int) {
+func renderHeaderLine(m Model) string {
+	focus := "cells"
+	switch m.Focus {
+	case FocusTemplates:
+		focus = "templates"
+	case FocusExit:
+		focus = "exit"
+	}
+	return fmt.Sprintf("paracell / %s\n", focus)
+}
+
+func renderSplitLayout(m Model) string {
+	left := renderTemplatesPane(m)
+	right := renderCellsPane(m)
+	var b strings.Builder
+	b.WriteString(joinSideBySide(left, right, "  │  "))
+	b.WriteString("\n")
+	return b.String()
+}
+
+func renderTemplatesPane(m Model) []string {
+	lines := []string{}
+	if len(m.Templates) == 0 {
+		line := "no templates"
+		if m.Focus == FocusTemplates {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
+		lines = append(lines, renderIssueInputLine(m))
+		return lines
+	}
+	for i, template := range m.Templates {
+		line := template
+		if m.Focus == FocusTemplates && i == m.TemplateSelected {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
+	}
+	lines = append(lines, renderIssueInputLine(m))
+	return lines
+}
+
+func renderCellsPane(m Model) []string {
+	lines := []string{""}
+	nameWidth, templateWidth := cellWidths(m.Cells)
+	if len(m.Cells) == 0 {
+		line := "no cells"
+		if m.Focus == FocusCells {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
+		return lines
+	}
+	for i, cell := range m.Cells {
+		done := "[ ]"
+		if cell.IsDone() {
+			done = "[x]"
+		}
+		line := fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(cell.Name, nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame))
+		if m.Focus == FocusCells && i == m.Selected {
+			line = renderSelectedLine(line)
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func renderExitLine(m Model) string {
+	line := "exit paracell"
+	if m.isExitSelected() {
+		line = renderSelectedLine(line)
+	}
+	return line + "\n"
+}
+
+func joinSideBySide(left []string, right []string, separator string) string {
+	leftWidth := maxLineWidth(left)
+	rightWidth := maxLineWidth(right)
+	lineCount := max(len(left), len(right))
+	var b strings.Builder
+	for i := 0; i < lineCount; i++ {
+		leftLine := ""
+		if i < len(left) {
+			leftLine = left[i]
+		}
+		rightLine := ""
+		if i < len(right) {
+			rightLine = right[i]
+		}
+		b.WriteString(padded(leftLine, leftWidth))
+		b.WriteString(separator)
+		b.WriteString(padded(rightLine, rightWidth))
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func maxLineWidth(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		width = max(width, lipgloss.Width(line))
+	}
+	return width
+}
+
+func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
-	statusWidth := lipgloss.Width("STATUS")
 	for _, cell := range cells {
 		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
-		templateWidth = max(templateWidth, lipgloss.Width(cell.Template))
-		statusWidth = max(statusWidth, lipgloss.Width(string(cell.Status())))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
 	}
-	return nameWidth, templateWidth, statusWidth
+	return nameWidth, templateWidth
+}
+
+func renderCellStatus(cell domain.Cell, frame int) string {
+	switch cell.Status() {
+	case domain.Pending:
+		return pendingStatusFrames[frame%len(pendingStatusFrames)]
+	case domain.Ready:
+		return ""
+	default:
+		return "  "
+	}
+}
+
+func renderSelectedLine(value string) string {
+	return "\x1b[7m" + value + "\x1b[0m"
+}
+
+func renderIssueInputLine(m Model) string {
+	if m.IssueInputActive {
+		return "issue: " + m.IssueInput
+	}
+	return ""
+}
+
+func currentCellMarker(cell domain.Cell, currentCell string) string {
+	if currentCell != "" && cell.Name == currentCell {
+		return "*"
+	}
+	return " "
+}
+
+func ellipsize(value string, width int) string {
+	if width <= 0 || lipgloss.Width(value) <= width {
+		return value
+	}
+	if width <= 3 {
+		return strings.Repeat(".", width)
+	}
+	var b strings.Builder
+	for _, r := range value {
+		if lipgloss.Width(b.String()+string(r)+"...") > width {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String() + "..."
 }
 
 func padded(value string, width int) string {
@@ -419,9 +553,6 @@ func errorLine(message string, width int) string {
 }
 
 func statusLine(m Model) string {
-	if m.IssueInputActive {
-		return clipWidth("issue: "+m.IssueInput, widthOrDefault(m.Width)) + "\n"
-	}
 	return errorLine(m.Error, m.Width)
 }
 

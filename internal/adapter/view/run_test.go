@@ -15,7 +15,7 @@ type fakeProgram struct {
 
 func (p fakeProgram) Run() (tea.Model, error) {
 	model := p.model.(Model)
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if cmd != nil {
 		msg := cmd()
 		updated, _ = updated.(Model).Update(msg)
@@ -26,7 +26,7 @@ func (p fakeProgram) Run() (tea.Model, error) {
 	return updated, nil
 }
 
-func TestRunはl成功で結果を返す(t *testing.T) {
+func TestRunはspace成功で結果を返す(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -40,7 +40,7 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		if cell.Name != "123" {
@@ -54,6 +54,9 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	if len(got.Cells) != 1 || got.Cells[0].Name != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
+	if got.CurrentCell != "123" {
+		t.Fatalf("current cell = %q, want %q", got.CurrentCell, "123")
+	}
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
@@ -62,7 +65,7 @@ func TestRunはl成功で結果を返す(t *testing.T) {
 	}
 }
 
-func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T) {
+func TestRunはspace失敗後もエラーを表示して継続できる(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -80,7 +83,7 @@ func TestRunはl失敗後もエラーを表示して継続できる(t *testing.T
 	cells := []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}
-	result, err := Run(context.Background(), cells, nil, func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
@@ -120,6 +123,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		context.Background(),
 		cells,
 		nil,
+		"",
 		func() ([]domain.Cell, error) { return cells, nil },
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error { return nil },
@@ -153,7 +157,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		return programFunc(func() (tea.Model, error) {
 			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyTab})
 			_ = cmd
-			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeySpace})
 			if cmd == nil {
 				t.Fatal("exit選択で終了コマンドが返らなかった")
 			}
@@ -165,6 +169,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		context.Background(),
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		nil,
+		"",
 		func() ([]domain.Cell, error) {
 			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
 		},
@@ -214,6 +219,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		context.Background(),
 		nil,
 		[]string{"default"},
+		"",
 		func() ([]domain.Cell, error) {
 			reloaded = true
 			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil

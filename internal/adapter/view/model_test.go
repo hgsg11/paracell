@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 )
 
 var errTestReload = errors.New("reload failed")
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func TestModelはjで選択を下げる(t *testing.T) {
 	model := NewModel([]domain.Cell{
@@ -53,36 +55,273 @@ func TestModelは境界で選択を超えない(t *testing.T) {
 	}
 }
 
-func TestModelViewは右端にMarkdownDone列を表示する(t *testing.T) {
-	doneCell := domain.Cell{ID: "cell-2", Name: "45678", Template: "web"}
-	if err := doneCell.MarkDone(); err != nil {
-		t.Fatalf("MarkDoneでエラーが返った: %v", err)
-	}
-	if err := doneCell.SetStatus(domain.Ready); err != nil {
-		t.Fatalf("SetStatusでエラーが返った: %v", err)
-	}
+func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
 	model := NewModel([]domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
-		doneCell,
+		{
+			ID:       "cell-1",
+			Name:     "123",
+			Template: "default",
+			Issue:    "123",
+			Base:     "main",
+			Branch:   "feat/123",
+			Session:  domain.Session{Name: "paracell-123"},
+		},
 	})
+	model.Templates = []string{"default", "webapp"}
 
 	got := model.View()
-	want := "  TEMPLATES\n  no templates\n\n  NAME   TEMPLATE  STATUS  DONE\n> 123    default   ready   [ ]\n  45678  web       ready   [x]\n\n  exit paracell\n\n"
-	if got != want {
-		t.Fatalf("view = %q, want %q", got, want)
+
+	if !strings.Contains(got, "paracell / cells") {
+		t.Fatalf("header missing focus line: %q", got)
+	}
+	if !strings.Contains(got, "default") {
+		t.Fatalf("template name not shown: %q", got)
+	}
+	if !strings.Contains(got, "webapp") {
+		t.Fatalf("second template name not shown: %q", got)
 	}
 }
 
-func TestModelViewは最下部にExitParacellを表示する(t *testing.T) {
+func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+	if err := cell.SetStatus(domain.Pending); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+	model.CurrentCell = "123"
+
+	got := model.View()
+
+	if !strings.Contains(got, "* 123") {
+		t.Fatalf("current cell marker not shown at row start: %q", got)
+	}
+	if strings.Contains(got, "> 123") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
+	}
+	if !strings.Contains(got, "default") {
+		t.Fatal("template not shown")
+	}
+	if !strings.Contains(got, "[ ]") {
+		t.Fatal("done checkbox not shown")
+	}
+	if !strings.Contains(got, "[ ]  ..") {
+		t.Fatalf("pending status not shown at row end: %q", got)
+	}
+}
+
+func TestModelViewは選択中Cell行をReverse表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+
+	got := model.View()
+
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("selected row should contain ansi style: %q", got)
+	}
+	if !strings.Contains(got, " 123") {
+		t.Fatalf("selected row content missing: %q", got)
+	}
+	if strings.Contains(got, "> 123") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
+	}
+}
+
+func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
+	})
+	model.CurrentCell = "456"
+
+	got := model.View()
+
+	if !strings.Contains(got, "* 456") {
+		t.Fatalf("current cell marker missing: %q", got)
+	}
+	if strings.Contains(got, "* 123") {
+		t.Fatalf("marker should not appear on other rows: %q", got)
+	}
+}
+
+func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "very-long-template-name"},
+	})
+
+	got := model.View()
+
+	if !strings.Contains(got, "very-long-tem...") {
+		t.Fatalf("template should be ellipsized: %q", got)
+	}
+	if strings.Contains(got, "very-long-template-name") {
+		t.Fatalf("full template should not be shown: %q", got)
+	}
+}
+
+func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+	if err := cell.SetStatus(domain.Ready); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+
+	got := model.View()
+
+	if strings.Contains(got, "✓") {
+		t.Fatalf("ready status should be blank: %q", got)
+	}
+	if !strings.Contains(got, "default   [ ]") {
+		t.Fatalf("ready row layout unexpected: %q", got)
+	}
+}
+
+func TestModelViewはCell列ヘッダーを表示しない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
 
 	got := model.View()
-	want := "  TEMPLATES\n  no templates\n\n  NAME  TEMPLATE  STATUS  DONE\n> 123   default   ready   [ ]\n\n  exit paracell\n\n"
-	if got != want {
-		t.Fatalf("view = %q, want %q", got, want)
+
+	if strings.Contains(got, "NAME") || strings.Contains(got, "STATUS") || strings.Contains(got, "DONE") {
+		t.Fatalf("view = %q, should not render cell column headers", got)
 	}
+}
+
+func TestModelViewはCells見出しを表示しない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+
+	got := model.View()
+
+	if strings.Contains(got, "Cells") {
+		t.Fatalf("view = %q, should not render Cells heading", got)
+	}
+}
+
+func TestModelViewはTemplates見出しを表示しない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	}, []string{"default", "planning"})
+
+	got := model.View()
+
+	if strings.Contains(got, "Templates") {
+		t.Fatalf("view = %q, should not render Templates heading", got)
+	}
+}
+
+func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{
+			ID:       "cell-1",
+			Name:     "123",
+			Template: "default",
+			Issue:    "123",
+			Base:     "main",
+			Branch:   "feat/123",
+		},
+	})
+
+	got := model.View()
+
+	if strings.Contains(got, "Selected") {
+		t.Fatalf("view = %q, should not render Selected section", got)
+	}
+}
+
+func TestModelViewは選択中Exit行をReverse表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "123", Template: "default"},
+	})
+	model.Focus = FocusExit
+
+	got := model.View()
+
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("selected exit row should contain ansi style: %q", got)
+	}
+	if !strings.Contains(got, "exit paracell") {
+		t.Fatalf("selected exit row content missing: %q", got)
+	}
+	if strings.Contains(got, "> exit paracell") {
+		t.Fatalf("legacy selection marker should not appear: %q", got)
+	}
+}
+
+func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+
+	got := model.View()
+	plain := stripANSI(got)
+	lines := strings.Split(plain, "\n")
+
+	if !strings.Contains(got, "planning") {
+		t.Fatalf("template list missing: %q", got)
+	}
+	planningIndex := -1
+	blankIndex := -1
+	for i, line := range lines {
+		if strings.Contains(line, "planning") {
+			planningIndex = i
+		}
+		if planningIndex >= 0 && i > planningIndex && strings.HasPrefix(line, "          │") {
+			blankIndex = i
+			break
+		}
+	}
+	if planningIndex < 0 || blankIndex != planningIndex+1 {
+		t.Fatalf("blank issue row should be placed directly under templates: %q", got)
+	}
+}
+
+func TestModelViewはIssue入力中にTemplate一覧の下へ内容を表示する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+	model.IssueInputActive = true
+	model.IssueInput = "456"
+
+	got := model.View()
+
+	if !strings.Contains(got, "issue: 456") {
+		t.Fatalf("issue input should be shown in template pane: %q", got)
+	}
+	if strings.HasSuffix(got, "issue: 456\n") {
+		t.Fatalf("issue input should not replace bottom status line: %q", got)
+	}
+}
+
+func TestJoinSideBySideはANSI付き行でも区切り位置を揃える(t *testing.T) {
+	left := []string{"left", renderSelectedLine("> right")}
+	right := []string{"A", "B"}
+
+	got := joinSideBySide(left, right, " | ")
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("line count = %d, want 2", len(lines))
+	}
+
+	firstSep := strings.Index(stripANSI(lines[0]), " | ")
+	secondSep := strings.Index(stripANSI(lines[1]), " | ")
+	if firstSep < 0 || secondSep < 0 {
+		t.Fatalf("separator missing: %q", got)
+	}
+	if firstSep != secondSep {
+		t.Fatalf("separator misaligned: first=%d second=%d output=%q", firstSep, secondSep, got)
+	}
+}
+
+func stripANSI(value string) string {
+	return ansiPattern.ReplaceAllString(value, "")
 }
 
 func TestModelはqで終了する(t *testing.T) {
@@ -103,7 +342,7 @@ func TestModelはqで終了する(t *testing.T) {
 	}
 }
 
-func TestModelはlで選択中Cellを返す(t *testing.T) {
+func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 		{ID: "cell-2", Name: "456", Template: "webapp"},
@@ -113,9 +352,9 @@ func TestModelはlで選択中Cellを返す(t *testing.T) {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
 	}
 
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
 	if cmd == nil {
-		t.Fatal("lでコマンドが返らなかった")
+		t.Fatal("spaceでコマンドが返らなかった")
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
@@ -126,7 +365,7 @@ func TestModelはlで選択中Cellを返す(t *testing.T) {
 		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
 	}
 	if nextCmd == nil {
-		t.Fatal("l成功で終了コマンドが返らなかった")
+		t.Fatal("space成功で終了コマンドが返らなかった")
 	}
 }
 
@@ -220,6 +459,28 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
+	}
+}
+
+func TestModelはRefreshでPendingStatusのアニメーションを進める(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
+	if err := cell.SetStatus(domain.Pending); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+
+	first := model.View()
+	next, _ := model.Update(refreshMsg{})
+	second := next.(Model).View()
+
+	if first == second {
+		t.Fatalf("view did not animate: first=%q second=%q", first, second)
+	}
+	if !strings.Contains(first, "[ ]  ..") {
+		t.Fatalf("first frame = %q, want initial pending frame", first)
+	}
+	if !strings.Contains(second, "[ ]  o.") {
+		t.Fatalf("second frame = %q, want advanced pending frame", second)
 	}
 }
 
@@ -582,7 +843,7 @@ func TestModelはIssue入力中に文字入力とBackspaceができる(t *testin
 	}
 }
 
-func TestModelViewはTemplate一覧を下段に表示する(t *testing.T) {
+func TestModelViewはTemplate一覧とCell一覧を並べて表示する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -590,13 +851,72 @@ func TestModelViewはTemplate一覧を下段に表示する(t *testing.T) {
 
 	got := model.View()
 
-	if !strings.Contains(got, "TEMPLATES") {
-		t.Fatalf("view = %q, want template section", got)
-	}
-	if !strings.HasPrefix(got, "  TEMPLATES\n") {
-		t.Fatalf("view = %q, want template section first", got)
+	if !strings.Contains(got, "paracell / cells") {
+		t.Fatalf("view = %q, want compact header", got)
 	}
 	if !strings.Contains(got, "default") || !strings.Contains(got, "planning") {
 		t.Fatalf("view = %q, want template names", got)
+	}
+	if !strings.Contains(got, "│") {
+		t.Fatalf("view = %q, want split separator", got)
+	}
+}
+func TestModelはlでTemplateからCellsへフォーカスを移す(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	got := next.(Model)
+
+	if got.Focus != FocusCells {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusCells)
+	}
+}
+
+func TestModelはhでCellsからTemplateへフォーカスを移す(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusCells
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	got := next.(Model)
+
+	if got.Focus != FocusTemplates {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusTemplates)
+	}
+}
+
+func TestModelはlでCells端からExitParacellへフォーカスを移す(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusCells
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	got := next.(Model)
+
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+}
+
+func TestModelはhでTemplates端からExitParacellへフォーカスを移す(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Focus = FocusTemplates
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	got := next.(Model)
+
+	if got.Focus != FocusExit {
+		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
 	}
 }
