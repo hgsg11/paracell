@@ -232,7 +232,7 @@ func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
 	}
 }
 
-func TestModelViewは選択中Exit行をReverse表示する(t *testing.T) {
+func TestModelViewは選択中GoRoot行をReverse表示する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
@@ -243,10 +243,10 @@ func TestModelViewは選択中Exit行をReverse表示する(t *testing.T) {
 	if !strings.Contains(got, "\x1b[") {
 		t.Fatalf("selected exit row should contain ansi style: %q", got)
 	}
-	if !strings.Contains(got, "exit paracell") {
-		t.Fatalf("selected exit row content missing: %q", got)
+	if !strings.Contains(got, "go root") {
+		t.Fatalf("selected go root row content missing: %q", got)
 	}
-	if strings.Contains(got, "> exit paracell") {
+	if strings.Contains(got, "> go root") {
 		t.Fatalf("legacy selection marker should not appear: %q", got)
 	}
 }
@@ -588,13 +588,13 @@ func TestCapturedExecCommandはStderrを端末へ直結せずエラーへ含め�
 	}
 }
 
-func TestModelはExitParacellをCleanできない(t *testing.T) {
+func TestModelはGoRootをCleanできない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
 	model.Focus = FocusExit
 	model.Delete = func(cell domain.Cell) error {
-		t.Fatalf("exit paracellでdelete handlerが呼ばれた: %#v", cell)
+		t.Fatalf("go rootでdelete handlerが呼ばれた: %#v", cell)
 		return nil
 	}
 
@@ -605,24 +605,24 @@ func TestModelはExitParacellをCleanできない(t *testing.T) {
 	}
 }
 
-func TestModelはExitParacellをDoneにできない(t *testing.T) {
+func TestModelはGoRootをDoneにできない(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	})
 	model.Focus = FocusExit
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
-		t.Fatalf("exit paracellでmark done handlerが呼ばれた: %#v", cell)
+		t.Fatalf("go rootでmark done handlerが呼ばれた: %#v", cell)
 		return cell, nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if cmd != nil {
-		t.Fatal("exit paracellのEnterでコマンドが返った")
+		t.Fatal("go rootのEnterでコマンドが返った")
 	}
 	got := next.(Model)
-	if got.Error != "exit paracell cannot be marked done" {
-		t.Fatalf("error = %q, want %q", got.Error, "exit paracell cannot be marked done")
+	if got.Error != "go root cannot be marked done" {
+		t.Fatalf("error = %q, want %q", got.Error, "go root cannot be marked done")
 	}
 }
 

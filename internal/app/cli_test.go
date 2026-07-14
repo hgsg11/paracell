@@ -921,28 +921,66 @@ templates: {}
 	}
 }
 
-func TestRunExitはTMUX内ならDetachClientを実行する(t *testing.T) {
-	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
-	runner := &fakeRunner{outputs: map[string]string{}}
-
-	if err := runExit(context.Background(), runner); err != nil {
-		t.Fatalf("runExitでエラーが返った: %v", err)
+func TestRunはViewのGoRoot選択でRootSessionEnterを実行する(t *testing.T) {
+	dir := t.TempDir()
+	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}); err != nil {
+		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
-	want := []string{"tmux detach-client"}
-	if !reflect.DeepEqual(runner.calls, want) {
-		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
 	}
-}
 
-func TestRunExitはTMUX外なら何もしない(t *testing.T) {
-	t.Setenv("TMUX", "")
-	runner := &fakeRunner{outputs: map[string]string{}}
+	originalRoot := runEnterRoot
+	defer func() { runEnterRoot = originalRoot }()
+	originalView := runView
+	defer func() { runView = originalView }()
 
-	if err := runExit(context.Background(), runner); err != nil {
-		t.Fatalf("runExitでエラーが返った: %v", err)
+	goRootCalled := false
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		_ = ctx
+		_ = cfg
+		_ = factory
+		goRootCalled = true
+		return nil
 	}
-	if len(runner.calls) != 0 {
-		t.Fatalf("calls = %#v, want empty", runner.calls)
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		_ = ctx
+		_ = cells
+		_ = templates
+		_ = currentCell
+		_ = reload
+		_ = enter
+		_ = clean
+		_ = markDone
+		_ = fork
+		if err := goRoot(); err != nil {
+			t.Fatalf("goRootでエラーが返った: %v", err)
+		}
+		return viewadapter.Result{Action: viewadapter.ActionGoRoot}, nil
+	}
+
+	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !goRootCalled {
+		t.Fatal("root session enterが呼ばれなかった")
 	}
 }
 

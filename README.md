@@ -80,7 +80,7 @@ templates:
 > 123   default   ready    [ ]
   456   default   pending  [x]
 
-  exit paracell
+  go root
 ```
 
 - `j` / `k`: 移動

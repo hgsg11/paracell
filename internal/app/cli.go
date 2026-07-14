@@ -48,12 +48,6 @@ var (
 		uc := usecase.SetCellStatusUseCase{State: state}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
-	runExit = func(ctx context.Context, runner system.Runner) error {
-		if os.Getenv("TMUX") == "" {
-			return nil
-		}
-		return runner.Run(ctx, "tmux", "detach-client")
-	}
 	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, cell domain.Cell) (*exec.Cmd, error) {
 		loaded, err := cfg.Load(ctx, nil)
 		if err != nil {
@@ -251,7 +245,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			}
 			return viewadapter.EnterProcessCmd(cell, cmd)
 		}, func() error {
-			return runExit(ctx, runner)
+			return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
 		}, func(cell domain.Cell) error {
 			return runClean(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {

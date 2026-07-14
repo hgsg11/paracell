@@ -147,11 +147,11 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	}
 }
 
-func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
+func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
-	exitCalled := false
+	goRootCalled := false
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
 		return programFunc(func() (tea.Model, error) {
@@ -175,7 +175,7 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 		},
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error {
-			exitCalled = true
+			goRootCalled = true
 			return nil
 		},
 		func(cell domain.Cell) error { return nil },
@@ -185,11 +185,11 @@ func TestRunはExitParacell選択後にExit処理を実行する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if !exitCalled {
-		t.Fatal("exit handlerが呼ばれなかった")
+	if !goRootCalled {
+		t.Fatal("go root handlerが呼ばれなかった")
 	}
-	if result.Action != ActionExit {
-		t.Fatalf("action = %q, want %q", result.Action, ActionExit)
+	if result.Action != ActionGoRoot {
+		t.Fatalf("action = %q, want %q", result.Action, ActionGoRoot)
 	}
 }
 

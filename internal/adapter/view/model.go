@@ -20,7 +20,7 @@ type FocusArea string
 const (
 	ActionNone   Action = ""
 	ActionQuit   Action = "quit"
-	ActionExit   Action = "exit"
+	ActionGoRoot Action = "go-root"
 	ActionEnter  Action = "enter"
 	ActionDelete Action = "delete"
 
@@ -131,7 +131,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AwaitingDelete = false
 			if key == "d" {
 				if m.isExitSelected() {
-					m.Error = "exit paracell cannot be cleaned"
+					m.Error = "go root cannot be cleaned"
 					return m, nil
 				}
 				if len(m.Cells) == 0 {
@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.Focus == FocusExit {
-				m.Error = "exit paracell cannot be marked done"
+				m.Error = "go root cannot be marked done"
 				return m, nil
 			}
 			if m.Focus != FocusCells {
@@ -224,7 +224,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case " ":
 			if m.Focus == FocusExit {
-				m.Result = Result{Action: ActionExit}
+				m.Result = Result{Action: ActionGoRoot}
 				m.Quitting = true
 				return m, tea.Quit
 			}
@@ -378,7 +378,7 @@ func renderHeaderLine(m Model) string {
 	case FocusTemplates:
 		focus = "templates"
 	case FocusExit:
-		focus = "exit"
+		focus = "go root"
 	}
 	return fmt.Sprintf("paracell / %s\n", focus)
 }
@@ -440,7 +440,7 @@ func renderCellsPane(m Model) []string {
 }
 
 func renderExitLine(m Model) string {
-	line := "exit paracell"
+	line := "go root"
 	if m.isExitSelected() {
 		line = renderSelectedLine(line)
 	}

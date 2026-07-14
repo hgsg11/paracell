@@ -24,6 +24,16 @@ templates:
             windows:
                 - name: research
                   command: "takt --issue {{.issue}}"
+    researchq:
+        repository:
+            branchPrefix: ""
+            base: main
+        containers:
+            services: {}
+        session:
+            windows:
+                - name: research
+                  command: "takt --issue {{.issue}}"
     planning:
         repository:
             branchPrefix: ""

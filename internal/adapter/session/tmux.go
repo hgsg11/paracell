@@ -60,7 +60,13 @@ func (a TmuxAdapter) configureBindings(ctx context.Context, target string) error
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
 		return err
 	}
-	return a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-p", "display-popup", "-E", "paracell", "view")
+	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup"}
+	if a.Root != "" {
+		args = append(args, "-d", a.Root, "-E", "env", "PARACELL_ROOT="+a.Root, "paracell", "view")
+	} else {
+		args = append(args, "-E", "paracell", "view")
+	}
+	return a.Runner.Run(ctx, "tmux", args...)
 }
 
 func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
@@ -95,13 +101,19 @@ func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.Projec
 func (a TmuxAdapter) ensureRootSession(ctx context.Context, name string) error {
 	err := a.Runner.Run(ctx, "tmux", "has-session", "-t", name)
 	if err == nil {
-		return nil
+		return a.configureBindings(ctx, name)
 	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) && !strings.Contains(strings.ToLower(err.Error()), "can't find session") {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", name, "-c", "."); err != nil {
+	args := []string{"new-session", "-d", "-s", name}
+	if a.Root != "" {
+		args = append(args, "-e", "PARACELL_ROOT="+a.Root, "-c", a.Root)
+	} else {
+		args = append(args, "-c", ".")
+	}
+	if err := a.Runner.Run(ctx, "tmux", args...); err != nil {
 		return err
 	}
 	return a.configureBindings(ctx, name)

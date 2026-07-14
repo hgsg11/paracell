@@ -98,6 +98,31 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 	}
 }
 
+func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{
+		errors: map[string]error{
+			"tmux has-session -t paracell-myapp-root": errors.New("exit status 1: can't find session: paracell-myapp-root"),
+		},
+	}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
+
+	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux has-session -t paracell-myapp-root",
+		"tmux new-session -d -s paracell-myapp-root -e PARACELL_ROOT=/project -c /project",
+		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux attach-session -t paracell-myapp-root",
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
 func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAttachする(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{
@@ -123,6 +148,26 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 	}
 }
 
+func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
+
+	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux has-session -t paracell-myapp-root",
+		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux attach-session -t paracell-myapp-root",
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
 func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
@@ -140,7 +185,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -171,7 +216,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -206,7 +251,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux send-keys -t paracell-myapp-123:test go test ./... Enter",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
