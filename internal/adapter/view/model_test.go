@@ -161,6 +161,26 @@ func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
 	}
 }
 
+func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "very-long-issue-name-12345", Template: "default"}
+	if err := cell.SetStatus(domain.Pending); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+	model := NewModel([]domain.Cell{cell})
+	model.Width = 80
+
+	got := model.View()
+	if !strings.Contains(got, "very-long-issue-n...") {
+		t.Fatalf("issue should be ellipsized: %q", got)
+	}
+	if strings.Contains(got, cell.Name) {
+		t.Fatalf("full issue should not be shown: %q", got)
+	}
+	if !strings.Contains(got, "[ ]  ..") {
+		t.Fatalf("pending status should remain visible: %q", got)
+	}
+}
+
 func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
 	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "default"}
 	if err := cell.SetStatus(domain.Ready); err != nil {
@@ -286,7 +306,7 @@ func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(
 	}
 }
 
-func TestModelViewは内容量に合わせて左右を半分ずつ同じ高さで描画する(t *testing.T) {
+func TestModelViewは内容量に合わせて左3右7で同じ高さに描画する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -294,27 +314,27 @@ func TestModelViewは内容量に合わせて左右を半分ずつ同じ高さ�
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
 	lines := strings.Split(strings.TrimSuffix(updated.(Model).View(), "\n"), "\n")
-	// header + 3 content rows + go root + status
-	if len(lines) != 6 {
-		t.Fatalf("line count = %d, want 6: %q", len(lines), updated.(Model).View())
+	// header + spacer + 3 content rows + go root + status
+	if len(lines) != 7 {
+		t.Fatalf("line count = %d, want 7: %q", len(lines), updated.(Model).View())
 	}
-	for i, line := range lines[1:4] {
+	for i, line := range lines[2:5] {
 		plain := stripANSI(line)
 		columns := strings.SplitN(plain, " │ ", 2)
 		if len(columns) != 2 {
 			t.Fatalf("pane row %d has no separator: %q", i, line)
 		}
-		if lipgloss.Width(columns[0]) != 38 || lipgloss.Width(columns[1]) != 39 {
-			t.Fatalf("pane row %d widths = (%d, %d), want (38, 39): %q", i, lipgloss.Width(columns[0]), lipgloss.Width(columns[1]), line)
+		if lipgloss.Width(columns[0]) != 23 || lipgloss.Width(columns[1]) != 54 {
+			t.Fatalf("pane row %d widths = (%d, %d), want (23, 54): %q", i, lipgloss.Width(columns[0]), lipgloss.Width(columns[1]), line)
 		}
 	}
 }
 
 func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.T) {
 	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
-	model.Width = 40
+	model.Width = 80
 
-	row := strings.Split(model.View(), "\n")[1]
+	row := strings.Split(model.View(), "\n")[2]
 	columns := strings.SplitN(row, " │ ", 2)
 	if len(columns) != 2 {
 		t.Fatalf("separator missing: %q", row)
@@ -322,27 +342,56 @@ func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.
 	if !strings.HasPrefix(columns[1], "\x1b[7m") || !strings.HasSuffix(columns[1], "\x1b[0m") {
 		t.Fatalf("cell pane row is not fully wrapped in reverse style: %q", columns[1])
 	}
-	if lipgloss.Width(columns[1]) != 19 {
-		t.Fatalf("selected cell row width = %d, want 19: %q", lipgloss.Width(columns[1]), columns[1])
+	if lipgloss.Width(columns[1]) != 54 {
+		t.Fatalf("selected cell row width = %d, want 54: %q", lipgloss.Width(columns[1]), columns[1])
 	}
 }
 
 func TestModelViewはTemplateとGoRootも選択行全体をReverse表示する(t *testing.T) {
 	model := NewModel(nil, []string{"default"})
-	model.Width = 40
+	model.Width = 80
 	model.Focus = FocusTemplates
 
-	templateRow := strings.Split(model.View(), "\n")[1]
+	templateRow := strings.Split(model.View(), "\n")[2]
 	templateColumn := strings.SplitN(templateRow, " │ ", 2)[0]
-	if !strings.HasPrefix(templateColumn, "\x1b[7m") || !strings.HasSuffix(templateColumn, "\x1b[0m") || lipgloss.Width(templateColumn) != 18 {
+	if !strings.HasPrefix(templateColumn, "\x1b[7m") || !strings.HasSuffix(templateColumn, "\x1b[0m") || lipgloss.Width(templateColumn) != 23 {
 		t.Fatalf("template row is not fully reversed: %q", templateColumn)
 	}
 
 	model.Focus = FocusExit
 	lines := strings.Split(model.View(), "\n")
 	goRootRow := lines[len(lines)-3]
-	if !strings.HasPrefix(goRootRow, "\x1b[7m") || !strings.HasSuffix(goRootRow, "\x1b[0m") || lipgloss.Width(goRootRow) != 40 {
+	if !strings.HasPrefix(goRootRow, "\x1b[7m") || !strings.HasSuffix(goRootRow, "\x1b[0m") || lipgloss.Width(goRootRow) != 80 {
 		t.Fatalf("go root row is not fully reversed: %q", goRootRow)
+	}
+}
+
+func TestModelViewはHeaderと一覧の間に空行を表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
+	model.Width = 80
+
+	lines := strings.Split(model.View(), "\n")
+	if lines[0] != "paracell / cells" || lines[1] != "" {
+		t.Fatalf("header spacer missing: %q", model.View())
+	}
+}
+
+func TestModelViewは80列未満でTemplateとCellを縦に配置する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	model.Width = 79
+
+	got := model.View()
+	plain := stripANSI(got)
+	if strings.Contains(plain, " │ ") {
+		t.Fatalf("narrow layout should not use side-by-side separator: %q", got)
+	}
+	divider := strings.Repeat("─", 79)
+	dividerIndex := strings.Index(plain, divider)
+	if dividerIndex < 0 || strings.Index(plain, "planning") > dividerIndex || strings.Index(plain, "123") < dividerIndex {
+		t.Fatalf("templates and cells are not stacked in order: %q", got)
 	}
 }
 

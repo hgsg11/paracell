@@ -90,7 +90,7 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 		"tmux new-session -d -s myapp-root -c .",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -E paracell view",
 		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -115,7 +115,7 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 		"tmux new-session -d -s myapp-root -e PARACELL_ROOT=/project -c /project",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
 		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -140,7 +140,7 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 		"tmux new-session -d -s myapp-root -c .",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -E paracell view",
 		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -160,7 +160,7 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 		"tmux has-session -t myapp-root",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
 		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -185,7 +185,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -216,7 +216,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -251,7 +251,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux send-keys -t paracell-myapp-123:test go test ./... Enter",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 60% -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)

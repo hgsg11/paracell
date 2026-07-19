@@ -78,6 +78,8 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 var pendingStatusFrames = []string{"..", "o.", ".o"}
 
 const maxTemplateDisplayWidth = 16
+const maxIssueDisplayWidth = 20
+const stackedLayoutBreakpoint = 80
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -363,7 +365,7 @@ func (m Model) lastSelectableIndex() int {
 func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString(renderHeaderLine(m))
-	b.WriteString(renderSplitLayout(m))
+	b.WriteString(renderResponsiveLayout(m))
 	b.WriteString(renderExitLine(m))
 	b.WriteString(statusLine(m))
 	return b.String()
@@ -377,7 +379,14 @@ func renderHeaderLine(m Model) string {
 	case FocusExit:
 		focus = "go root"
 	}
-	return fmt.Sprintf("paracell / %s\n", focus)
+	return fmt.Sprintf("paracell / %s\n\n", focus)
+}
+
+func renderResponsiveLayout(m Model) string {
+	if m.Width > 0 && m.Width < stackedLayoutBreakpoint {
+		return renderStackedLayout(m)
+	}
+	return renderSplitLayout(m)
 }
 
 func renderSplitLayout(m Model) string {
@@ -388,6 +397,26 @@ func renderSplitLayout(m Model) string {
 	var b strings.Builder
 	b.WriteString(joinSideBySide(left, right, " │ "))
 	return b.String()
+}
+
+func renderStackedLayout(m Model) string {
+	width := widthOrDefault(m.Width)
+	templateHeight, cellHeight := stackedPaneHeights(m)
+	templates := renderTemplatesPane(m, width, templateHeight)
+	cells := renderCellsPane(m, width, cellHeight)
+	var b strings.Builder
+	writeLines(&b, templates)
+	b.WriteString(strings.Repeat("─", width))
+	b.WriteByte('\n')
+	writeLines(&b, cells)
+	return b.String()
+}
+
+func writeLines(b *strings.Builder, lines []string) {
+	for _, line := range lines {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
 }
 
 func renderTemplatesPane(m Model, width int, height int) []string {
@@ -421,7 +450,7 @@ func renderCellsPane(m Model, width int, height int) []string {
 			if cell.IsDone() {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(cell.Name, nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Name, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -443,19 +472,42 @@ func renderExitLine(m Model) string {
 
 func paneWidths(width int) (int, int) {
 	contentWidth := max(2, widthOrDefault(width)-lipgloss.Width(" │ "))
-	leftWidth := contentWidth / 2
+	leftWidth := contentWidth * 3 / 10
 	return leftWidth, contentWidth - leftWidth
 }
 
 func paneHeight(m Model) int {
-	templateRows := max(1, len(m.Templates)) + 1
-	cellRows := max(1, len(m.Cells))
+	templateRows, cellRows := naturalPaneHeights(m)
 	contentHeight := max(templateRows, cellRows)
 	if m.Height > 0 {
-		// header, go root, and status each occupy one terminal row.
-		return min(contentHeight, max(1, m.Height-3))
+		// header, its spacer, go root, and status each occupy one terminal row.
+		return min(contentHeight, max(1, m.Height-4))
 	}
 	return contentHeight
+}
+
+func stackedPaneHeights(m Model) (int, int) {
+	templateRows, cellRows := naturalPaneHeights(m)
+	if m.Height <= 0 {
+		return templateRows, cellRows
+	}
+	// Reserve rows for the header, spacer, divider, go root, and status.
+	available := max(2, m.Height-5)
+	if templateRows+cellRows <= available {
+		return templateRows, cellRows
+	}
+	templateHeight := min(templateRows, max(1, available*3/10))
+	cellHeight := min(cellRows, max(1, available-templateHeight))
+	remaining := available - templateHeight - cellHeight
+	templateGrowth := min(remaining, templateRows-templateHeight)
+	templateHeight += templateGrowth
+	remaining -= templateGrowth
+	cellHeight += min(remaining, cellRows-cellHeight)
+	return templateHeight, cellHeight
+}
+
+func naturalPaneHeights(m Model) (int, int) {
+	return max(1, len(m.Templates)) + 1, max(1, len(m.Cells))
 }
 
 func visibleRows(lines []string, selected int, height int) ([]string, int) {
@@ -515,7 +567,7 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		nameWidth = max(nameWidth, lipgloss.Width(cell.Name))
+		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(cell.Name, maxIssueDisplayWidth)))
 		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
