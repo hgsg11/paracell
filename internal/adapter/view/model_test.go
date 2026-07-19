@@ -376,7 +376,7 @@ func TestModelViewはHeaderと一覧の間に空行を表示する(t *testing.T)
 	}
 }
 
-func TestModelViewは80列未満でTemplateとCellを縦に配置する(t *testing.T) {
+func TestModelViewは80列未満でもTemplateとCellを左右に配置する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -385,13 +385,8 @@ func TestModelViewは80列未満でTemplateとCellを縦に配置する(t *testi
 
 	got := model.View()
 	plain := stripANSI(got)
-	if strings.Contains(plain, " │ ") {
-		t.Fatalf("narrow layout should not use side-by-side separator: %q", got)
-	}
-	divider := strings.Repeat("─", 79)
-	dividerIndex := strings.Index(plain, divider)
-	if dividerIndex < 0 || strings.Index(plain, "planning") > dividerIndex || strings.Index(plain, "123") < dividerIndex {
-		t.Fatalf("templates and cells are not stacked in order: %q", got)
+	if !strings.Contains(plain, " │ ") {
+		t.Fatalf("narrow layout should keep the side-by-side separator: %q", got)
 	}
 }
 
