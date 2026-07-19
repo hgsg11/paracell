@@ -102,6 +102,8 @@ tmux の中で `paracell pending` / `paracell ready` を実行すると、現在
 
 paracell が作成した tmux session の中では、`C-p` で `paracell view` を popup で開けます。popup から `l` を押すと、選択した cell の tmux session に切り替わります。
 
+tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
+
 `C-p` の popup は tmux の `display-popup` 対応版を前提にしています。
 
 ## コマンド

@@ -120,5 +120,5 @@ func (a TmuxAdapter) ensureRootSession(ctx context.Context, name string) error {
 }
 
 func rootSessionName(project string) string {
-	return "paracell-" + project + "-root"
+	return project + "-root"
 }

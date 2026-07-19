@@ -542,7 +542,7 @@ func (f *fakePorts) NewCell(id string, issue string, template domain.Template, p
 			Services: map[string]domain.CellContainer{},
 		},
 		Session: domain.Session{
-			Name: "paracell-" + project + "-" + issue,
+			Name: project + "-" + issue,
 		},
 	}
 	for role, service := range template.Containers.Services {

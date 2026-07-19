@@ -21,6 +21,7 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 	}
 	name := issue
 	prefix := fmt.Sprintf("paracell-%s-%s", project, name)
+	sessionName := fmt.Sprintf("%s-%s", project, name)
 	services := make(map[string]domain.CellContainer, len(template.Containers.Services))
 	for role, service := range template.Containers.Services {
 		var database *domain.DatabaseConfig
@@ -60,7 +61,7 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 			Services:    services,
 		},
 		Session: domain.Session{
-			Name:    prefix,
+			Name:    sessionName,
 			Windows: windows,
 		},
 	}, nil
