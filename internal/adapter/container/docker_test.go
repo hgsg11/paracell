@@ -246,7 +246,7 @@ func TestCreateContainersは元Containerの内部Portだけをコピーする(t 
 func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
-			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[{"Type":"volume","Name":"myapp_db","Source":"/var/lib/docker/volumes/myapp_db/_data","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
 			"CREATE TABLE users (id bigint primary key);",
 		},
 	}
@@ -295,7 +295,7 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	if got := runner.runCalls[0]; got != "docker network create paracell-myapp-123" {
 		t.Fatalf("network create call = %q", got)
 	}
-	if got := runner.runCalls[1]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret mysql:8" {
+	if got := runner.runCalls[1]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -v myapp_db:/var/lib/mysql:rw mysql:8" {
 		t.Fatalf("first run call = %q", got)
 	}
 	if got := runner.runCalls[2]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u app -psecret --silent" {

@@ -191,7 +191,11 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
-			out = append(out, mount.Name+":"+mount.Destination+":ro")
+			mode := "ro"
+			if service.Database != nil && service.Database.CopyMode == "schema" {
+				mode = "rw"
+			}
+			out = append(out, mount.Name+":"+mount.Destination+":"+mode)
 			continue
 		}
 		if mount.Type != "bind" {
