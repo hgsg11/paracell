@@ -79,7 +79,6 @@ var pendingStatusFrames = []string{"..", "o.", ".o"}
 
 const maxTemplateDisplayWidth = 16
 const maxIssueDisplayWidth = 20
-const stackedLayoutBreakpoint = 80
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -365,7 +364,7 @@ func (m Model) lastSelectableIndex() int {
 func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString(renderHeaderLine(m))
-	b.WriteString(renderResponsiveLayout(m))
+	b.WriteString(renderSplitLayout(m))
 	b.WriteString(renderExitLine(m))
 	b.WriteString(statusLine(m))
 	return b.String()
@@ -382,13 +381,6 @@ func renderHeaderLine(m Model) string {
 	return fmt.Sprintf("paracell / %s\n\n", focus)
 }
 
-func renderResponsiveLayout(m Model) string {
-	if m.Width > 0 && m.Width < stackedLayoutBreakpoint {
-		return renderStackedLayout(m)
-	}
-	return renderSplitLayout(m)
-}
-
 func renderSplitLayout(m Model) string {
 	leftWidth, rightWidth := paneWidths(m.Width)
 	paneHeight := paneHeight(m)
@@ -397,26 +389,6 @@ func renderSplitLayout(m Model) string {
 	var b strings.Builder
 	b.WriteString(joinSideBySide(left, right, " │ "))
 	return b.String()
-}
-
-func renderStackedLayout(m Model) string {
-	width := widthOrDefault(m.Width)
-	templateHeight, cellHeight := stackedPaneHeights(m)
-	templates := renderTemplatesPane(m, width, templateHeight)
-	cells := renderCellsPane(m, width, cellHeight)
-	var b strings.Builder
-	writeLines(&b, templates)
-	b.WriteString(strings.Repeat("─", width))
-	b.WriteByte('\n')
-	writeLines(&b, cells)
-	return b.String()
-}
-
-func writeLines(b *strings.Builder, lines []string) {
-	for _, line := range lines {
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
 }
 
 func renderTemplatesPane(m Model, width int, height int) []string {
@@ -484,26 +456,6 @@ func paneHeight(m Model) int {
 		return min(contentHeight, max(1, m.Height-4))
 	}
 	return contentHeight
-}
-
-func stackedPaneHeights(m Model) (int, int) {
-	templateRows, cellRows := naturalPaneHeights(m)
-	if m.Height <= 0 {
-		return templateRows, cellRows
-	}
-	// Reserve rows for the header, spacer, divider, go root, and status.
-	available := max(2, m.Height-5)
-	if templateRows+cellRows <= available {
-		return templateRows, cellRows
-	}
-	templateHeight := min(templateRows, max(1, available*3/10))
-	cellHeight := min(cellRows, max(1, available-templateHeight))
-	remaining := available - templateHeight - cellHeight
-	templateGrowth := min(remaining, templateRows-templateHeight)
-	templateHeight += templateGrowth
-	remaining -= templateGrowth
-	cellHeight += min(remaining, cellRows-cellHeight)
-	return templateHeight, cellHeight
 }
 
 func naturalPaneHeights(m Model) (int, int) {
