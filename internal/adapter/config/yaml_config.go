@@ -180,9 +180,9 @@ func renderTemplate(value string, vars *domain.TemplateVars) (string, error) {
 	}
 	var b bytes.Buffer
 	if err := tmpl.Execute(&b, map[string]string{
-		"issue": vars.Issue,
-		"name":  vars.Name,
-		"input": vars.Input,
+		"issue":   vars.Issue,
+		"name":    vars.Name,
+		"Command": vars.Command,
 	}); err != nil {
 		return "", err
 	}

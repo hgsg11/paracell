@@ -38,7 +38,7 @@ go build -o paracell ./cmd/paracell
 
 ```sh
 paracell init
-paracell fork 123 --template default --input "review the API"
+paracell fork 123 --template default --command "review the API"
 paracell
 ```
 
@@ -68,7 +68,7 @@ templates:
     session:
       windows:
         - name: editor
-          command: codex "Work on issue {{.issue}}. {{.input}}"
+          command: codex "Work on issue {{.issue}}. {{.Command}}"
         - name: test
           command: go test ./...
 ```
@@ -105,7 +105,7 @@ paracell が作成した tmux session の中では、`C-p` で `paracell view` �
 
 ```text
 paracell init
-paracell fork <issue> --template <template> [--input <instruction>]
+paracell fork <issue> --template <template> [--command <command>]
 paracell view
 paracell ls
 paracell clean <cell> [--force]
@@ -115,7 +115,7 @@ paracell version
 paracell --version
 ```
 
-- `fork`: issue 用の cell を作る。`--input` で template に渡す初期命令を指定できる
+- `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令を指定できる
 - `view`: TUI で cell を操作する
 - `ls`: cell 一覧を出す
 - `clean`: cell の worktree / container / session を片付ける
@@ -136,7 +136,7 @@ paracell --version
 - `database.copyMode: schema`: DB schema を cell に用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
 
-tmux command では `{{.issue}}`、`{{.name}}`、`{{.input}}` を使えます。`{{.input}}` は `fork --input` または TUI の issue 入力後に入力した初期命令へ展開されます。
+tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` または TUI の issue 入力後に入力した初期命令へ展開されます。
 
 ## ファイル
 

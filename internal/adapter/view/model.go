@@ -59,7 +59,7 @@ type Model struct {
 	Width              int
 	Result             Result
 	Enter              func(domain.Cell) tea.Cmd
-	Fork               func(issue string, template string, input string) tea.Cmd
+	Fork               func(issue string, template string, command string) tea.Cmd
 	Delete             func(domain.Cell) error
 	MarkDone           func(domain.Cell) (domain.Cell, error)
 	Reload             func() ([]domain.Cell, error)
@@ -522,7 +522,7 @@ func renderIssueInputLine(m Model) string {
 		return "issue: " + m.IssueInput
 	}
 	if m.CommandInputActive {
-		return "input: " + m.CommandInput
+		return "Command: " + m.CommandInput
 	}
 	return ""
 }

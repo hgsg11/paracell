@@ -212,7 +212,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 			}
 			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd == nil {
-				t.Fatal("input入力のEnterでforkコマンドが返らなかった")
+				t.Fatal("Command入力のEnterでforkコマンドが返らなかった")
 			}
 			updated, _ = updated.(Model).Update(cmd())
 			return updated, nil

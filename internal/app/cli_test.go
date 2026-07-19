@@ -34,14 +34,14 @@ func TestForkコマンドを解析できる(t *testing.T) {
 	}
 }
 
-func TestForkコマンドはInputを解析できる(t *testing.T) {
-	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp", "--input", "review the API"})
+func TestForkコマンドはCommandを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp", "--command", "review the API"})
 
 	if err != nil {
 		t.Fatalf("fork解析でエラーが返った: %v", err)
 	}
-	if cmd.Input != "review the API" {
-		t.Fatalf("input = %q, want %q", cmd.Input, "review the API")
+	if cmd.Command != "review the API" {
+		t.Fatalf("command = %q, want %q", cmd.Command, "review the API")
 	}
 }
 
@@ -568,7 +568,7 @@ templates:
 			t.Fatalf("template = %q, want %q", template, "default")
 		}
 		if input != "review the API" {
-			t.Fatalf("input = %q, want %q", input, "review the API")
+			t.Fatalf("command = %q, want %q", input, "review the API")
 		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}

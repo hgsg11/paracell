@@ -78,7 +78,7 @@ templates:
 	}
 }
 
-func TestYAML設定はInputをSessionCommandへ展開する(t *testing.T) {
+func TestYAML設定はCommandをSessionCommandへ展開する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -95,16 +95,16 @@ templates:
     session:
       windows:
         - name: agent
-          command: codex {{.input}}
+          command: codex {{.Command}}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
 	}
 
 	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), &domain.TemplateVars{
-		Issue: "123",
-		Name:  "123",
-		Input: "review the API",
+		Issue:   "123",
+		Name:    "123",
+		Command: "review the API",
 	})
 	if err != nil {
 		t.Fatalf("設定読み込みでエラーが返った: %v", err)

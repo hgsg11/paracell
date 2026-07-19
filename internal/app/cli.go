@@ -61,7 +61,7 @@ var (
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-t", cell.Session.Name), nil
 	}
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, input string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
 			State:            state,
@@ -72,7 +72,7 @@ var (
 			SessionFactory:   session,
 			IDs:              id.RandomGenerator{},
 		}
-		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Input: input})
+		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command})
 	}
 )
 
@@ -116,7 +116,7 @@ type Command struct {
 	Kind     CommandKind
 	Issue    string
 	Template string
-	Input    string
+	Command  string
 	Cell     string
 	Force    bool
 }
@@ -168,14 +168,14 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Kind: CommandVersion}, nil
 	case "fork":
 		if (len(args) != 4 && len(args) != 6) || args[2] != "--template" || args[1] == "" || args[3] == "" {
-			return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--input <instruction>]")
+			return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--command <command>]")
 		}
 		cmd := Command{Kind: CommandFork, Issue: args[1], Template: args[3]}
 		if len(args) == 6 {
-			if args[4] != "--input" {
-				return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--input <instruction>]")
+			if args[4] != "--command" {
+				return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--command <command>]")
 			}
-			cmd.Input = args[5]
+			cmd.Command = args[5]
 		}
 		return cmd, nil
 	case "clean":
@@ -258,9 +258,9 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			return runClean(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
-		}, func(issue string, template string, input string) tea.Cmd {
+		}, func(issue string, template string, command string) tea.Cmd {
 			return func() tea.Msg {
-				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, issue, template, input, workdir)
+				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, issue, template, command, workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})
@@ -279,7 +279,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 			IDs:              id.RandomGenerator{},
 		}
-		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Input: cmd.Input})
+		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command})
 		return err
 	case CommandClean:
 		uc := usecase.CleanCellUseCase{
