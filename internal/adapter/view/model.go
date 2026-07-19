@@ -448,13 +448,14 @@ func paneWidths(width int) (int, int) {
 }
 
 func paneHeight(m Model) int {
-	if m.Height > 0 {
-		// header, go root, and status each occupy one terminal row.
-		return max(1, m.Height-3)
-	}
 	templateRows := max(1, len(m.Templates)) + 1
 	cellRows := max(1, len(m.Cells))
-	return max(templateRows, cellRows)
+	contentHeight := max(templateRows, cellRows)
+	if m.Height > 0 {
+		// header, go root, and status each occupy one terminal row.
+		return min(contentHeight, max(1, m.Height-3))
+	}
+	return contentHeight
 }
 
 func visibleRows(lines []string, selected int, height int) ([]string, int) {

@@ -286,7 +286,7 @@ func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(
 	}
 }
 
-func TestModelViewはWindowSizeに合わせて左右を半分ずつ同じ高さで描画する(t *testing.T) {
+func TestModelViewは内容量に合わせて左右を半分ずつ同じ高さで描画する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -294,11 +294,11 @@ func TestModelViewはWindowSizeに合わせて左右を半分ずつ同じ高さ�
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
 
 	lines := strings.Split(strings.TrimSuffix(updated.(Model).View(), "\n"), "\n")
-	// header + 7 pane rows + go root + status
-	if len(lines) != 10 {
-		t.Fatalf("line count = %d, want 10: %q", len(lines), updated.(Model).View())
+	// header + 3 content rows + go root + status
+	if len(lines) != 6 {
+		t.Fatalf("line count = %d, want 6: %q", len(lines), updated.(Model).View())
 	}
-	for i, line := range lines[1:8] {
+	for i, line := range lines[1:4] {
 		plain := stripANSI(line)
 		columns := strings.SplitN(plain, " │ ", 2)
 		if len(columns) != 2 {
