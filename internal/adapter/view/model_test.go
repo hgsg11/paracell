@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
@@ -268,16 +269,105 @@ func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(
 	planningIndex := -1
 	blankIndex := -1
 	for i, line := range lines {
-		if strings.Contains(line, "planning") {
+		columns := strings.SplitN(line, " │ ", 2)
+		if len(columns) != 2 {
+			continue
+		}
+		if strings.TrimSpace(columns[0]) == "planning" {
 			planningIndex = i
 		}
-		if planningIndex >= 0 && i > planningIndex && strings.HasPrefix(line, "          │") {
+		if planningIndex >= 0 && i > planningIndex && strings.TrimSpace(columns[0]) == "" {
 			blankIndex = i
 			break
 		}
 	}
 	if planningIndex < 0 || blankIndex != planningIndex+1 {
 		t.Fatalf("blank issue row should be placed directly under templates: %q", got)
+	}
+}
+
+func TestModelViewはWindowSizeに合わせて左右を半分ずつ同じ高さで描画する(t *testing.T) {
+	model := NewModel(
+		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]string{"default", "planning"},
+	)
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 10})
+
+	lines := strings.Split(strings.TrimSuffix(updated.(Model).View(), "\n"), "\n")
+	// header + 7 pane rows + go root + status
+	if len(lines) != 10 {
+		t.Fatalf("line count = %d, want 10: %q", len(lines), updated.(Model).View())
+	}
+	for i, line := range lines[1:8] {
+		plain := stripANSI(line)
+		columns := strings.SplitN(plain, " │ ", 2)
+		if len(columns) != 2 {
+			t.Fatalf("pane row %d has no separator: %q", i, line)
+		}
+		if lipgloss.Width(columns[0]) != 38 || lipgloss.Width(columns[1]) != 39 {
+			t.Fatalf("pane row %d widths = (%d, %d), want (38, 39): %q", i, lipgloss.Width(columns[0]), lipgloss.Width(columns[1]), line)
+		}
+	}
+}
+
+func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
+	model.Width = 40
+
+	row := strings.Split(model.View(), "\n")[1]
+	columns := strings.SplitN(row, " │ ", 2)
+	if len(columns) != 2 {
+		t.Fatalf("separator missing: %q", row)
+	}
+	if !strings.HasPrefix(columns[1], "\x1b[7m") || !strings.HasSuffix(columns[1], "\x1b[0m") {
+		t.Fatalf("cell pane row is not fully wrapped in reverse style: %q", columns[1])
+	}
+	if lipgloss.Width(columns[1]) != 19 {
+		t.Fatalf("selected cell row width = %d, want 19: %q", lipgloss.Width(columns[1]), columns[1])
+	}
+}
+
+func TestModelViewはTemplateとGoRootも選択行全体をReverse表示する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Width = 40
+	model.Focus = FocusTemplates
+
+	templateRow := strings.Split(model.View(), "\n")[1]
+	templateColumn := strings.SplitN(templateRow, " │ ", 2)[0]
+	if !strings.HasPrefix(templateColumn, "\x1b[7m") || !strings.HasSuffix(templateColumn, "\x1b[0m") || lipgloss.Width(templateColumn) != 18 {
+		t.Fatalf("template row is not fully reversed: %q", templateColumn)
+	}
+
+	model.Focus = FocusExit
+	lines := strings.Split(model.View(), "\n")
+	goRootRow := lines[len(lines)-3]
+	if !strings.HasPrefix(goRootRow, "\x1b[7m") || !strings.HasSuffix(goRootRow, "\x1b[0m") || lipgloss.Width(goRootRow) != 40 {
+		t.Fatalf("go root row is not fully reversed: %q", goRootRow)
+	}
+}
+
+func TestModelViewは表示高を超えて移動しても選択行を表示する(t *testing.T) {
+	model := NewModel([]domain.Cell{
+		{ID: "cell-1", Name: "one", Template: "default"},
+		{ID: "cell-2", Name: "two", Template: "default"},
+		{ID: "cell-3", Name: "three", Template: "default"},
+	}, []string{"default"})
+	model.Width = 40
+	model.Height = 5 // two pane rows
+	model.Selected = 2
+
+	got := model.View()
+	if !strings.Contains(got, "\x1b[7m") || !strings.Contains(got, "three") {
+		t.Fatalf("selected row should remain visible after scrolling: %q", got)
+	}
+}
+
+func TestModelはWindowSizeの幅と高さを保持する(t *testing.T) {
+	model := NewModel(nil)
+	next, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	got := next.(Model)
+	if got.Width != 120 || got.Height != 30 {
+		t.Fatalf("size = (%d, %d), want (120, 30)", got.Width, got.Height)
 	}
 }
 

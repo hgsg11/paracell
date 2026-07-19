@@ -55,6 +55,7 @@ type Model struct {
 	IssueInput       string
 	Error            string
 	Width            int
+	Height           int
 	Result           Result
 	Enter            func(domain.Cell) tea.Cmd
 	Fork             func(issue string, template string) tea.Cmd
@@ -235,6 +236,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
+		m.Height = msg.Height
 	case enterResultMsg:
 		if msg.err != nil {
 			m.Error = msg.err.Error()
@@ -379,67 +381,103 @@ func renderHeaderLine(m Model) string {
 }
 
 func renderSplitLayout(m Model) string {
-	left := renderTemplatesPane(m)
-	right := renderCellsPane(m)
+	leftWidth, rightWidth := paneWidths(m.Width)
+	paneHeight := paneHeight(m)
+	left := renderTemplatesPane(m, leftWidth, paneHeight)
+	right := renderCellsPane(m, rightWidth, paneHeight)
 	var b strings.Builder
-	b.WriteString(joinSideBySide(left, right, "  │  "))
-	b.WriteString("\n")
+	b.WriteString(joinSideBySide(left, right, " │ "))
 	return b.String()
 }
 
-func renderTemplatesPane(m Model) []string {
-	lines := []string{}
+func renderTemplatesPane(m Model, width int, height int) []string {
+	lines := make([]string, 0, len(m.Templates)+1)
+	selected := m.TemplateSelected
 	if len(m.Templates) == 0 {
-		line := "no templates"
-		if m.Focus == FocusTemplates {
-			line = renderSelectedLine(line)
-		}
-		lines = append(lines, line)
+		lines = append(lines, "no templates")
 		lines = append(lines, renderIssueInputLine(m))
-		return lines
+	} else {
+		lines = append(lines, m.Templates...)
+		lines = append(lines, renderIssueInputLine(m))
 	}
-	for i, template := range m.Templates {
-		line := template
-		if m.Focus == FocusTemplates && i == m.TemplateSelected {
-			line = renderSelectedLine(line)
-		}
-		lines = append(lines, line)
+	if m.IssueInputActive {
+		selected = len(lines) - 1
 	}
-	lines = append(lines, renderIssueInputLine(m))
+	lines, selected = visibleRows(lines, selected, height)
+	for i := range lines {
+		lines[i] = renderPaneLine(lines[i], width, m.Focus == FocusTemplates && i == selected)
+	}
 	return lines
 }
 
-func renderCellsPane(m Model) []string {
-	lines := []string{""}
-	nameWidth, templateWidth := cellWidths(m.Cells)
+func renderCellsPane(m Model, width int, height int) []string {
+	lines := make([]string, 0, max(1, len(m.Cells)))
 	if len(m.Cells) == 0 {
-		line := "no cells"
-		if m.Focus == FocusCells {
-			line = renderSelectedLine(line)
+		lines = append(lines, "no cells")
+	} else {
+		nameWidth, templateWidth := cellWidths(m.Cells)
+		for _, cell := range m.Cells {
+			done := "[ ]"
+			if cell.IsDone() {
+				done = "[x]"
+			}
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(cell.Name, nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
-		lines = append(lines, line)
-		return lines
 	}
-	for i, cell := range m.Cells {
-		done := "[ ]"
-		if cell.IsDone() {
-			done = "[x]"
-		}
-		line := fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(cell.Name, nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame))
-		if m.Focus == FocusCells && i == m.Selected {
-			line = renderSelectedLine(line)
-		}
-		lines = append(lines, line)
+	selected := m.Selected
+	lines, selected = visibleRows(lines, selected, height)
+	for i := range lines {
+		lines[i] = renderPaneLine(lines[i], width, m.Focus == FocusCells && i == selected)
 	}
 	return lines
 }
 
 func renderExitLine(m Model) string {
 	line := "go root"
+	line = padded(clipWidth(line, widthOrDefault(m.Width)), widthOrDefault(m.Width))
 	if m.isExitSelected() {
 		line = renderSelectedLine(line)
 	}
 	return line + "\n"
+}
+
+func paneWidths(width int) (int, int) {
+	contentWidth := max(2, widthOrDefault(width)-lipgloss.Width(" │ "))
+	leftWidth := contentWidth / 2
+	return leftWidth, contentWidth - leftWidth
+}
+
+func paneHeight(m Model) int {
+	if m.Height > 0 {
+		// header, go root, and status each occupy one terminal row.
+		return max(1, m.Height-3)
+	}
+	templateRows := max(1, len(m.Templates)) + 1
+	cellRows := max(1, len(m.Cells))
+	return max(templateRows, cellRows)
+}
+
+func visibleRows(lines []string, selected int, height int) ([]string, int) {
+	height = max(1, height)
+	selected = min(max(0, selected), len(lines)-1)
+	start := 0
+	if selected >= height {
+		start = selected - height + 1
+	}
+	end := min(len(lines), start+height)
+	visible := append([]string(nil), lines[start:end]...)
+	for len(visible) < height {
+		visible = append(visible, "")
+	}
+	return visible, selected - start
+}
+
+func renderPaneLine(value string, width int, selected bool) string {
+	line := padded(clipWidth(value, width), width)
+	if selected {
+		return renderSelectedLine(line)
+	}
+	return line
 }
 
 func joinSideBySide(left []string, right []string, separator string) string {
