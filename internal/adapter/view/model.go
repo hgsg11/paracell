@@ -40,27 +40,29 @@ type forkResultMsg struct {
 }
 
 type Model struct {
-	Cells            []domain.Cell
-	Templates        []string
-	CurrentCell      string
-	Focus            FocusArea
-	Selected         int
-	TemplateSelected int
-	StatusFrame      int
-	Quitting         bool
-	AwaitingDelete   bool
-	AwaitingFork     bool
-	IssueInputActive bool
-	ForkTemplate     string
-	IssueInput       string
-	Error            string
-	Width            int
-	Result           Result
-	Enter            func(domain.Cell) tea.Cmd
-	Fork             func(issue string, template string) tea.Cmd
-	Delete           func(domain.Cell) error
-	MarkDone         func(domain.Cell) (domain.Cell, error)
-	Reload           func() ([]domain.Cell, error)
+	Cells              []domain.Cell
+	Templates          []string
+	CurrentCell        string
+	Focus              FocusArea
+	Selected           int
+	TemplateSelected   int
+	StatusFrame        int
+	Quitting           bool
+	AwaitingDelete     bool
+	AwaitingFork       bool
+	IssueInputActive   bool
+	CommandInputActive bool
+	ForkTemplate       string
+	IssueInput         string
+	CommandInput       string
+	Error              string
+	Width              int
+	Result             Result
+	Enter              func(domain.Cell) tea.Cmd
+	Fork               func(issue string, template string, command string) tea.Cmd
+	Delete             func(domain.Cell) error
+	MarkDone           func(domain.Cell) (domain.Cell, error)
+	Reload             func() ([]domain.Cell, error)
 }
 
 func NewModel(cells []domain.Cell, templates ...[]string) Model {
@@ -75,6 +77,7 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 }
 
 var pendingStatusFrames = []string{"..", "o.", ".o"}
+
 const maxTemplateDisplayWidth = 16
 
 func (m Model) Init() tea.Cmd {
@@ -85,31 +88,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		key := msg.String()
+		if m.CommandInputActive {
+			switch msg.Type {
+			case tea.KeyRunes:
+				m.CommandInput += string(msg.Runes)
+				return m, nil
+			case tea.KeyBackspace:
+				m.CommandInput = removeLastRune(m.CommandInput)
+				return m, nil
+			case tea.KeyEnter:
+				if m.Fork == nil {
+					return m, nil
+				}
+				return m, m.Fork(m.IssueInput, m.ForkTemplate, m.CommandInput)
+			case tea.KeyEsc:
+				return resetForkInput(m), nil
+			}
+		}
 		if m.IssueInputActive {
 			switch msg.Type {
 			case tea.KeyRunes:
 				m.IssueInput += string(msg.Runes)
 				return m, nil
 			case tea.KeyBackspace:
-				if len(m.IssueInput) > 0 {
-					m.IssueInput = m.IssueInput[:len(m.IssueInput)-1]
-				}
+				m.IssueInput = removeLastRune(m.IssueInput)
 				return m, nil
 			case tea.KeyEnter:
 				if strings.TrimSpace(m.IssueInput) == "" {
 					m.Error = "issue is required"
 					return m, nil
 				}
-				if m.Fork == nil {
-					return m, nil
-				}
-				return m, m.Fork(m.IssueInput, m.ForkTemplate)
-			case tea.KeyEsc:
 				m.IssueInputActive = false
-				m.AwaitingFork = false
-				m.ForkTemplate = ""
-				m.IssueInput = ""
+				m.CommandInputActive = true
 				return m, nil
+			case tea.KeyEsc:
+				return resetForkInput(m), nil
 			}
 		}
 		if key == "tab" {
@@ -310,9 +323,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Cells = cells
 		}
 		m.IssueInputActive = false
+		m.CommandInputActive = false
 		m.AwaitingFork = false
 		m.ForkTemplate = ""
 		m.IssueInput = ""
+		m.CommandInput = ""
 		return m, nil
 	case refreshMsg:
 		m.StatusFrame = (m.StatusFrame + 1) % len(pendingStatusFrames)
@@ -506,7 +521,28 @@ func renderIssueInputLine(m Model) string {
 	if m.IssueInputActive {
 		return "issue: " + m.IssueInput
 	}
+	if m.CommandInputActive {
+		return "Command: " + m.CommandInput
+	}
 	return ""
+}
+
+func removeLastRune(value string) string {
+	runes := []rune(value)
+	if len(runes) == 0 {
+		return value
+	}
+	return string(runes[:len(runes)-1])
+}
+
+func resetForkInput(m Model) Model {
+	m.IssueInputActive = false
+	m.CommandInputActive = false
+	m.AwaitingFork = false
+	m.ForkTemplate = ""
+	m.IssueInput = ""
+	m.CommandInput = ""
+	return m
 }
 
 func currentCellMarker(cell domain.Cell, currentCell string) string {

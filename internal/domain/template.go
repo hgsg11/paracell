@@ -16,8 +16,9 @@ type Template struct {
 }
 
 type TemplateVars struct {
-	Issue string
-	Name  string
+	Issue   string
+	Name    string
+	Command string
 }
 
 type RepositoryTemplate struct {
