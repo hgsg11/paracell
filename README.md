@@ -38,7 +38,7 @@ go build -o paracell ./cmd/paracell
 
 ```sh
 paracell init
-paracell fork 123 --template default
+paracell fork 123 --template default --input "review the API"
 paracell
 ```
 
@@ -68,7 +68,7 @@ templates:
     session:
       windows:
         - name: editor
-          command: nvim {{.issue}}
+          command: codex "Work on issue {{.issue}}. {{.input}}"
         - name: test
           command: go test ./...
 ```
@@ -89,7 +89,8 @@ templates:
 - `enter`: done を切り替える
 - `d` `d`: clean
 - template 一覧で `y` `y`: issue 番号入力モード
-- issue 番号入力後 `enter`: fork
+- issue 番号入力後 `enter`: 初期命令入力へ進む
+- 初期命令入力後 `enter`: fork。命令は空でもよい
 - `q`: 閉じる
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
@@ -104,7 +105,7 @@ paracell が作成した tmux session の中では、`C-p` で `paracell view` �
 
 ```text
 paracell init
-paracell fork <issue> --template <template>
+paracell fork <issue> --template <template> [--input <instruction>]
 paracell view
 paracell ls
 paracell clean <cell> [--force]
@@ -114,7 +115,7 @@ paracell version
 paracell --version
 ```
 
-- `fork`: issue 用の cell を作る
+- `fork`: issue 用の cell を作る。`--input` で template に渡す初期命令を指定できる
 - `view`: TUI で cell を操作する
 - `ls`: cell 一覧を出す
 - `clean`: cell の worktree / container / session を片付ける
@@ -135,7 +136,7 @@ paracell --version
 - `database.copyMode: schema`: DB schema を cell に用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
 
-tmux command では `{{.issue}}` と `{{.name}}` を使えます。
+tmux command では `{{.issue}}`、`{{.name}}`、`{{.input}}` を使えます。`{{.input}}` は `fork --input` または TUI の issue 入力後に入力した初期命令へ展開されます。
 
 ## ファイル
 

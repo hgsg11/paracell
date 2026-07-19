@@ -16,7 +16,7 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 	return tea.NewProgram(model, opts...)
 }
 
-func Run(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (Result, error) {
+func Run(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (Result, error) {
 	_ = ctx
 	model := NewModel(cells, templates)
 	model.CurrentCell = currentCell

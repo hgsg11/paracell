@@ -18,6 +18,7 @@ type Template struct {
 type TemplateVars struct {
 	Issue string
 	Name  string
+	Input string
 }
 
 type RepositoryTemplate struct {

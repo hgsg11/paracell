@@ -182,6 +182,7 @@ func renderTemplate(value string, vars *domain.TemplateVars) (string, error) {
 	if err := tmpl.Execute(&b, map[string]string{
 		"issue": vars.Issue,
 		"name":  vars.Name,
+		"input": vars.Input,
 	}); err != nil {
 		return "", err
 	}

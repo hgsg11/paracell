@@ -34,6 +34,17 @@ func TestForkコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestForkコマンドはInputを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp", "--input", "review the API"})
+
+	if err != nil {
+		t.Fatalf("fork解析でエラーが返った: %v", err)
+	}
+	if cmd.Input != "review the API" {
+		t.Fatalf("input = %q, want %q", cmd.Input, "review the API")
+	}
+}
+
 func TestInitコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"init"})
 
@@ -351,7 +362,7 @@ templates:
 	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -442,7 +453,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -491,7 +502,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -541,7 +552,7 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, input string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -556,9 +567,12 @@ templates:
 		if template != "default" {
 			t.Fatalf("template = %q, want %q", template, "default")
 		}
+		if input != "review the API" {
+			t.Fatalf("input = %q, want %q", input, "review the API")
+		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -568,7 +582,7 @@ templates:
 		_ = exit
 		_ = clean
 		_ = markDone
-		cmd := fork("123", "default")
+		cmd := fork("123", "default", "review the API")
 		if cmd == nil {
 			t.Fatal("fork handlerがコマンドを返さなかった")
 		}
@@ -611,7 +625,7 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, input string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = state
@@ -641,7 +655,7 @@ templates:
 		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -651,7 +665,7 @@ templates:
 		_ = exit
 		_ = clean
 		_ = markDone
-		cmd := fork("123", "default")
+		cmd := fork("123", "default", "")
 		if cmd == nil {
 			t.Fatal("fork handlerがコマンドを返さなかった")
 		}
@@ -695,7 +709,7 @@ templates: {}
 		gotProject = loaded.Project.Name
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
@@ -755,7 +769,7 @@ templates:
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -806,7 +820,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -880,7 +894,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -960,7 +974,7 @@ templates:
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates

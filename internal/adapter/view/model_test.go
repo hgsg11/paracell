@@ -300,6 +300,19 @@ func TestModelViewはIssue入力中にTemplate一覧の下へ内容を表示す�
 	}
 }
 
+func TestModelViewはInput入力中にTemplate一覧の下へ内容を表示する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.CommandInputActive = true
+	model.CommandInput = "review the API"
+
+	got := model.View()
+
+	if !strings.Contains(got, "input: review the API") {
+		t.Fatalf("input should be shown in template pane: %q", got)
+	}
+}
+
 func TestJoinSideBySideはANSI付き行でも区切り位置を揃える(t *testing.T) {
 	left := []string{"left", renderSelectedLine("> right")}
 	right := []string{"A", "B"}
@@ -770,14 +783,14 @@ func TestModelはTemplate一覧でyyするとIssue入力モードへ入る(t *te
 	}
 }
 
-func TestModelはIssue入力中にEnterでForkHandlerを呼ぶ(t *testing.T) {
+func TestModelはIssueとInput入力後にEnterでForkHandlerを呼ぶ(t *testing.T) {
 	model := NewModel(nil, []string{"default"})
 	model.Focus = FocusTemplates
 	model.IssueInputActive = true
 	model.ForkTemplate = "default"
 	model.IssueInput = "123"
 	called := false
-	model.Fork = func(issue string, template string) tea.Cmd {
+	model.Fork = func(issue string, template string, input string) tea.Cmd {
 		called = true
 		if issue != "123" {
 			t.Fatalf("issue = %q, want %q", issue, "123")
@@ -785,14 +798,22 @@ func TestModelはIssue入力中にEnterでForkHandlerを呼ぶ(t *testing.T) {
 		if template != "default" {
 			t.Fatalf("template = %q, want %q", template, "default")
 		}
+		if input != "review the API" {
+			t.Fatalf("input = %q, want %q", input, "review the API")
+		}
 		return func() tea.Msg {
 			return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
 		}
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("issue入力のEnterでforkコマンドが返った")
+	}
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("review the API")})
+	next, cmd = next.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("Enterでforkコマンドが返らなかった")
+		t.Fatal("input入力のEnterでforkコマンドが返らなかった")
 	}
 	if !called {
 		t.Fatal("Fork handlerが呼ばれなかった")
@@ -802,6 +823,9 @@ func TestModelはIssue入力中にEnterでForkHandlerを呼ぶ(t *testing.T) {
 	got := updated.(Model)
 	if got.IssueInputActive {
 		t.Fatal("IssueInputActive = true, want false")
+	}
+	if got.CommandInputActive {
+		t.Fatal("CommandInputActive = true, want false")
 	}
 }
 
@@ -840,6 +864,18 @@ func TestModelはIssue入力中に文字入力とBackspaceができる(t *testin
 	got = next.(Model)
 	if got.IssueInput != "12" {
 		t.Fatalf("IssueInput = %q, want %q", got.IssueInput, "12")
+	}
+}
+
+func TestModelはInput入力中に日本語の文字入力とBackspaceができる(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.CommandInputActive = true
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("確認する")})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	got := next.(Model)
+	if got.CommandInput != "確認す" {
+		t.Fatalf("CommandInput = %q, want %q", got.CommandInput, "確認す")
 	}
 }
 

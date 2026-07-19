@@ -78,6 +78,42 @@ templates:
 	}
 }
 
+func TestYAML設定はInputをSessionCommandへ展開する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      base: main
+    containers:
+      services: {}
+    session:
+      windows:
+        - name: agent
+          command: codex {{.input}}
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), &domain.TemplateVars{
+		Issue: "123",
+		Name:  "123",
+		Input: "review the API",
+	})
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if got := cfg.Templates["default"].Session.Windows[0].Command; got != "codex review the API" {
+		t.Fatalf("session command = %q, want %q", got, "codex review the API")
+	}
+}
+
 func TestYAML設定を保存できる(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")

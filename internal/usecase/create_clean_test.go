@@ -25,7 +25,7 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 
-	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
+	cell, err := uc.Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp", Input: "review the API"})
 	if err != nil {
 		t.Fatalf("ForkCellでエラーが返った: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 		"source:fork:123",
 		"files:copy:123:.env,apps/web/.env.local",
 		"containers:fork:123",
-		"session:fork:123:nvim 123",
+		"session:fork:123:nvim 123; codex review the API",
 		"state:save:1",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
@@ -460,7 +460,7 @@ func newFakePorts() *fakePorts {
 						},
 					},
 					Session: domain.SessionTemplate{
-						Windows: []domain.SessionWindowTemplate{{Name: "editor", Command: "nvim {{.issue}}"}},
+						Windows: []domain.SessionWindowTemplate{{Name: "editor", Command: "nvim {{.issue}}; codex {{.input}}"}},
 					},
 				},
 			},
@@ -482,6 +482,7 @@ func (f *fakePorts) Load(ctx context.Context, vars *domain.TemplateVars) (domain
 			command, err := renderString(window.Command, map[string]string{
 				"issue": vars.Issue,
 				"name":  vars.Name,
+				"input": vars.Input,
 			})
 			if err != nil {
 				return domain.Config{}, err

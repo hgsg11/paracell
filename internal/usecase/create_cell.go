@@ -10,6 +10,7 @@ import (
 type ForkCellInput struct {
 	Issue    string
 	Template string
+	Input    string
 }
 
 type ForkCellUseCase struct {
@@ -27,6 +28,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	cfg, err := u.Config.Load(ctx, &domain.TemplateVars{
 		Issue: input.Issue,
 		Name:  input.Issue,
+		Input: input.Input,
 	})
 	if err != nil {
 		return domain.Cell{}, err
