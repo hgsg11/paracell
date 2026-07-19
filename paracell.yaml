@@ -3,6 +3,7 @@ project:
 providers:
     source: git
     session: tmux
+    notifications: tmux
 templates:
     default:
         repository:

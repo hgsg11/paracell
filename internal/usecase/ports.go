@@ -20,6 +20,14 @@ type CellStatePort interface {
 	SaveCells(ctx context.Context, cells []domain.Cell) error
 }
 
+type Notifier interface {
+	NotifyReady(ctx context.Context, cell domain.Cell, message string) error
+}
+
+type NotificationProviderFactory interface {
+	Notification(provider domain.ProviderConfig) (Notifier, error)
+}
+
 type SourcePort interface {
 	CreateSource(ctx context.Context, cell domain.Cell) error
 	CleanSource(ctx context.Context, cell domain.Cell) error

@@ -5,9 +5,10 @@ type ProjectConfig struct {
 }
 
 type ProviderConfig struct {
-	Source    string
-	Container string
-	Session   string
+	Source        string
+	Container     string
+	Session       string
+	Notifications string
 }
 
 type Config struct {

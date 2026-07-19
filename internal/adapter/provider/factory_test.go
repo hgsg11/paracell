@@ -75,3 +75,33 @@ func TestFactorySessionは未対応Providerをエラーにする(t *testing.T) {
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.session "screen"`)
 	}
 }
+
+func TestFactoryNotificationは対応Providerを選択できる(t *testing.T) {
+	adapter, err := Factory{}.Notification(domain.ProviderConfig{Notifications: "tmux"})
+	if err != nil {
+		t.Fatalf("provider notification選択でエラーが返った: %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("notification adapter is nil")
+	}
+}
+
+func TestFactoryNotificationは空ならNoopを返す(t *testing.T) {
+	adapter, err := Factory{}.Notification(domain.ProviderConfig{})
+	if err != nil {
+		t.Fatalf("provider notification選択でエラーが返った: %v", err)
+	}
+	if adapter == nil {
+		t.Fatal("notification adapter is nil")
+	}
+}
+
+func TestFactoryNotificationは未対応Providerをエラーにする(t *testing.T) {
+	_, err := Factory{}.Notification(domain.ProviderConfig{Notifications: "bark"})
+	if err == nil {
+		t.Fatal("未対応notification providerなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported providers.notifications "bark"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.notifications "bark"`)
+	}
+}

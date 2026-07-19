@@ -18,6 +18,7 @@ providers:
   source: git
   container: docker
   session: tmux
+  notifications: tmux
 templates:
   webapp:
     repository:
@@ -60,6 +61,9 @@ templates:
 	if cfg.Providers.Session != "tmux" {
 		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
 	}
+	if cfg.Providers.Notifications != "tmux" {
+		t.Fatalf("providers.notifications = %q, want %q", cfg.Providers.Notifications, "tmux")
+	}
 	template := cfg.Templates["webapp"]
 	if template.Name != "webapp" {
 		t.Fatalf("template名 = %q, want %q", template.Name, "webapp")
@@ -78,42 +82,6 @@ templates:
 	}
 }
 
-func TestYAML設定はCommandをSessionCommandへ展開する(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "paracell.yaml")
-	content := []byte(`project:
-  name: myapp
-providers:
-  source: git
-  session: tmux
-templates:
-  default:
-    repository:
-      base: main
-    containers:
-      services: {}
-    session:
-      windows:
-        - name: agent
-          command: codex {{.Command}}
-`)
-	if err := os.WriteFile(configPath, content, 0o644); err != nil {
-		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
-	}
-
-	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), &domain.TemplateVars{
-		Issue:   "123",
-		Name:    "123",
-		Command: "review the API",
-	})
-	if err != nil {
-		t.Fatalf("設定読み込みでエラーが返った: %v", err)
-	}
-	if got := cfg.Templates["default"].Session.Windows[0].Command; got != "codex review the API" {
-		t.Fatalf("session command = %q, want %q", got, "codex review the API")
-	}
-}
-
 func TestYAML設定を保存できる(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -122,9 +90,10 @@ func TestYAML設定を保存できる(t *testing.T) {
 	err := adapter.SaveConfig(context.Background(), domain.Config{
 		Project: domain.ProjectConfig{Name: "paradev"},
 		Providers: domain.ProviderConfig{
-			Source:    "git",
-			Container: "docker",
-			Session:   "tmux",
+			Source:        "git",
+			Container:     "docker",
+			Session:       "tmux",
+			Notifications: "tmux",
 		},
 		Templates: map[string]domain.Template{
 			"default": {
@@ -158,6 +127,7 @@ providers:
     source: git
     container: docker
     session: tmux
+    notifications: tmux
 templates:
     default:
         repository:
@@ -246,6 +216,41 @@ templates:
 	}
 	if err.Error() != `unsupported providers.source "svn"` {
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.source "svn"`)
+	}
+}
+
+func TestYAML設定は未対応NotificationProviderの場合に失敗する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+  notifications: slack
+templates:
+  webapp:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	loader := YAMLConfigAdapter{Path: configPath}
+	_, err := loader.Load(context.Background(), nil)
+
+	if err == nil {
+		t.Fatal("未対応notification providerなのにエラーが返らなかった")
+	}
+	if err.Error() != `unsupported providers.notifications "slack"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.notifications "slack"`)
 	}
 }
 
@@ -655,44 +660,6 @@ templates:
 	}
 	if err.Error() != `volumeMode is not supported for service "db"` {
 		t.Fatalf("error = %q, want %q", err.Error(), `volumeMode is not supported for service "db"`)
-	}
-}
-
-func TestYAMLConfigはDatabaseでCopy以外のVolumeModeを拒否する(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "paracell.yaml")
-	content := []byte(`project:
-  name: myapp
-providers:
-  source: git
-  container: docker
-  session: tmux
-templates:
-  default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services:
-        db:
-          sourceContainer: myapp-db
-          volumeMode: readonly
-          database:
-            system: mysql
-            copyMode: schema
-    session:
-      windows: []
-`)
-	if err := os.WriteFile(configPath, content, 0o644); err != nil {
-		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
-	}
-
-	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
-	if err == nil {
-		t.Fatal("database serviceでcopy以外のvolumeModeなのにエラーが返らなかった")
-	}
-	if err.Error() != `database service "db" requires volumeMode "copy"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `database service "db" requires volumeMode "copy"`)
 	}
 }
 

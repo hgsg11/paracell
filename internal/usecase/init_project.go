@@ -24,9 +24,10 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) 
 	cfg := domain.Config{
 		Project: domain.ProjectConfig{Name: ""},
 		Providers: domain.ProviderConfig{
-			Source:    "git",
-			Container: "docker",
-			Session:   "tmux",
+			Source:        "git",
+			Container:     "docker",
+			Session:       "tmux",
+			Notifications: "tmux",
 		},
 		Templates: map[string]domain.Template{
 			"default": {

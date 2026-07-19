@@ -38,7 +38,7 @@ go build -o paracell ./cmd/paracell
 
 ```sh
 paracell init
-paracell fork 123 --template default --command "review the API"
+paracell fork 123 --template default
 paracell
 ```
 
@@ -51,6 +51,7 @@ providers:
   source: git
   container: docker
   session: tmux
+  notifications: tmux
 templates:
   default:
     repository:
@@ -95,6 +96,8 @@ templates:
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
+`paracell ready` は `Ready: {{.name}}` を `tmux display-message` で表示します。通知は `providers.notifications: tmux` のときだけ有効です。
+
 `paracell` を引数なしで実行すると、project ごとの root tmux session に入ります。そこで `C-p` を押すと `paracell view` を popup で開けます。
 
 paracell が作成した tmux session の中では、`C-p` で `paracell view` を popup で開けます。popup から `l` を押すと、選択した cell の tmux session に切り替わります。
@@ -134,9 +137,9 @@ paracell --version
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
 - database service の `volumeMode` は `copy` のみ対応する
-- `database.copyMode: schema`: cell 専用の空 volume に DB schema を用意する
+- `database.copyMode: schema`: DB schema を cell に用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
-
+- `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` または TUI の issue 入力後に入力した初期命令へ展開されます。
 
 ## ファイル

@@ -3,9 +3,8 @@ package usecase
 import (
 	"context"
 	"fmt"
-
-	"github.com/hgsg11/paracell/internal/domain"
 )
+import "github.com/hgsg11/paracell/internal/domain"
 
 type SetCellStatusInput struct {
 	Cell   string
@@ -13,7 +12,8 @@ type SetCellStatusInput struct {
 }
 
 type SetCellStatusUseCase struct {
-	State CellStatePort
+	State    CellStatePort
+	Notifier Notifier
 }
 
 func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.Cell, error) {
@@ -29,6 +29,11 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 			cells[i] = cell
 			if err := u.State.SaveCells(ctx, cells); err != nil {
 				return domain.Cell{}, err
+			}
+			if input.Status == domain.Ready && u.Notifier != nil {
+				if err := u.Notifier.NotifyReady(ctx, cell, "Ready: "+cell.Name); err != nil {
+					return domain.Cell{}, err
+				}
 			}
 			return cell, nil
 		}
