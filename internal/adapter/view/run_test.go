@@ -207,12 +207,8 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 			m.ForkTemplate = "default"
 			m.IssueInput = "123"
 			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			if cmd != nil {
-				t.Fatal("issue入力のEnterでforkコマンドが返った")
-			}
-			updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd == nil {
-				t.Fatal("Command入力のEnterでforkコマンドが返らなかった")
+				t.Fatal("issue入力のEnterでforkコマンドが返らなかった")
 			}
 			updated, _ = updated.(Model).Update(cmd())
 			return updated, nil
@@ -232,7 +228,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		func() error { return nil },
 		func(cell domain.Cell) error { return nil },
 		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
-		func(issue string, template string, input string) tea.Cmd {
+		func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
 			}
