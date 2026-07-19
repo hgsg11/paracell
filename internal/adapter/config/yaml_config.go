@@ -27,9 +27,10 @@ type yamlConfig struct {
 }
 
 type yamlProviders struct {
-	Source    string `yaml:"source"`
-	Container string `yaml:"container"`
-	Session   string `yaml:"session"`
+	Source        string `yaml:"source"`
+	Container     string `yaml:"container"`
+	Session       string `yaml:"session"`
+	Notifications string `yaml:"notifications"`
 }
 
 type yamlTemplate struct {
@@ -75,9 +76,10 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		}
 	}
 	providers := domain.ProviderConfig{
-		Source:    raw.Providers.Source,
-		Container: raw.Providers.Container,
-		Session:   raw.Providers.Session,
+		Source:        raw.Providers.Source,
+		Container:     raw.Providers.Container,
+		Session:       raw.Providers.Session,
+		Notifications: raw.Providers.Notifications,
 	}
 	if err := validateProviders(providers); err != nil {
 		return domain.Config{}, err
@@ -205,6 +207,9 @@ func validateProviders(providers domain.ProviderConfig) error {
 	if providers.Session != "tmux" {
 		return fmt.Errorf("unsupported providers.session %q", providers.Session)
 	}
+	if providers.Notifications != "" && providers.Notifications != "tmux" {
+		return fmt.Errorf("unsupported providers.notifications %q", providers.Notifications)
+	}
 	return nil
 }
 
@@ -227,9 +232,10 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Config) er
 	}
 	raw := yamlConfig{
 		Providers: yamlProviders{
-			Source:    cfg.Providers.Source,
-			Container: cfg.Providers.Container,
-			Session:   cfg.Providers.Session,
+			Source:        cfg.Providers.Source,
+			Container:     cfg.Providers.Container,
+			Session:       cfg.Providers.Session,
+			Notifications: cfg.Providers.Notifications,
 		},
 		Templates: make(map[string]yamlTemplate, len(cfg.Templates)),
 	}

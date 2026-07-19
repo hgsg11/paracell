@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/hgsg11/paracell/internal/adapter/container"
+	"github.com/hgsg11/paracell/internal/adapter/notification"
 	"github.com/hgsg11/paracell/internal/adapter/session"
 	"github.com/hgsg11/paracell/internal/adapter/source"
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -42,5 +43,16 @@ func (f Factory) Session(provider domain.ProviderConfig) (usecase.SessionPort, e
 		return session.TmuxAdapter{Runner: f.Runner, Root: f.Root}, nil
 	default:
 		return nil, fmt.Errorf("unsupported providers.session %q", provider.Session)
+	}
+}
+
+func (f Factory) Notification(provider domain.ProviderConfig) (usecase.Notifier, error) {
+	switch provider.Notifications {
+	case "":
+		return notification.NoopNotifier{}, nil
+	case "tmux":
+		return notification.TmuxNotifier{Runner: f.Runner}, nil
+	default:
+		return nil, fmt.Errorf("unsupported providers.notifications %q", provider.Notifications)
 	}
 }

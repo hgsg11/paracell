@@ -32,6 +32,9 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.Providers.Session != "tmux" {
 		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
 	}
+	if cfg.Providers.Notifications != "tmux" {
+		t.Fatalf("providers.notifications = %q, want %q", cfg.Providers.Notifications, "tmux")
+	}
 	template := cfg.Templates["default"]
 	if template.Repository.Base != "main" {
 		t.Fatalf("repository.base = %q, want %q", template.Repository.Base, "main")

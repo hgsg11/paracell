@@ -44,8 +44,8 @@ var (
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
 	}
-	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, cellName string, status domain.CellStatus) (domain.Cell, error) {
-		uc := usecase.SetCellStatusUseCase{State: state}
+	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, notifier usecase.Notifier, cellName string, status domain.CellStatus) (domain.Cell, error) {
+		uc := usecase.SetCellStatusUseCase{State: state, Notifier: notifier}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
 	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, cell domain.Cell) (*exec.Cmd, error) {
@@ -223,14 +223,22 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.Pending)
+		_, err = runSetStatus(ctx, stateAdapter, nil, cellName, domain.Pending)
 		return err
 	case CommandReady:
 		cellName, err := currentCellFromEnv()
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, cellName, domain.Ready)
+		loaded, err := configAdapter.Load(ctx, nil)
+		if err != nil {
+			return err
+		}
+		notifier, err := provider.Factory{Runner: quietRunner, Root: workdir}.Notification(loaded.Providers)
+		if err != nil {
+			return err
+		}
+		_, err = runSetStatus(ctx, stateAdapter, notifier, cellName, domain.Ready)
 		return err
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})

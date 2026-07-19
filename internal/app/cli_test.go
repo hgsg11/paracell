@@ -34,14 +34,14 @@ func TestForkコマンドを解析できる(t *testing.T) {
 	}
 }
 
-func TestForkコマンドはCommandを解析できる(t *testing.T) {
-	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp", "--command", "review the API"})
+func TestForkコマンドはcommand付きで解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp", "--command", "make test"})
 
 	if err != nil {
 		t.Fatalf("fork解析でエラーが返った: %v", err)
 	}
-	if cmd.Command != "review the API" {
-		t.Fatalf("command = %q, want %q", cmd.Command, "review the API")
+	if cmd.Command != "make test" {
+		t.Fatalf("command = %q, want %q", cmd.Command, "make test")
 	}
 }
 
@@ -217,6 +217,7 @@ func TestRunはVersionを出力する(t *testing.T) {
 }
 
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -240,6 +241,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 }
 
 func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 
 	output, err := captureStdout(func() error {
@@ -259,6 +261,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 }
 
 func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -311,6 +314,7 @@ func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootの
 }
 
 func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 
 	output, err := captureStdout(func() error {
@@ -326,6 +330,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 }
 
 func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -362,7 +367,7 @@ templates:
 	defer func() { runClean = originalClean }()
 
 	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -420,6 +425,7 @@ templates:
 }
 
 func TestRunはViewにTemplate一覧を渡す(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -453,7 +459,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -502,7 +508,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -552,13 +558,14 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, input string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
 		_ = state
+		_ = command
 		_ = root
 		called = true
 		if issue != "123" {
@@ -567,12 +574,9 @@ templates:
 		if template != "default" {
 			t.Fatalf("template = %q, want %q", template, "default")
 		}
-		if input != "review the API" {
-			t.Fatalf("command = %q, want %q", input, "review the API")
-		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -582,7 +586,7 @@ templates:
 		_ = exit
 		_ = clean
 		_ = markDone
-		cmd := fork("123", "default", "review the API")
+		cmd := fork("123", "default", "")
 		if cmd == nil {
 			t.Fatal("fork handlerがコマンドを返さなかった")
 		}
@@ -625,12 +629,13 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, input string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = state
 		_ = issue
 		_ = template
+		_ = command
 		_ = root
 		sourceFactory, ok := source.(provider.Factory)
 		if !ok {
@@ -655,7 +660,7 @@ templates:
 		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -679,6 +684,7 @@ templates:
 }
 
 func TestRunは引数なしでRootSessionEnterを実行する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -709,7 +715,7 @@ templates: {}
 		gotProject = loaded.Project.Name
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
@@ -769,7 +775,7 @@ templates:
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -793,6 +799,7 @@ templates:
 }
 
 func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -820,7 +827,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -867,6 +874,7 @@ templates: {}
 }
 
 func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
@@ -894,7 +902,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -974,7 +982,7 @@ templates:
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, input string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string, command string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -999,6 +1007,7 @@ templates:
 }
 
 func TestRunはCreateでProvidersがない設定をエラーにする(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -1108,6 +1117,24 @@ templates: {}
 func TestRunはReadyでPARACELL_CELLのStatusを更新する(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("PARACELL_CELL", "123")
+	t.Setenv("PARACELL_ROOT", "")
+	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services: {}
+    session:
+      windows: []
+`), 0o644); err != nil {
+		t.Fatalf("config保存でエラーが返った: %v", err)
+	}
 	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Issue: "123", Name: "123"},
