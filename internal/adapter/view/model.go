@@ -79,6 +79,9 @@ var pendingStatusFrames = []string{"..", "o.", ".o"}
 
 const maxTemplateDisplayWidth = 16
 const maxIssueDisplayWidth = 20
+const maxTemplatePaneWidth = 15
+const maxCellPaneWidth = 47
+const maxLayoutWidth = maxTemplatePaneWidth + 3 + maxCellPaneWidth
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -398,7 +401,9 @@ func renderTemplatesPane(m Model, width int, height int) []string {
 		lines = append(lines, "no templates")
 		lines = append(lines, renderIssueInputLine(m))
 	} else {
-		lines = append(lines, m.Templates...)
+		for _, template := range m.Templates {
+			lines = append(lines, ellipsize(template, width))
+		}
 		lines = append(lines, renderIssueInputLine(m))
 	}
 	if m.IssueInputActive {
@@ -444,8 +449,9 @@ func renderExitLine(m Model) string {
 
 func paneWidths(width int) (int, int) {
 	contentWidth := max(2, widthOrDefault(width)-lipgloss.Width(" │ "))
-	leftWidth := contentWidth * 3 / 10
-	return leftWidth, contentWidth - leftWidth
+	leftWidth := min(maxTemplatePaneWidth, max(1, contentWidth*3/10))
+	rightWidth := min(maxCellPaneWidth, max(1, contentWidth-leftWidth))
+	return leftWidth, rightWidth
 }
 
 func paneHeight(m Model) int {
@@ -607,12 +613,12 @@ func errorLine(message string, width int) string {
 }
 
 func statusLine(m Model) string {
-	return errorLine(m.Error, m.Width)
+	return errorLine(m.Error, widthOrDefault(m.Width))
 }
 
 func widthOrDefault(width int) int {
-	if width <= 0 {
-		return 80
+	if width <= 0 || width > maxLayoutWidth {
+		return maxLayoutWidth
 	}
 	return width
 }
