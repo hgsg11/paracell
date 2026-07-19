@@ -220,6 +220,13 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, serv
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
 			targetVolume := copiedVolumeName(service.ContainerName, mount.Destination)
+			if service.Database != nil && service.Database.CopyMode == "schema" {
+				if err := a.createNamedVolume(ctx, targetVolume); err != nil {
+					return nil, err
+				}
+				out = append(out, targetVolume+":"+mount.Destination+":rw")
+				continue
+			}
 			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
 				return nil, err
 			}
@@ -266,7 +273,7 @@ func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellCo
 }
 
 func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, target string) error {
-	if err := a.Runner.Run(ctx, "docker", "volume", "create", target); err != nil {
+	if err := a.createNamedVolume(ctx, target); err != nil {
 		return err
 	}
 	return a.Runner.Run(
@@ -281,6 +288,10 @@ func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, ta
 		"-c",
 		"cp -a /from/. /to/",
 	)
+}
+
+func (a DockerCLIAdapter) createNamedVolume(ctx context.Context, name string) error {
+	return a.Runner.Run(ctx, "docker", "volume", "create", name)
 }
 
 func (a DockerCLIAdapter) copyDatabase(ctx context.Context, role string, source string, service domain.CellContainer, inspection containerInspection) error {
@@ -354,13 +365,17 @@ func (a DockerCLIAdapter) waitForMySQL(ctx context.Context, container string, co
 	}
 	args = append(args, "--silent")
 	var lastErr error
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 60; i++ {
 		if err := a.Runner.Run(ctx, "docker", args...); err == nil {
 			return nil
 		} else {
 			lastErr = err
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	return lastErr
 }
@@ -396,7 +411,7 @@ func mysqlConnectionFromEnv(env []string) (mysqlConnection, error) {
 }
 
 func mysqlDumpArgs(container string, conn mysqlConnection) []string {
-	args := []string{"exec", container, "mysqldump", "--no-data", "-u", conn.User}
+	args := []string{"exec", container, "mysqldump", "--no-data", "--no-tablespaces", "-u", conn.User}
 	if conn.Password != "" {
 		args = append(args, "-p"+conn.Password)
 	}

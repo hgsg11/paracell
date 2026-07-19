@@ -133,7 +133,8 @@ paracell --version
 - `containers.network: shared`: source container の network を使う
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
-- `database.copyMode: schema`: DB schema を cell に用意する
+- database service の `volumeMode` は `copy` のみ対応する
+- `database.copyMode: schema`: cell 専用の空 volume に DB schema を用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
 
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` または TUI の issue 入力後に入力した初期命令へ展開されます。

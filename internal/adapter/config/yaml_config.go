@@ -128,8 +128,8 @@ func validateContainerServices(services map[string]domain.ContainerServiceTempla
 		if role != "db" {
 			return fmt.Errorf("database config is only supported for service %q", "db")
 		}
-		if service.VolumeMode != "" {
-			return fmt.Errorf("volumeMode is not supported for service %q", role)
+		if service.VolumeMode != "copy" {
+			return fmt.Errorf("database service %q requires volumeMode %q", role, "copy")
 		}
 		switch service.Database.System {
 		case "mysql":
