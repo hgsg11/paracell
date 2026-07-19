@@ -53,8 +53,8 @@ func TestテンプレートからCellを作成できる(t *testing.T) {
 	if got := cell.Containers.Services["web"].ContainerName; got != "paracell-myapp-123-web" {
 		t.Fatalf("webコンテナ名 = %q, want %q", got, "paracell-myapp-123-web")
 	}
-	if cell.Session.Name != "paracell-myapp-123" {
-		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "paracell-myapp-123")
+	if cell.Session.Name != "myapp-123" {
+		t.Fatalf("session名 = %q, want %q", cell.Session.Name, "myapp-123")
 	}
 	if len(cell.Session.Windows) != 1 || cell.Session.Windows[0].Command != "nvim {{.issue}}" {
 		t.Fatalf("session windows = %#v, want command %q", cell.Session.Windows, "nvim {{.issue}}")

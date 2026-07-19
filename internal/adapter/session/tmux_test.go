@@ -77,7 +77,7 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{
 		errors: map[string]error{
-			"tmux has-session -t paracell-myapp-root": errors.New("exit status 1: can't find session: paracell-myapp-root"),
+			"tmux has-session -t myapp-root": errors.New("exit status 1: can't find session: myapp-root"),
 		},
 	}
 	adapter := TmuxAdapter{Runner: runner}
@@ -86,12 +86,12 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux has-session -t paracell-myapp-root",
-		"tmux new-session -d -s paracell-myapp-root -c .",
-		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux has-session -t myapp-root",
+		"tmux new-session -d -s myapp-root -c .",
+		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -E paracell view",
-		"tmux attach-session -t paracell-myapp-root",
+		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -102,7 +102,7 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{
 		errors: map[string]error{
-			"tmux has-session -t paracell-myapp-root": errors.New("exit status 1: can't find session: paracell-myapp-root"),
+			"tmux has-session -t myapp-root": errors.New("exit status 1: can't find session: myapp-root"),
 		},
 	}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
@@ -111,12 +111,12 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux has-session -t paracell-myapp-root",
-		"tmux new-session -d -s paracell-myapp-root -e PARACELL_ROOT=/project -c /project",
-		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux has-session -t myapp-root",
+		"tmux new-session -d -s myapp-root -e PARACELL_ROOT=/project -c /project",
+		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
-		"tmux attach-session -t paracell-myapp-root",
+		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -127,7 +127,7 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{
 		errors: map[string]error{
-			"tmux has-session -t paracell-myapp-root": &exec.ExitError{},
+			"tmux has-session -t myapp-root": &exec.ExitError{},
 		},
 	}
 	adapter := TmuxAdapter{Runner: runner}
@@ -136,12 +136,12 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux has-session -t paracell-myapp-root",
-		"tmux new-session -d -s paracell-myapp-root -c .",
-		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux has-session -t myapp-root",
+		"tmux new-session -d -s myapp-root -c .",
+		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -E paracell view",
-		"tmux attach-session -t paracell-myapp-root",
+		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -157,11 +157,11 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
-		"tmux has-session -t paracell-myapp-root",
-		"tmux set-option -t paracell-myapp-root key-table paracell",
+		"tmux has-session -t myapp-root",
+		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -d /project -E env PARACELL_ROOT=/project paracell view",
-		"tmux attach-session -t paracell-myapp-root",
+		"tmux attach-session -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
