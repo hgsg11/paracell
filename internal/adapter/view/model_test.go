@@ -161,6 +161,20 @@ func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
 	}
 }
 
+func TestModelViewはTemplate一覧の長い名前を省略表示する(t *testing.T) {
+	model := NewModel(nil, []string{"very-long-template-name"})
+	model.Width = 65
+	model.Focus = FocusTemplates
+
+	got := model.View()
+	if !strings.Contains(got, "very-long-te...") {
+		t.Fatalf("template list name should be ellipsized: %q", got)
+	}
+	if strings.Contains(got, "very-long-template-name") {
+		t.Fatalf("full template list name should not be shown: %q", got)
+	}
+}
+
 func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *testing.T) {
 	cell := domain.Cell{ID: "cell-1", Name: "very-long-issue-name-12345", Template: "default"}
 	if err := cell.SetStatus(domain.Pending); err != nil {

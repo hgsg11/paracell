@@ -401,7 +401,9 @@ func renderTemplatesPane(m Model, width int, height int) []string {
 		lines = append(lines, "no templates")
 		lines = append(lines, renderIssueInputLine(m))
 	} else {
-		lines = append(lines, m.Templates...)
+		for _, template := range m.Templates {
+			lines = append(lines, ellipsize(template, width))
+		}
 		lines = append(lines, renderIssueInputLine(m))
 	}
 	if m.IssueInputActive {
