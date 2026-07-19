@@ -16,18 +16,6 @@ import (
 var errTestReload = errors.New("reload failed")
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func popupContentLines(view string) []string {
-	var content []string
-	for _, line := range strings.Split(view, "\n") {
-		start := strings.Index(line, "│")
-		end := strings.LastIndex(line, "│")
-		if start >= 0 && end > start {
-			content = append(content, line[start+len("│"):end])
-		}
-	}
-	return content
-}
-
 func TestModelはjで選択を下げる(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
@@ -293,7 +281,7 @@ func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(
 
 	got := model.View()
 	plain := stripANSI(got)
-	lines := popupContentLines(plain)
+	lines := strings.Split(plain, "\n")
 
 	if !strings.Contains(got, "planning") {
 		t.Fatalf("template list missing: %q", got)
@@ -325,7 +313,7 @@ func TestModelViewはTemplate16列Cell60列の最大幅で描画する(t *testin
 	)
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 10})
 
-	lines := popupContentLines(updated.(Model).View())
+	lines := strings.Split(strings.TrimSuffix(updated.(Model).View(), "\n"), "\n")
 	// header + spacer + 3 content rows + go root + status
 	if len(lines) != 7 {
 		t.Fatalf("line count = %d, want 7: %q", len(lines), updated.(Model).View())
@@ -344,9 +332,9 @@ func TestModelViewはTemplate16列Cell60列の最大幅で描画する(t *testin
 
 func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.T) {
 	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
-	model.Width = 81
+	model.Width = 80
 
-	row := popupContentLines(model.View())[2]
+	row := strings.Split(model.View(), "\n")[2]
 	columns := strings.SplitN(row, " │ ", 2)
 	if len(columns) != 2 {
 		t.Fatalf("separator missing: %q", row)
@@ -361,18 +349,18 @@ func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.
 
 func TestModelViewはTemplateとGoRootも選択行全体をReverse表示する(t *testing.T) {
 	model := NewModel(nil, []string{"default"})
-	model.Width = 81
+	model.Width = 80
 	model.Focus = FocusTemplates
 
-	templateRow := popupContentLines(model.View())[2]
+	templateRow := strings.Split(model.View(), "\n")[2]
 	templateColumn := strings.SplitN(templateRow, " │ ", 2)[0]
 	if !strings.HasPrefix(templateColumn, "\x1b[7m") || !strings.HasSuffix(templateColumn, "\x1b[0m") || lipgloss.Width(templateColumn) != 16 {
 		t.Fatalf("template row is not fully reversed: %q", templateColumn)
 	}
 
 	model.Focus = FocusExit
-	lines := popupContentLines(model.View())
-	goRootRow := lines[len(lines)-2]
+	lines := strings.Split(model.View(), "\n")
+	goRootRow := lines[len(lines)-3]
 	if !strings.HasPrefix(goRootRow, "\x1b[7m") || !strings.HasSuffix(goRootRow, "\x1b[0m") || lipgloss.Width(goRootRow) != 79 {
 		t.Fatalf("go root row is not fully reversed: %q", goRootRow)
 	}
@@ -382,8 +370,8 @@ func TestModelViewはHeaderと一覧の間に空行を表示する(t *testing.T)
 	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
 	model.Width = 80
 
-	lines := popupContentLines(model.View())
-	if strings.TrimSpace(lines[0]) != "paracell / cells" || strings.TrimSpace(lines[1]) != "" {
+	lines := strings.Split(model.View(), "\n")
+	if lines[0] != "paracell / cells" || lines[1] != "" {
 		t.Fatalf("header spacer missing: %q", model.View())
 	}
 }
@@ -399,28 +387,6 @@ func TestModelViewは80列未満でもTemplateとCellを左右に配置する(t 
 	plain := stripANSI(got)
 	if !strings.Contains(plain, " │ ") {
 		t.Fatalf("narrow layout should keep the side-by-side separator: %q", got)
-	}
-}
-
-func TestModelViewはTUI全体を枠付きで中央に配置する(t *testing.T) {
-	model := NewModel([]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, []string{"default"})
-	model.Width = 120
-	model.Height = 12
-
-	lines := strings.Split(model.View(), "\n")
-	topBorder := -1
-	bottomBorder := -1
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "╭") && strings.HasSuffix(trimmed, "╮") {
-			topBorder = i
-		}
-		if strings.HasPrefix(trimmed, "╰") && strings.HasSuffix(trimmed, "╯") {
-			bottomBorder = i
-		}
-	}
-	if topBorder <= 0 || bottomBorder <= topBorder || bottomBorder >= len(lines)-1 {
-		t.Fatalf("popup is not centered with a rounded border: %q", model.View())
 	}
 }
 
@@ -703,8 +669,7 @@ func TestModelViewはエラー行を常に一行分だけ予約する(t *testing
 	if strings.Count(withoutError, "\n") != strings.Count(withError, "\n") {
 		t.Fatalf("line count changed: without=%q with=%q", withoutError, withError)
 	}
-	lines := popupContentLines(withError)
-	if strings.TrimSpace(lines[len(lines)-1]) != "error: attach failed" {
+	if !strings.HasSuffix(withError, "error: attach failed\n") {
 		t.Fatalf("view = %q, want error line suffix", withError)
 	}
 }
@@ -738,8 +703,7 @@ func TestModelViewはエラーの改行を潰して幅で切り詰める(t *test
 	model.Error = "first line\nsecond line is very long"
 
 	got := model.View()
-	lines := popupContentLines(got)
-	if strings.TrimSpace(lines[len(lines)-1]) != "error: first line" {
+	if !strings.HasSuffix(got, "error: first line se\n") {
 		t.Fatalf("view = %q, want clipped single-line error", got)
 	}
 }

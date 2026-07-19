@@ -76,7 +76,6 @@ func NewModel(cells []domain.Cell, templates ...[]string) Model {
 }
 
 var pendingStatusFrames = []string{"..", "o.", ".o"}
-var popupStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder())
 
 const maxTemplateDisplayWidth = 16
 const maxIssueDisplayWidth = 20
@@ -370,11 +369,7 @@ func (m Model) View() string {
 	b.WriteString(renderSplitLayout(m))
 	b.WriteString(renderExitLine(m))
 	b.WriteString(statusLine(m))
-	popup := popupStyle.Render(strings.TrimSuffix(b.String(), "\n"))
-	if m.Width <= 0 || m.Height <= 0 {
-		return popup
-	}
-	return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, popup)
+	return b.String()
 }
 
 func renderHeaderLine(m Model) string {
@@ -460,8 +455,8 @@ func paneHeight(m Model) int {
 	templateRows, cellRows := naturalPaneHeights(m)
 	contentHeight := max(templateRows, cellRows)
 	if m.Height > 0 {
-		// Reserve rows for the popup border, header, spacer, go root, and status.
-		return min(contentHeight, max(1, m.Height-popupStyle.GetVerticalFrameSize()-4))
+		// header, its spacer, go root, and status each occupy one terminal row.
+		return min(contentHeight, max(1, m.Height-4))
 	}
 	return contentHeight
 }
@@ -619,10 +614,10 @@ func statusLine(m Model) string {
 }
 
 func widthOrDefault(width int) int {
-	if width <= 0 {
+	if width <= 0 || width > maxLayoutWidth {
 		return maxLayoutWidth
 	}
-	return min(max(1, width-popupStyle.GetHorizontalFrameSize()), maxLayoutWidth)
+	return width
 }
 
 func singleLine(value string) string {

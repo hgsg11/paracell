@@ -25,7 +25,7 @@ func Run(ctx context.Context, cells []domain.Cell, templates []string, currentCe
 	model.Delete = delete
 	model.MarkDone = markDone
 	model.Fork = fork
-	p := newProgram(model, tea.WithAltScreen())
+	p := newProgram(model)
 	final, err := p.Run()
 	if err != nil {
 		return Result{}, err
