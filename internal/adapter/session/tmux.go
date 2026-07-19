@@ -60,7 +60,7 @@ func (a TmuxAdapter) configureBindings(ctx context.Context, target string) error
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
 		return err
 	}
-	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup", "-w", "60%", "-h", "50%"}
+	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup", "-w", "65", "-h", "50%"}
 	if a.Root != "" {
 		args = append(args, "-d", a.Root, "-E", "env", "PARACELL_ROOT="+a.Root, "paracell", "view")
 	} else {

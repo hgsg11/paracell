@@ -103,7 +103,7 @@ paracell が作成した tmux session の中では、`C-p` で `paracell view` �
 
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
 
-`C-p` の popup は tmux の `display-popup` 対応版を前提にしています。
+`C-p` の popup は幅65列、高さ50%で表示され、tmux の `display-popup` 対応版を前提にしています。
 
 ## コマンド
 
