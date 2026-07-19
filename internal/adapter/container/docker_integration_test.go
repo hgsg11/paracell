@@ -183,6 +183,20 @@ func TestDockerIntegrationは実MySQLのSchemaを専用Volumeへコピーする(
 	if output != "1\n0" {
 		t.Fatalf("target schema/table rows = %q, want %q", output, "1\n0")
 	}
+
+	runDockerIntegrationCommand(t, "exec", targetContainer, "mysql", "-uapp", "-psecret", "myapp", "-e",
+		"INSERT INTO users VALUES (2, 'cell');")
+	targetRow := dockerIntegrationOutput(t, "exec", targetContainer, "mysql", "-uapp", "-psecret", "myapp", "-Nse",
+		"SELECT CONCAT(id, ':', name) FROM users WHERE id=2;")
+	if targetRow != "2:cell" {
+		t.Fatalf("target row = %q, want %q", targetRow, "2:cell")
+	}
+
+	sourceRows := dockerIntegrationOutput(t, "exec", sourceContainer, "mysql", "-uapp", "-psecret", "myapp", "-Nse",
+		"SELECT COUNT(*) FROM users WHERE id=2;")
+	if sourceRows != "0" {
+		t.Fatalf("source rows written by target = %q, want %q", sourceRows, "0")
+	}
 }
 
 func waitForIntegrationMySQL(t *testing.T, container string) {
