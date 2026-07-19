@@ -79,8 +79,9 @@ var pendingStatusFrames = []string{"..", "o.", ".o"}
 
 const maxTemplateDisplayWidth = 16
 const maxIssueDisplayWidth = 20
-const maxCellPaneWidth = 60
-const maxLayoutWidth = maxTemplateDisplayWidth + 3 + maxCellPaneWidth
+const maxTemplatePaneWidth = 15
+const maxCellPaneWidth = 47
+const maxLayoutWidth = maxTemplatePaneWidth + 3 + maxCellPaneWidth
 
 func (m Model) Init() tea.Cmd {
 	return m.refreshCmd()
@@ -446,7 +447,7 @@ func renderExitLine(m Model) string {
 
 func paneWidths(width int) (int, int) {
 	contentWidth := max(2, widthOrDefault(width)-lipgloss.Width(" │ "))
-	leftWidth := min(maxTemplateDisplayWidth, max(1, contentWidth*3/10))
+	leftWidth := min(maxTemplatePaneWidth, max(1, contentWidth*3/10))
 	rightWidth := min(maxCellPaneWidth, max(1, contentWidth-leftWidth))
 	return leftWidth, rightWidth
 }
