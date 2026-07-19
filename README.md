@@ -90,8 +90,7 @@ templates:
 - `enter`: done を切り替える
 - `d` `d`: clean
 - template 一覧で `y` `y`: issue 番号入力モード
-- issue 番号入力後 `enter`: 初期命令入力へ進む
-- 初期命令入力後 `enter`: fork。命令は空でもよい
+- issue 番号入力後 `enter`: fork
 - `q`: 閉じる
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
@@ -142,7 +141,7 @@ paracell --version
 - `database.copyMode: schema`: DB schema を cell に用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
-tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` または TUI の issue 入力後に入力した初期命令へ展開されます。
+tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
 ## ファイル
 
