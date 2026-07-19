@@ -98,6 +98,13 @@ func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.Projec
 	return a.Runner.Run(ctx, "tmux", "attach-session", "-t", name)
 }
 
+func (a TmuxAdapter) ExitSession(ctx context.Context) error {
+	if os.Getenv("TMUX") == "" {
+		return errors.New("paracell exit must be run inside tmux")
+	}
+	return a.Runner.Run(ctx, "tmux", "detach-client")
+}
+
 func (a TmuxAdapter) ensureRootSession(ctx context.Context, name string) error {
 	err := a.Runner.Run(ctx, "tmux", "has-session", "-t", name)
 	if err == nil {

@@ -609,6 +609,12 @@ func (f *fakePorts) EnterRootSession(ctx context.Context, project domain.Project
 	return nil
 }
 
+func (f *fakePorts) ExitSession(ctx context.Context) error {
+	_ = ctx
+	f.calls = append(f.calls, "session:exit")
+	return nil
+}
+
 type fixedIDGenerator struct {
 	id string
 }

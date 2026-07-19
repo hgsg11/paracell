@@ -115,6 +115,7 @@ paracell ls
 paracell clean <cell> [--force]
 paracell pending
 paracell ready
+paracell exit
 paracell version
 paracell --version
 ```
@@ -124,6 +125,7 @@ paracell --version
 - `ls`: cell 一覧を出す
 - `clean`: cell の worktree / container / session を片付ける
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
+- `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
 ## 設定メモ
 
