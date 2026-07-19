@@ -368,6 +368,7 @@ templates:
       services:
         db:
           sourceContainer: myapp-db
+          volumeMode: copy
           database:
             system: mysql
             copyMode: schema
@@ -418,6 +419,7 @@ templates:
       services:
         db:
           sourceContainer: myapp-db
+          volumeMode: copy
           database:
             system: postgres
     session:
@@ -454,6 +456,7 @@ templates:
       services:
         db:
           sourceContainer: myapp-db
+          volumeMode: copy
           database:
             system: mysql
             copyMode: nonsense
@@ -491,6 +494,7 @@ templates:
       services:
         db:
           sourceContainer: myapp-db
+          volumeMode: copy
           database:
             system: mysql
             copyMode: schema
@@ -651,6 +655,44 @@ templates:
 	}
 	if err.Error() != `volumeMode is not supported for service "db"` {
 		t.Fatalf("error = %q, want %q", err.Error(), `volumeMode is not supported for service "db"`)
+	}
+}
+
+func TestYAMLConfigはDatabaseでCopy以外のVolumeModeを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        db:
+          sourceContainer: myapp-db
+          volumeMode: readonly
+          database:
+            system: mysql
+            copyMode: schema
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil {
+		t.Fatal("database serviceでcopy以外のvolumeModeなのにエラーが返らなかった")
+	}
+	if err.Error() != `database service "db" requires volumeMode "copy"` {
+		t.Fatalf("error = %q, want %q", err.Error(), `database service "db" requires volumeMode "copy"`)
 	}
 }
 

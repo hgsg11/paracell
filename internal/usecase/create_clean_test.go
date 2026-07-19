@@ -303,6 +303,7 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 			Services: map[string]domain.ContainerServiceTemplate{
 				"db": {
 					SourceContainer: "myapp-db",
+					VolumeMode:      "copy",
 					Database: &domain.DatabaseConfig{
 						System:    "mysql",
 						CopyMode:  "schema",
@@ -332,6 +333,9 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 	service := cell.Containers.Services["db"]
 	if service.SourceContainer != "myapp-db" {
 		t.Fatalf("SourceContainer = %q, want %q", service.SourceContainer, "myapp-db")
+	}
+	if service.VolumeMode != "copy" {
+		t.Fatalf("VolumeMode = %q, want %q", service.VolumeMode, "copy")
 	}
 	if service.Database == nil {
 		t.Fatal("Database = nil, want non-nil")
