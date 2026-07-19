@@ -16,20 +16,21 @@ import (
 )
 
 type RunSpec struct {
-	Name         string
-	Image        string
-	Network      string
-	Env          []string
-	Entrypoint   []string
-	Command      []string
-	WorkDir      string
-	User         string
-	Tty          bool
-	OpenStdin    bool
-	Health       HealthcheckSpec
-	Mounts       []string
-	Ports        map[string]string
-	ExposedPorts []string
+	Name           string
+	Image          string
+	Network        string
+	NetworkAliases []string
+	Env            []string
+	Entrypoint     []string
+	Command        []string
+	WorkDir        string
+	User           string
+	Tty            bool
+	OpenStdin      bool
+	Health         HealthcheckSpec
+	Mounts         []string
+	Ports          map[string]string
+	ExposedPorts   []string
 }
 
 type HealthcheckSpec struct {
@@ -45,6 +46,9 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 	args := []string{"run", "-d", "--name", spec.Name}
 	if spec.Network != "" {
 		args = append(args, "--network", spec.Network)
+	}
+	for _, alias := range spec.NetworkAliases {
+		args = append(args, "--network-alias", alias)
 	}
 	for _, env := range spec.Env {
 		args = append(args, "-e", env)
@@ -135,23 +139,27 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		}
 		runNetwork := network
 		extraNetworks := []string(nil)
+		networkAliases := []string(nil)
 		if cell.Containers.NetworkMode == string(domain.ContainerNetworkShared) {
 			runNetwork, extraNetworks = sharedNetworks(inspection.NetworkSettings.Networks)
+		} else {
+			networkAliases = isolatedNetworkAliases(inspection.NetworkSettings.Networks)
 		}
 		args := BuildDockerRunArgs(RunSpec{
-			Name:         service.ContainerName,
-			Image:        inspection.Config.Image,
-			Network:      runNetwork,
-			Env:          append([]string(nil), inspection.Config.Env...),
-			Entrypoint:   append([]string(nil), inspection.Config.Entrypoint...),
-			Command:      append([]string(nil), inspection.Config.Cmd...),
-			WorkDir:      inspection.Config.WorkingDir,
-			User:         inspection.Config.User,
-			Tty:          inspection.Config.Tty,
-			OpenStdin:    inspection.Config.OpenStdin,
-			Health:       inspection.Config.Healthcheck.toSpec(),
-			Mounts:       mounts,
-			ExposedPorts: exposedPortsFromBindings(inspection.HostConfig.PortBindings),
+			Name:           service.ContainerName,
+			Image:          inspection.Config.Image,
+			Network:        runNetwork,
+			NetworkAliases: networkAliases,
+			Env:            append([]string(nil), inspection.Config.Env...),
+			Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
+			Command:        append([]string(nil), inspection.Config.Cmd...),
+			WorkDir:        inspection.Config.WorkingDir,
+			User:           inspection.Config.User,
+			Tty:            inspection.Config.Tty,
+			OpenStdin:      inspection.Config.OpenStdin,
+			Health:         inspection.Config.Healthcheck.toSpec(),
+			Mounts:         mounts,
+			ExposedPorts:   exposedPortsFromBindings(inspection.HostConfig.PortBindings),
 		})
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
@@ -457,6 +465,23 @@ func sharedNetworks(networks map[string]dockerNetwork) (string, []string) {
 	return names[0], names[1:]
 }
 
+func isolatedNetworkAliases(networks map[string]dockerNetwork) []string {
+	unique := make(map[string]struct{})
+	for _, network := range networks {
+		for _, alias := range network.Aliases {
+			if alias != "" {
+				unique[alias] = struct{}{}
+			}
+		}
+	}
+	aliases := make([]string, 0, len(unique))
+	for alias := range unique {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	return aliases
+}
+
 func sortedServiceRoles(services map[string]domain.CellContainer) []string {
 	roles := make([]string, 0, len(services))
 	for role := range services {
@@ -563,7 +588,9 @@ type dockerNetworkSettings struct {
 	Networks map[string]dockerNetwork `json:"Networks"`
 }
 
-type dockerNetwork struct{}
+type dockerNetwork struct {
+	Aliases []string `json:"Aliases"`
+}
 
 func portsFromBindings(bindings map[string][]dockerPortBinding) map[string]string {
 	if len(bindings) == 0 {

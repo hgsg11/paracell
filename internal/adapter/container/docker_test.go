@@ -13,16 +13,17 @@ import (
 
 func TestDockerRun引数を組み立てられる(t *testing.T) {
 	spec := RunSpec{
-		Name:       "paracell-myapp-123-web",
-		Image:      "nginx:latest",
-		Network:    "paracell-myapp-123",
-		Env:        []string{"APP_ENV=dev"},
-		Entrypoint: []string{"/docker-entrypoint.sh"},
-		Command:    []string{"nginx", "-g", "daemon off;"},
-		WorkDir:    "/app",
-		User:       "node",
-		Tty:        true,
-		OpenStdin:  true,
+		Name:           "paracell-myapp-123-web",
+		Image:          "nginx:latest",
+		Network:        "paracell-myapp-123",
+		NetworkAliases: []string{"web", "api"},
+		Env:            []string{"APP_ENV=dev"},
+		Entrypoint:     []string{"/docker-entrypoint.sh"},
+		Command:        []string{"nginx", "-g", "daemon off;"},
+		WorkDir:        "/app",
+		User:           "node",
+		Tty:            true,
+		OpenStdin:      true,
 		Health: HealthcheckSpec{
 			Command:  "curl -f http://localhost:8080/health || exit 1",
 			Interval: 30 * time.Second,
@@ -39,6 +40,8 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		"run", "-d",
 		"--name", "paracell-myapp-123-web",
 		"--network", "paracell-myapp-123",
+		"--network-alias", "web",
+		"--network-alias", "api",
 		"-e", "APP_ENV=dev",
 		"--entrypoint", "/docker-entrypoint.sh",
 		"-w", "/app",
@@ -117,6 +120,39 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
 		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
+func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピーする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["myapp-web-1","web"]},"shared":{"Aliases":["web","frontend",""]}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web-1"},
+			},
+		},
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"web": {SourceContainer: "myapp-web-1"},
+	}}}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantRunCalls := []string{
+		"docker network create paracell-myapp-123",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias frontend --network-alias myapp-web-1 --network-alias web myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)

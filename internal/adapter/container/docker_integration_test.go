@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,80 @@ import (
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	"github.com/hgsg11/paracell/internal/domain"
 )
+
+func TestDockerIntegrationはIsolatedNetworkへAliasをコピーする(t *testing.T) {
+	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
+		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Docker is not available: %v", err)
+	}
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	prefix := "paracell-integration-alias-" + suffix
+	sourceNetwork := prefix + "-source-network"
+	sourceContainer := prefix + "-source"
+	targetContainer := prefix + "-web"
+	targetNetwork := prefix
+
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rm", "-f", targetContainer, sourceContainer).Run()
+		_ = exec.Command("docker", "network", "rm", targetNetwork, sourceNetwork).Run()
+	})
+
+	runDockerIntegrationCommand(t, "network", "create", sourceNetwork)
+	runDockerIntegrationCommand(t,
+		"run", "-d", "--name", sourceContainer,
+		"--network", sourceNetwork,
+		"--network-alias", "web",
+		"--network-alias", "frontend",
+		"alpine:3.20", "sleep", "300",
+	)
+
+	cell := domain.Cell{
+		Name: "integration",
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: targetContainer, SourceContainer: sourceContainer},
+			},
+		},
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"web": {SourceContainer: sourceContainer},
+	}}}
+	adapter := DockerCLIAdapter{Runner: system.OSCommandRunner{}}
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainers failed: %v", err)
+	}
+
+	rawAliases := dockerIntegrationOutput(t, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{json .Aliases}}{{end}}", targetContainer)
+	var aliases []string
+	if err := json.Unmarshal([]byte(rawAliases), &aliases); err != nil {
+		t.Fatalf("unmarshal target aliases %q: %v", rawAliases, err)
+	}
+	for _, want := range []string{"web", "frontend"} {
+		if !containsString(aliases, want) {
+			t.Fatalf("target aliases = %#v, want %q", aliases, want)
+		}
+	}
+
+	resolved := dockerIntegrationOutput(t, "run", "--rm", "--network", targetNetwork, "alpine:3.20", "getent", "hosts", "web")
+	targetIP := dockerIntegrationOutput(t, "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", targetContainer)
+	resolvedFields := strings.Fields(resolved)
+	if len(resolvedFields) == 0 || resolvedFields[0] != targetIP {
+		t.Fatalf("alias web resolved to %q, want target IP %q", resolved, targetIP)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestCreateContainersは同一Network上でHostPort競合せずに起動できる(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
