@@ -40,6 +40,13 @@ var (
 		}
 		return uc.Execute(ctx)
 	}
+	runExit = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		uc := usecase.ExitSessionUseCase{
+			Config:         cfg,
+			SessionFactory: factory,
+		}
+		return uc.Execute(ctx)
+	}
 	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
 		uc := usecase.MarkCellDoneUseCase{State: state}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name})
@@ -99,12 +106,13 @@ const (
 	CommandPending CommandKind = "pending"
 	CommandReady   CommandKind = "ready"
 	CommandRoot    CommandKind = "root"
+	CommandExit    CommandKind = "exit"
 	CommandView    CommandKind = "view"
 	CommandVersion CommandKind = "version"
 	CommandHelp    CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|ls|view|clean|pending|ready|version|help]\n"
+const usage = "usage: paracell [init|fork|ls|view|clean|pending|ready|exit|version|help]\n"
 
 var (
 	Version   = "dev"
@@ -161,6 +169,11 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell ready")
 		}
 		return Command{Kind: CommandReady}, nil
+	case "exit":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell exit")
+		}
+		return Command{Kind: CommandExit}, nil
 	case "version":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell version")
@@ -242,6 +255,8 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		return err
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
+	case CommandExit:
+		return runExit(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
 	case CommandView:
 		loaded, err := configAdapter.Load(ctx, nil)
 		if err != nil {

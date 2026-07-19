@@ -172,6 +172,28 @@ func TestReadyコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func TestExitコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"exit"})
+
+	if err != nil {
+		t.Fatalf("exit解析でエラーが返った: %v", err)
+	}
+	if cmd.Kind != CommandExit {
+		t.Fatalf("command kind = %q, want %q", cmd.Kind, CommandExit)
+	}
+}
+
+func TestExitコマンドは余計な引数があるとエラーにする(t *testing.T) {
+	_, err := ParseCommand([]string{"exit", "extra"})
+
+	if err == nil {
+		t.Fatal("exitに余計な引数があるのにエラーが返らなかった")
+	}
+	if err.Error() != "usage: paracell exit" {
+		t.Fatalf("error = %q, want %q", err.Error(), "usage: paracell exit")
+	}
+}
+
 func TestRunはHelpでUsageを出力する(t *testing.T) {
 	dir := t.TempDir()
 
@@ -182,8 +204,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|ls|view|clean|version|help]\n"
-	want = "usage: paracell [init|fork|ls|view|clean|pending|ready|version|help]\n"
+	want := "usage: paracell [init|fork|ls|view|clean|pending|ready|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -738,6 +759,46 @@ templates: {}
 	}
 	if gotProject != "myapp" {
 		t.Fatalf("project = %q, want %q", gotProject, "myapp")
+	}
+}
+
+func TestRunはExitでSessionExitを実行する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  session: tmux
+templates: {}
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("設定を書けなかった: %v", err)
+	}
+
+	originalExit := runExit
+	defer func() { runExit = originalExit }()
+
+	called := false
+	runExit = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+		loaded, err := cfg.Load(ctx, nil)
+		if err != nil {
+			return err
+		}
+		if loaded.Providers.Session != "tmux" {
+			t.Fatalf("session provider = %q, want tmux", loaded.Providers.Session)
+		}
+		_ = factory
+		called = true
+		return nil
+	}
+
+	if err := Run(context.Background(), []string{"exit"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if !called {
+		t.Fatal("session exitが呼ばれなかった")
 	}
 }
 

@@ -73,6 +73,37 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 	}
 }
 
+func TestExitSessionはTMUXClientをDetachする(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+
+	if err := adapter.ExitSession(context.Background()); err != nil {
+		t.Fatalf("ExitSessionでエラーが返った: %v", err)
+	}
+	want := []string{"tmux detach-client"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestExitSessionはTMUX外ではエラーにする(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+
+	err := adapter.ExitSession(context.Background())
+	if err == nil {
+		t.Fatal("ExitSessionでエラーが返らなかった")
+	}
+	if err.Error() != "paracell exit must be run inside tmux" {
+		t.Fatalf("error = %q, want %q", err.Error(), "paracell exit must be run inside tmux")
+	}
+	if len(runner.calls) != 0 {
+		t.Fatalf("calls = %#v, want no calls", runner.calls)
+	}
+}
+
 func TestEnterRootSessionはSessionがなければ作成してAttachする(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{

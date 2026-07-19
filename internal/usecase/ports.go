@@ -55,6 +55,7 @@ type SessionPort interface {
 	CleanSession(ctx context.Context, cell domain.Cell) error
 	EnterSession(ctx context.Context, cell domain.Cell) error
 	EnterRootSession(ctx context.Context, project domain.ProjectConfig) error
+	ExitSession(ctx context.Context) error
 }
 
 type SessionProviderFactory interface {
