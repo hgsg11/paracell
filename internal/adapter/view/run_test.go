@@ -31,8 +31,9 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	defer func() { newProgram = original }()
 
 	var got Model
+	optionCount := 0
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
-		_ = opts
+		optionCount = len(opts)
 		got = model.(Model)
 		return fakeProgram{model: model}
 	}
@@ -56,6 +57,9 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	}
 	if got.CurrentCell != "123" {
 		t.Fatalf("current cell = %q, want %q", got.CurrentCell, "123")
+	}
+	if optionCount != 1 {
+		t.Fatalf("program option count = %d, want 1 for alt screen", optionCount)
 	}
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
