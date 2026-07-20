@@ -28,6 +28,16 @@ issue ごとに、git worktree・tmux session・container・状態管理をま�
 brew install --cask hgsg11/homebrew-paracell/paracell
 ```
 
+Nix を使う場合:
+
+```sh
+nix run github:hgsg11/paracell
+# または
+nix profile install github:hgsg11/paracell
+```
+
+Nix package には実行時依存として `git` と `tmux` が含まれます。
+
 または:
 
 ```sh
