@@ -43,16 +43,40 @@ func joinArgs(args []string) string {
 	return out
 }
 
+func appearanceCalls(target string, project string, label string, windowTargets ...string) []string {
+	calls := []string{
+		"tmux set-option -t " + target + " @paracell-project " + project,
+		"tmux set-option -t " + target + " @paracell-status-label " + label,
+		"tmux set-option -t " + target + " set-titles on",
+		"tmux set-option -t " + target + " set-titles-string #{@paracell-project}",
+		"tmux set-option -t " + target + " status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+	}
+	for _, windowTarget := range windowTargets {
+		calls = append(calls,
+			"tmux set-window-option -t "+windowTarget+" window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+			"tmux set-window-option -t "+windowTarget+" window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		)
+	}
+	calls = append(calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'")
+	return calls
+}
+
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := domain.Cell{Session: domain.Session{Name: "paracell-myapp-123"}}
+	cell := domain.Cell{Name: "123", Session: domain.Session{Name: "paracell-myapp-123"}}
 
 	if err := adapter.EnterSession(context.Background(), cell); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux attach-session -t paracell-myapp-123"}
+	want := appearanceCalls("paracell-myapp-123", "paracell-myapp", "123", "paracell-myapp-123")
+	want = append(want,
+		"tmux set-option -t paracell-myapp-123 key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux attach-session -t paracell-myapp-123",
+	)
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -62,12 +86,18 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := domain.Cell{Session: domain.Session{Name: "paracell-myapp-123"}}
+	cell := domain.Cell{Name: "123", Session: domain.Session{Name: "paracell-myapp-123"}}
 
 	if err := adapter.EnterSession(context.Background(), cell); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
-	want := []string{"tmux switch-client -t paracell-myapp-123"}
+	want := appearanceCalls("paracell-myapp-123", "paracell-myapp", "123", "paracell-myapp-123")
+	want = append(want,
+		"tmux set-option -t paracell-myapp-123 key-table paracell",
+		"tmux bind-key -T paracell C-t next-window",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux switch-client -t paracell-myapp-123",
+	)
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
@@ -119,6 +149,14 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 	want := []string{
 		"tmux has-session -t myapp-root",
 		"tmux new-session -d -s myapp-root -c .",
+		"tmux set-option -t myapp-root @paracell-project myapp",
+		"tmux set-option -t myapp-root @paracell-status-label root",
+		"tmux set-option -t myapp-root set-titles on",
+		"tmux set-option -t myapp-root set-titles-string #{@paracell-project}",
+		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
@@ -144,6 +182,14 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 	want := []string{
 		"tmux has-session -t myapp-root",
 		"tmux new-session -d -s myapp-root -e PARACELL_ROOT=/project -c /project",
+		"tmux set-option -t myapp-root @paracell-project myapp",
+		"tmux set-option -t myapp-root @paracell-status-label root",
+		"tmux set-option -t myapp-root set-titles on",
+		"tmux set-option -t myapp-root set-titles-string #{@paracell-project}",
+		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
@@ -169,6 +215,14 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 	want := []string{
 		"tmux has-session -t myapp-root",
 		"tmux new-session -d -s myapp-root -c .",
+		"tmux set-option -t myapp-root @paracell-project myapp",
+		"tmux set-option -t myapp-root @paracell-status-label root",
+		"tmux set-option -t myapp-root set-titles on",
+		"tmux set-option -t myapp-root set-titles-string #{@paracell-project}",
+		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
@@ -189,6 +243,14 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 	}
 	want := []string{
 		"tmux has-session -t myapp-root",
+		"tmux set-option -t myapp-root @paracell-project myapp",
+		"tmux set-option -t myapp-root @paracell-status-label root",
+		"tmux set-option -t myapp-root set-titles on",
+		"tmux set-option -t myapp-root set-titles-string #{@paracell-project}",
+		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
@@ -214,6 +276,14 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	}
 	want := []string{
 		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -c .paracell/cells/123/source",
+		"tmux set-option -t paracell-myapp-123 @paracell-project paracell-myapp",
+		"tmux set-option -t paracell-myapp-123 @paracell-status-label 123",
+		"tmux set-option -t paracell-myapp-123 set-titles on",
+		"tmux set-option -t paracell-myapp-123 set-titles-string #{@paracell-project}",
+		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t paracell-myapp-123 window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123 window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
@@ -245,6 +315,16 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	want := []string{
 		"tmux new-session -d -s paracell-myapp-123 -e PARACELL_CELL=123 -e PARACELL_ROOT=/project -n editor -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
+		"tmux set-option -t paracell-myapp-123 @paracell-project paracell-myapp",
+		"tmux set-option -t paracell-myapp-123 @paracell-status-label 123",
+		"tmux set-option -t paracell-myapp-123 set-titles on",
+		"tmux set-option -t paracell-myapp-123 set-titles-string #{@paracell-project}",
+		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
@@ -280,6 +360,18 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source",
 		"tmux new-window -t paracell-myapp-123 -n test -c .paracell/cells/123/source",
 		"tmux send-keys -t paracell-myapp-123:test go test ./... Enter",
+		"tmux set-option -t paracell-myapp-123 @paracell-project paracell-myapp",
+		"tmux set-option -t paracell-myapp-123 @paracell-status-label 123",
+		"tmux set-option -t paracell-myapp-123 set-titles on",
+		"tmux set-option -t paracell-myapp-123 set-titles-string #{@paracell-project}",
+		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:test window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:test window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell",
 		"tmux bind-key -T paracell C-t next-window",
 		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
