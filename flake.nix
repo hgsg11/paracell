@@ -12,6 +12,7 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
     in
     {
       packages = forAllSystems (system:
@@ -19,7 +20,7 @@
           pkgs = import nixpkgs { inherit system; };
           paracell = pkgs.buildGoModule {
             pname = "paracell";
-            version = "0.1.23";
+            inherit version;
 
             src = self;
             vendorHash = "sha256-tSLf4m2JlOUq2QqPMYiAzSbTvOzmwfGtjEL69p+j9c8=";
@@ -27,7 +28,7 @@
             ldflags = [
               "-s"
               "-w"
-              "-X github.com/hgsg11/paracell/internal/app.Version=v0.1.23"
+              "-X github.com/hgsg11/paracell/internal/app.Version=v${version}"
             ];
 
             nativeBuildInputs = [ pkgs.makeWrapper ];

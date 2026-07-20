@@ -38,6 +38,8 @@ nix profile install github:hgsg11/paracell
 
 Nix package には実行時依存として `git` と `tmux` が含まれます。
 
+リリース前に `./scripts/set-release-version.sh vX.Y.Z` を実行して、`VERSION` の変更をリリース対象へ含めます。リリースワークフローはタグと `VERSION` が一致しない場合に停止します。
+
 または:
 
 ```sh
