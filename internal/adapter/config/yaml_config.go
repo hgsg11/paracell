@@ -28,7 +28,7 @@ type yamlConfig struct {
 
 type yamlProviders struct {
 	Source        string `yaml:"source"`
-	Container     string `yaml:"container"`
+	Container     string `yaml:"container,omitempty"`
 	Session       string `yaml:"session"`
 	Notifications string `yaml:"notifications"`
 }
@@ -36,7 +36,7 @@ type yamlProviders struct {
 type yamlTemplate struct {
 	Repository domain.RepositoryTemplate `yaml:"repository"`
 	Files      []string                  `yaml:"files,omitempty"`
-	Containers domain.ContainerTemplate  `yaml:"containers"`
+	Containers domain.ContainerTemplate  `yaml:"containers,omitempty"`
 	Session    domain.SessionTemplate    `yaml:"session"`
 }
 

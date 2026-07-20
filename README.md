@@ -2,7 +2,7 @@
 
 issue ごとに、git worktree・tmux session・container・状態管理をまとめて作る CLI です。
 
-`paracell fork 123 --template default` で issue 用の作業部屋を作り、`paracell` で project 用 root tmux session に入り、そこから cell を見る・入る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
+`paracell fork 123 --template feat` で issue 用の作業部屋を作り、`paracell` で project 用 root tmux session に入り、そこから cell を見る・入る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
 
 ## できること
 
@@ -50,7 +50,7 @@ go build -o paracell ./cmd/paracell
 
 ```sh
 paracell init
-paracell fork 123 --template default
+paracell fork 123 --template feat
 paracell
 ```
 
@@ -58,40 +58,44 @@ paracell
 
 ```yaml
 project:
-  name: myapp
+  name: ""
 providers:
   source: git
-  container: docker
   session: tmux
   notifications: tmux
 templates:
-  default:
+  feat:
     repository:
       branchPrefix: feat/
-      base: current
-      branchMode: create
-    files:
-      - .env
-    containers:
-      network: isolated
-      services:
-        web:
-          sourceContainer: myapp-web
-          volumeMode: copy
+      base: main
     session:
-      windows:
-        - name: editor
-          command: codex "Work on issue {{.issue}}. {{.Command}}"
-        - name: test
-          command: go test ./...
+      windows: []
+  update:
+    repository:
+      branchPrefix: update/
+      base: main
+    session:
+      windows: []
+  fix:
+    repository:
+      branchPrefix: fix/
+      base: main
+    session:
+      windows: []
+  review:
+    repository:
+      branchPrefix: review/
+      base: main
+    session:
+      windows: []
 ```
 
 ## TUI
 
 ```text
   NAME  TEMPLATE  STATUS   DONE
-> 123   default   ready    [ ]
-  456   default   pending  [x]
+> 123   feat      ready    [ ]
+  456   fix       pending  [x]
 
   go root
 ```

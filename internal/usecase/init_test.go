@@ -26,8 +26,8 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.Providers.Source != "git" {
 		t.Fatalf("providers.source = %q, want %q", cfg.Providers.Source, "git")
 	}
-	if cfg.Providers.Container != "docker" {
-		t.Fatalf("providers.container = %q, want %q", cfg.Providers.Container, "docker")
+	if cfg.Providers.Container != "" {
+		t.Fatalf("providers.container = %q, want empty", cfg.Providers.Container)
 	}
 	if cfg.Providers.Session != "tmux" {
 		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
@@ -35,44 +35,34 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.Providers.Notifications != "tmux" {
 		t.Fatalf("providers.notifications = %q, want %q", cfg.Providers.Notifications, "tmux")
 	}
-	template := cfg.Templates["default"]
-	if template.Repository.Base != "main" {
-		t.Fatalf("repository.base = %q, want %q", template.Repository.Base, "main")
+	if len(cfg.Templates) != 4 {
+		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
 	}
-	if template.Repository.BranchPrefix != "feat/" {
-		t.Fatalf("repository.branchPrefix = %q, want %q", template.Repository.BranchPrefix, "feat/")
-	}
-	if len(template.Containers.Services) != 0 {
-		t.Fatalf("containers.services length = %d, want 0", len(template.Containers.Services))
-	}
-	if len(template.Session.Windows) != 0 {
-		t.Fatalf("session windows length = %d, want 0", len(template.Session.Windows))
-	}
-	planning := cfg.Templates["planning"]
-	if planning.Repository.Base != "main" {
-		t.Fatalf("planning repository.base = %q, want %q", planning.Repository.Base, "main")
-	}
-	if planning.Repository.BranchPrefix != "" {
-		t.Fatalf("planning repository.branchPrefix = %q, want empty", planning.Repository.BranchPrefix)
-	}
-	if len(planning.Session.Windows) != 1 {
-		t.Fatalf("planning session windows length = %d, want 1", len(planning.Session.Windows))
-	}
-	if planning.Session.Windows[0].Command == "" {
-		t.Fatal("planning session command is empty")
-	}
-	implementation := cfg.Templates["implementation"]
-	if implementation.Repository.Base != "main" {
-		t.Fatalf("implementation repository.base = %q, want %q", implementation.Repository.Base, "main")
-	}
-	if implementation.Repository.BranchPrefix != "" {
-		t.Fatalf("implementation repository.branchPrefix = %q, want empty", implementation.Repository.BranchPrefix)
-	}
-	if len(implementation.Session.Windows) != 1 {
-		t.Fatalf("implementation session windows length = %d, want 1", len(implementation.Session.Windows))
-	}
-	if implementation.Session.Windows[0].Command == "" {
-		t.Fatal("implementation session command is empty")
+	for name, branchPrefix := range map[string]string{
+		"feat":   "feat/",
+		"update": "update/",
+		"fix":    "fix/",
+		"review": "review/",
+	} {
+		template, ok := cfg.Templates[name]
+		if !ok {
+			t.Fatalf("template %q is missing", name)
+		}
+		if template.Name != name {
+			t.Fatalf("template name = %q, want %q", template.Name, name)
+		}
+		if template.Repository.Base != "main" {
+			t.Fatalf("%s repository.base = %q, want main", name, template.Repository.Base)
+		}
+		if template.Repository.BranchPrefix != branchPrefix {
+			t.Fatalf("%s repository.branchPrefix = %q, want %q", name, template.Repository.BranchPrefix, branchPrefix)
+		}
+		if len(template.Containers.Services) != 0 {
+			t.Fatalf("%s containers.services length = %d, want 0", name, len(template.Containers.Services))
+		}
+		if len(template.Session.Windows) != 0 {
+			t.Fatalf("%s session windows length = %d, want 0", name, len(template.Session.Windows))
+		}
 	}
 }
 

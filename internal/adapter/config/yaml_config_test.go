@@ -155,6 +155,56 @@ templates:
 	}
 }
 
+func TestYAML設定を保存するとき空のContainer設定を省略する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	adapter := YAMLConfigAdapter{Path: configPath}
+
+	err := adapter.SaveConfig(context.Background(), domain.Config{
+		Project: domain.ProjectConfig{Name: ""},
+		Providers: domain.ProviderConfig{
+			Source:        "git",
+			Session:       "tmux",
+			Notifications: "tmux",
+		},
+		Templates: map[string]domain.Template{
+			"feat": {
+				Name: "feat",
+				Repository: domain.RepositoryTemplate{
+					BranchPrefix: "feat/",
+					Base:         "main",
+				},
+				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("設定保存でエラーが返った: %v", err)
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("保存した設定を読めなかった: %v", err)
+	}
+	want := `project:
+    name: ""
+providers:
+    source: git
+    session: tmux
+    notifications: tmux
+templates:
+    feat:
+        repository:
+            branchPrefix: feat/
+            base: main
+        session:
+            windows: []
+`
+	if string(data) != want {
+		t.Fatalf("保存内容 =\n%s\nwant =\n%s", string(data), want)
+	}
+}
+
 func TestYAML設定はProvidersがない場合に失敗する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
