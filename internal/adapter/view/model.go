@@ -368,6 +368,8 @@ func (m Model) View() string {
 	var b strings.Builder
 	b.WriteString(renderHeaderLine(m))
 	b.WriteString(renderSplitLayout(m))
+	b.WriteString(renderIssueInputLine(m))
+	b.WriteByte('\n')
 	b.WriteString(renderExitLine(m))
 	b.WriteString(statusLine(m))
 	return b.String()
@@ -395,19 +397,14 @@ func renderSplitLayout(m Model) string {
 }
 
 func renderTemplatesPane(m Model, width int, height int) []string {
-	lines := make([]string, 0, len(m.Templates)+1)
+	lines := make([]string, 0, max(1, len(m.Templates)))
 	selected := m.TemplateSelected
 	if len(m.Templates) == 0 {
 		lines = append(lines, "no templates")
-		lines = append(lines, renderIssueInputLine(m))
 	} else {
 		for _, template := range m.Templates {
 			lines = append(lines, ellipsize(template, width))
 		}
-		lines = append(lines, renderIssueInputLine(m))
-	}
-	if m.IssueInputActive {
-		selected = len(lines) - 1
 	}
 	lines, selected = visibleRows(lines, selected, height)
 	for i := range lines {
@@ -458,14 +455,14 @@ func paneHeight(m Model) int {
 	templateRows, cellRows := naturalPaneHeights(m)
 	contentHeight := max(templateRows, cellRows)
 	if m.Height > 0 {
-		// header, its spacer, go root, and status each occupy one terminal row.
-		return min(contentHeight, max(1, m.Height-4))
+		// header, its spacer, issue input, go root, and status each occupy one terminal row.
+		return min(contentHeight, max(1, m.Height-5))
 	}
 	return contentHeight
 }
 
 func naturalPaneHeights(m Model) (int, int) {
-	return max(1, len(m.Templates)) + 1, max(1, len(m.Cells))
+	return max(1, len(m.Templates)), max(1, len(m.Cells))
 }
 
 func visibleRows(lines []string, selected int, height int) ([]string, int) {
