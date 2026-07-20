@@ -113,6 +113,8 @@ tmux の中で `paracell pending` / `paracell ready` を実行すると、現在
 
 paracell が作成した tmux session の中では、`C-p` で `paracell view` を popup で開けます。popup から `l` を押すと、選択した cell の tmux session に切り替わります。
 
+paracell の root / cell tmux session ではマウス操作が有効です。ドラッグした文字列は tmux のバッファにコピーされ、OSC 52 対応の terminal では system clipboard にも反映されます。ホイールで copy mode に入り、履歴をスクロールできます。
+
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
 
 paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側には時刻と日付を表示し、pane タイトルは表示しません。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
