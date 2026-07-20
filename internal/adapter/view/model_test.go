@@ -286,7 +286,7 @@ func TestModelViewは選択中GoRoot行をReverse表示する(t *testing.T) {
 	}
 }
 
-func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(t *testing.T) {
+func TestModelViewはIssue入力用の行をGoRootの直前に常設する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -300,23 +300,18 @@ func TestModelViewはIssue入力用の行をTemplate一覧の下に常設する(
 	if !strings.Contains(got, "planning") {
 		t.Fatalf("template list missing: %q", got)
 	}
-	planningIndex := -1
-	blankIndex := -1
+	goRootIndex := -1
 	for i, line := range lines {
-		columns := strings.SplitN(line, " │ ", 2)
-		if len(columns) != 2 {
-			continue
-		}
-		if strings.TrimSpace(columns[0]) == "planning" {
-			planningIndex = i
-		}
-		if planningIndex >= 0 && i > planningIndex && strings.TrimSpace(columns[0]) == "" {
-			blankIndex = i
+		if strings.TrimSpace(line) == "go root" {
+			goRootIndex = i
 			break
 		}
 	}
-	if planningIndex < 0 || blankIndex != planningIndex+1 {
-		t.Fatalf("blank issue row should be placed directly under templates: %q", got)
+	if goRootIndex < 1 || strings.TrimSpace(lines[goRootIndex-1]) != "" {
+		t.Fatalf("blank issue row should be placed directly above go root: %q", got)
+	}
+	if strings.Contains(lines[goRootIndex-1], " │ ") {
+		t.Fatalf("issue row should be outside template pane: %q", got)
 	}
 }
 
@@ -328,11 +323,11 @@ func TestModelViewは全体65列の最大幅で描画する(t *testing.T) {
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 10})
 
 	lines := strings.Split(strings.TrimSuffix(updated.(Model).View(), "\n"), "\n")
-	// header + spacer + 3 content rows + go root + status
+	// header + spacer + 2 content rows + issue input + go root + status
 	if len(lines) != 7 {
 		t.Fatalf("line count = %d, want 7: %q", len(lines), updated.(Model).View())
 	}
-	for i, line := range lines[2:5] {
+	for i, line := range lines[2:4] {
 		plain := stripANSI(line)
 		columns := strings.SplitN(plain, " │ ", 2)
 		if len(columns) != 2 {
@@ -411,7 +406,7 @@ func TestModelViewは表示高を超えて移動しても選択行を表示す�
 		{ID: "cell-3", Name: "three", Template: "default"},
 	}, []string{"default"})
 	model.Width = 40
-	model.Height = 5 // two pane rows
+	model.Height = 5 // one pane row after reserving the issue input line
 	model.Selected = 2
 
 	got := model.View()
@@ -429,7 +424,7 @@ func TestModelはWindowSizeの幅と高さを保持する(t *testing.T) {
 	}
 }
 
-func TestModelViewはIssue入力中にTemplate一覧の下へ内容を表示する(t *testing.T) {
+func TestModelViewはIssue入力中にGoRootの直前へ内容を表示する(t *testing.T) {
 	model := NewModel(
 		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
 		[]string{"default", "planning"},
@@ -439,9 +434,24 @@ func TestModelViewはIssue入力中にTemplate一覧の下へ内容を表示す�
 	model.IssueInput = "456"
 
 	got := model.View()
+	plain := stripANSI(got)
+	lines := strings.Split(plain, "\n")
+	issueIndex := -1
+	goRootIndex := -1
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "issue: 456" {
+			issueIndex = i
+		}
+		if strings.TrimSpace(line) == "go root" {
+			goRootIndex = i
+		}
+	}
 
-	if !strings.Contains(got, "issue: 456") {
-		t.Fatalf("issue input should be shown in template pane: %q", got)
+	if issueIndex < 0 || issueIndex != goRootIndex-1 {
+		t.Fatalf("issue input should be shown directly above go root: %q", got)
+	}
+	if strings.Contains(lines[issueIndex], " │ ") {
+		t.Fatalf("issue input should be outside template pane: %q", got)
 	}
 	if strings.HasSuffix(got, "issue: 456\n") {
 		t.Fatalf("issue input should not replace bottom status line: %q", got)
