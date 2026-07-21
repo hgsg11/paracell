@@ -85,3 +85,39 @@ func TestテンプレートのBaseをCellへ保持する(t *testing.T) {
 		t.Fatalf("cell base = %q, want %q", cell.Base, "current")
 	}
 }
+
+func TestIssueの不正文字をリソース名では安全なハイフンへ変換する(t *testing.T) {
+	factory := Factory{}
+	template := domain.Template{
+		Name: "webapp",
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{"web": {}},
+		},
+	}
+
+	cell, err := factory.NewCell("cell-1", `feature\volume / copy:?*[test]`, template, "my app")
+	if err != nil {
+		t.Fatalf("Cell作成でエラーが返った: %v", err)
+	}
+	if cell.Issue != `feature\volume / copy:?*[test]` {
+		t.Fatalf("Issue = %q, want original issue", cell.Issue)
+	}
+	if cell.Name != "feature-volume-copy-test" {
+		t.Fatalf("Cell名 = %q, want %q", cell.Name, "feature-volume-copy-test")
+	}
+	if cell.Source.Path != ".paracell/cells/feature-volume-copy-test/source" {
+		t.Fatalf("source path = %q", cell.Source.Path)
+	}
+	if cell.Containers.Network != "paracell-my-app-feature-volume-copy-test" {
+		t.Fatalf("Docker network名 = %q", cell.Containers.Network)
+	}
+	if got := cell.Containers.Services["web"].ContainerName; got != "paracell-my-app-feature-volume-copy-test-web" {
+		t.Fatalf("webコンテナ名 = %q", got)
+	}
+	if cell.Session.Name != "my-app-feature-volume-copy-test" {
+		t.Fatalf("session名 = %q", cell.Session.Name)
+	}
+	if cell.Branch != `feature\volume / copy:?*[test]` {
+		t.Fatalf("branch = %q, want original issue", cell.Branch)
+	}
+}

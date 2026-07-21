@@ -41,12 +41,11 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	name := input.Issue
-	if err := (domain.CellUniquenessChecker{}).EnsureUnique(existing, input.Issue, name); err != nil {
-		return domain.Cell{}, err
-	}
 	cell, err := u.CellFactory.NewCell(u.IDs.NewID(), input.Issue, template, cfg.Project.Name)
 	if err != nil {
+		return domain.Cell{}, err
+	}
+	if err := (domain.CellUniquenessChecker{}).EnsureUnique(existing, input.Issue, cell.Name); err != nil {
 		return domain.Cell{}, err
 	}
 	source, err := u.SourceFactory.Source(cfg.Providers)

@@ -468,7 +468,7 @@ func copiedVolumeName(container string, destination string) string {
 	if name == "" {
 		name = "root"
 	}
-	return container + "-" + name
+	return domain.SafeResourceName(container+"-"+name, "volume")
 }
 
 func cellNetworkName(cell domain.Cell) string {
