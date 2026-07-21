@@ -227,6 +227,8 @@ func TestDockerIntegrationは実MySQLのSchemaを専用Volumeへコピーする(
 	waitForIntegrationMySQL(t, sourceContainer)
 	runDockerIntegrationCommand(t, "exec", sourceContainer, "mysql", "-uapp", "-psecret", "myapp", "-e",
 		"CREATE TABLE users (id BIGINT PRIMARY KEY, name VARCHAR(255)); INSERT INTO users VALUES (1, 'source');")
+	runDockerIntegrationCommand(t, "exec", sourceContainer, "mysql", "-uroot", "-prootsecret", "-e",
+		"CREATE DATABASE analytics; CREATE TABLE analytics.events (id BIGINT PRIMARY KEY); INSERT INTO analytics.events VALUES (1);")
 
 	cell := domain.Cell{
 		Name: "integration",
@@ -257,6 +259,11 @@ func TestDockerIntegrationは実MySQLのSchemaを専用Volumeへコピーする(
 		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='myapp' AND table_name='users'; SELECT COUNT(*) FROM users;")
 	if output != "1\n0" {
 		t.Fatalf("target schema/table rows = %q, want %q", output, "1\n0")
+	}
+	analyticsOutput := dockerIntegrationOutput(t, "exec", targetContainer, "mysql", "-uroot", "-prootsecret", "-Nse",
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='analytics' AND table_name='events'; SELECT COUNT(*) FROM analytics.events;")
+	if analyticsOutput != "1\n0" {
+		t.Fatalf("second target schema/table rows = %q, want %q", analyticsOutput, "1\n0")
 	}
 
 	runDockerIntegrationCommand(t, "exec", targetContainer, "mysql", "-uapp", "-psecret", "myapp", "-e",

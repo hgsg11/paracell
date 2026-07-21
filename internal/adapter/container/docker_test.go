@@ -282,7 +282,8 @@ func TestCreateContainersは元Containerの内部Portだけをコピーする(t 
 func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
-			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret"]},"Mounts":[{"Type":"volume","Name":"myapp_db","Source":"/var/lib/docker/volumes/myapp_db/_data","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret","MYSQL_ROOT_PASSWORD=rootsecret"]},"Mounts":[{"Type":"volume","Name":"myapp_db","Source":"/var/lib/docker/volumes/myapp_db/_data","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			"analytics\nmyapp\n",
 			"CREATE TABLE users (id bigint primary key);",
 		},
 	}
@@ -321,7 +322,8 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 
 	wantOutputCalls := []string{
 		`docker inspect -f {{json .}} myapp-db`,
-		`docker exec myapp-db mysqldump --no-data --no-tablespaces -u app -psecret myapp`,
+		`docker exec myapp-db mysql --batch --skip-column-names -u root -prootsecret -e SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY SCHEMA_NAME`,
+		`docker exec myapp-db mysqldump --no-data --no-tablespaces -u root -prootsecret --databases analytics myapp`,
 	}
 	if !reflect.DeepEqual(runner.outputCalls, wantOutputCalls) {
 		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
@@ -335,16 +337,16 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	if got := runner.runCalls[1]; got != "docker volume create paracell-myapp-123-db-var-lib-mysql" {
 		t.Fatalf("volume create call = %q", got)
 	}
-	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
+	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
 		t.Fatalf("first run call = %q", got)
 	}
-	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u app -psecret --silent" {
+	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u root -prootsecret --silent" {
 		t.Fatalf("wait run call = %q", got)
 	}
 	if got := runner.runCalls[4]; !strings.HasPrefix(got, "docker cp ") || !strings.HasSuffix(got, " paracell-myapp-123-db:/tmp/paracell-schema.sql") {
 		t.Fatalf("cp run call = %q", got)
 	}
-	if got := runner.runCalls[5]; got != "docker exec paracell-myapp-123-db sh -c mysql -u 'app' '-psecret' 'myapp' < '/tmp/paracell-schema.sql'" {
+	if got := runner.runCalls[5]; got != "docker exec paracell-myapp-123-db sh -c mysql -u 'root' '-prootsecret' < '/tmp/paracell-schema.sql'" {
 		t.Fatalf("import run call = %q", got)
 	}
 	if got := runner.runCalls[6]; got != "docker exec paracell-myapp-123-db rm -f /tmp/paracell-schema.sql" {

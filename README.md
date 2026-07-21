@@ -160,7 +160,7 @@ paracell --version
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
 - database service の `volumeMode` は `copy` のみ対応する
-- `database.copyMode: schema`: DB schema を cell に用意する
+- `database.copyMode: schema`: system database を除く全 DB の schema を cell に用意する
 - `database.copyMode: data`: 予約済み。まだ未実装
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
