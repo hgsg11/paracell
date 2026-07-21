@@ -331,7 +331,15 @@ func (a DockerCLIAdapter) copyMySQLSchema(ctx context.Context, source string, ro
 	if err := a.waitForMySQL(ctx, service.ContainerName, conn); err != nil {
 		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
 	}
-	schema, err := a.Runner.Output(ctx, "docker", mysqlDumpArgs(source, conn)...)
+	databasesOutput, err := a.Runner.Output(ctx, "docker", mysqlDatabaseListArgs(source, conn)...)
+	if err != nil {
+		return fmt.Errorf("mysql database list failed for service %q: %w", role, err)
+	}
+	databases := mysqlDatabaseNames(databasesOutput)
+	if len(databases) == 0 {
+		return nil
+	}
+	schema, err := a.Runner.Output(ctx, "docker", mysqlDumpArgs(source, conn, databases)...)
 	if err != nil {
 		return fmt.Errorf("mysql schema dump failed for service %q: %w", role, err)
 	}
@@ -356,7 +364,7 @@ func (a DockerCLIAdapter) copyMySQLSchema(ctx context.Context, source string, ro
 	if conn.Password != "" {
 		importCommand += " " + shQuote("-p"+conn.Password)
 	}
-	importCommand += fmt.Sprintf(" %s < %s", shQuote(conn.Database), shQuote(containerSchemaPath))
+	importCommand += fmt.Sprintf(" < %s", shQuote(containerSchemaPath))
 	if err := a.Runner.Run(ctx, "docker", "exec", service.ContainerName, "sh", "-c", importCommand); err != nil {
 		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
 	}
@@ -408,7 +416,10 @@ func mysqlConnectionFromEnv(env []string) (mysqlConnection, error) {
 		Password: values["MYSQL_PASSWORD"],
 		Database: values["MYSQL_DATABASE"],
 	}
-	if conn.User == "" {
+	if values["MYSQL_ROOT_PASSWORD"] != "" {
+		conn.User = "root"
+		conn.Password = values["MYSQL_ROOT_PASSWORD"]
+	} else if conn.User == "" {
 		conn.User = "root"
 		conn.Password = values["MYSQL_ROOT_PASSWORD"]
 	}
@@ -418,12 +429,32 @@ func mysqlConnectionFromEnv(env []string) (mysqlConnection, error) {
 	return conn, nil
 }
 
-func mysqlDumpArgs(container string, conn mysqlConnection) []string {
+func mysqlDatabaseListArgs(container string, conn mysqlConnection) []string {
+	args := []string{"exec", container, "mysql", "--batch", "--skip-column-names", "-u", conn.User}
+	if conn.Password != "" {
+		args = append(args, "-p"+conn.Password)
+	}
+	return append(args, "-e", "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY SCHEMA_NAME")
+}
+
+func mysqlDatabaseNames(output string) []string {
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	databases := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if name := strings.TrimSpace(line); name != "" {
+			databases = append(databases, name)
+		}
+	}
+	return databases
+}
+
+func mysqlDumpArgs(container string, conn mysqlConnection, databases []string) []string {
 	args := []string{"exec", container, "mysqldump", "--no-data", "--no-tablespaces", "-u", conn.User}
 	if conn.Password != "" {
 		args = append(args, "-p"+conn.Password)
 	}
-	args = append(args, conn.Database)
+	args = append(args, "--databases")
+	args = append(args, databases...)
 	return args
 }
 
