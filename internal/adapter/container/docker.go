@@ -356,9 +356,6 @@ func canonicalUserPath(path string, base string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user path %q: %w", path, err)
 	}
-	if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
-		absolute = resolved
-	}
 	return filepath.Clean(absolute), nil
 }
 
