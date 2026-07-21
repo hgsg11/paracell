@@ -486,6 +486,14 @@ func TestCreateContainersはVolumeModeCopyでNamedVolumeを複製する(t *testi
 	}
 }
 
+func TestCopiedVolumeNameは不正文字を安全な文字へ変換する(t *testing.T) {
+	got := copiedVolumeName(`paracell-myapp-feature\volume-web`, `/app/vendor cache`)
+	want := "paracell-myapp-feature-volume-web-app-vendor-cache"
+	if got != want {
+		t.Fatalf("copiedVolumeName() = %q, want %q", got, want)
+	}
+}
+
 func TestCleanContainersはコンテナ削除後にセルネットワークを削除する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := DockerCLIAdapter{Runner: runner}

@@ -19,9 +19,10 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 	if template.Name == "" {
 		return domain.Cell{}, errors.New("template name is required")
 	}
-	name := issue
-	prefix := fmt.Sprintf("paracell-%s-%s", project, name)
-	sessionName := fmt.Sprintf("%s-%s", project, name)
+	name := domain.SafeResourceName(issue, id)
+	projectName := domain.SafeResourceName(project, "project")
+	prefix := fmt.Sprintf("paracell-%s-%s", projectName, name)
+	sessionName := fmt.Sprintf("%s-%s", projectName, name)
 	services := make(map[string]domain.CellContainer, len(template.Containers.Services))
 	for role, service := range template.Containers.Services {
 		var database *domain.DatabaseConfig
@@ -33,7 +34,7 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 			}
 		}
 		services[role] = domain.CellContainer{
-			ContainerName:   fmt.Sprintf("%s-%s", prefix, role),
+			ContainerName:   fmt.Sprintf("%s-%s", prefix, domain.SafeResourceName(role, "service")),
 			SourceContainer: service.SourceContainer,
 			VolumeMode:      service.VolumeMode,
 			Database:        database,
