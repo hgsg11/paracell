@@ -534,6 +534,61 @@ func TestCreateContainersはVolumeModeCopyで相対PathのCellSourceをMountす�
 	}
 }
 
+func TestCreateContainersはComposeが解決したSourcePathからCellSourceをMountする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Labels":{"com.docker.compose.project.working_dir":"/Users/user/workspace","com.docker.compose.project.config_files":"/Users/user/workspace/docker-compose.yml","com.docker.compose.service":"web"}},"Mounts":[{"Type":"bind","Source":"/host_mnt/Users/user/workspace/project","Destination":"/app","RW":true},{"Type":"bind","Source":"/var/run/docker.sock","Destination":"/var/run/docker.sock","RW":true},{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"services":{"web":{"volumes":[{"type":"bind","source":"/Users/user/workspace/project","target":"/app"},{"type":"bind","source":"/var/run/docker.sock","target":"/var/run/docker.sock"},{"type":"volume","source":"myapp_vendor","target":"/app/vendor"}]}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/Users/user/workspace/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {
+					ContainerName:   "paracell-myapp-123-web",
+					SourceContainer: "myapp-web",
+					VolumeMode:      "copy",
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantOutputCalls := []string{
+		`docker inspect -f {{json .}} myapp-web`,
+		`docker compose --project-directory /Users/user/workspace -f /Users/user/workspace/docker-compose.yml config --format json`,
+	}
+	if !reflect.DeepEqual(runner.outputCalls, wantOutputCalls) {
+		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
+	}
+	got := runner.runCalls[len(runner.runCalls)-1]
+	wantSourceMount := "-v /Users/user/workspace/project/.paracell/cells/123/source:/app"
+	if !strings.Contains(got, wantSourceMount) {
+		t.Fatalf("run call = %q, want source mount %q", got, wantSourceMount)
+	}
+	if strings.Contains(got, "/host_mnt/Users/user/workspace/project:/app") {
+		t.Fatalf("run call = %q, Docker daemon側のSource pathを使っている", got)
+	}
+	wantExternalMount := "-v /var/run/docker.sock:/var/run/docker.sock"
+	if !strings.Contains(got, wantExternalMount) {
+		t.Fatalf("run call = %q, want external mount %q", got, wantExternalMount)
+	}
+}
+
 func TestCleanContainersはコンテナ削除後にセルネットワークを削除する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := DockerCLIAdapter{Runner: runner}
