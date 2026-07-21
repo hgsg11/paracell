@@ -844,7 +844,7 @@ templates:
 	}
 }
 
-func TestYAMLConfigは空でない不正なRepositoryBaseを拒否する(t *testing.T) {
+func TestYAMLConfigは任意のRepositoryBaseを読み込む(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -857,7 +857,7 @@ templates:
   default:
     repository:
       branchPrefix: feat/
-      base: feature/other
+      base: feature/111
     containers:
       services: {}
     session:
@@ -867,11 +867,11 @@ templates:
 		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
 	}
 
-	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
-	if err == nil {
-		t.Fatal("不正なrepository.baseなのにエラーが返らなかった")
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
 	}
-	if err.Error() != `unsupported repository.base "feature/other" for template "default"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported repository.base "feature/other" for template "default"`)
+	if got := cfg.Templates["default"].Repository.Base; got != "feature/111" {
+		t.Fatalf("repository.base = %q, want %q", got, "feature/111")
 	}
 }

@@ -34,7 +34,7 @@ func TestCreateSourceはNamedBaseなら明示BaseからWorktreeを作る(t *test
 	runner := &fakeRunner{}
 	adapter := GitSourceAdapter{Runner: runner}
 	cell := domain.Cell{
-		Base:   "main",
+		Base:   "feature/111",
 		Branch: "feat/123",
 		Source: domain.Source{Path: ".paracell/cells/123/source"},
 	}
@@ -44,7 +44,7 @@ func TestCreateSourceはNamedBaseなら明示BaseからWorktreeを作る(t *test
 	}
 
 	want := []string{
-		"git worktree add .paracell/cells/123/source -b feat/123 main",
+		"git worktree add .paracell/cells/123/source -b feat/123 feature/111",
 	}
 	if !reflect.DeepEqual(runner.runCalls, want) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
