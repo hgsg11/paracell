@@ -130,7 +130,7 @@ paracell --version
 ## 設定メモ
 
 - `repository.base: current`: 現在の branch から cell branch を作る
-- `repository.base: main`: `main` から cell branch を作る
+- `repository.base`: cell branch の作成元を指定する。`main` や `feature/111` など任意の branch を指定できる
 - `repository.branchMode: create`: cell branch を新規作成する。既存 branch があれば失敗する
 - `repository.branchMode: reuse`: 既存 branch があればその branch の worktree を作り、なければ新規作成する
 - `repository.branchMode: require`: 既存 branch の worktree だけを作る。branch がなければ失敗する
