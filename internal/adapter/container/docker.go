@@ -116,6 +116,12 @@ type DockerCLIAdapter struct {
 	Root   string
 }
 
+const (
+	composeWorkingDirLabel  = "com.docker.compose.project.working_dir"
+	composeConfigFilesLabel = "com.docker.compose.project.config_files"
+	composeServiceLabel     = "com.docker.compose.service"
+)
+
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	network := cellNetworkName(cell)
 	if shouldCreateIsolatedNetwork(cell.Containers.NetworkMode) && network != "" {
@@ -133,7 +139,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		if err != nil {
 			return err
 		}
-		mounts, err := a.prepareMounts(ctx, cell, service, inspection.Mounts)
+		mounts, err := a.prepareMounts(ctx, cell, service, inspection)
 		if err != nil {
 			return err
 		}
@@ -188,14 +194,18 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, mounts []dockerMount) ([]string, error) {
-	if service.VolumeMode != "copy" {
-		return a.cellMounts(cell, service, mounts), nil
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, inspection containerInspection) ([]string, error) {
+	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
+	if err != nil {
+		return nil, err
 	}
-	return a.copyMounts(ctx, cell, service, mounts)
+	if service.VolumeMode != "copy" {
+		return a.cellMounts(cell, service, inspection.Mounts, composeMounts), nil
+	}
+	return a.copyMounts(ctx, cell, service, inspection.Mounts, composeMounts)
 }
 
-func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContainer, mounts []dockerMount) []string {
+func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContainer, mounts []dockerMount, composeMounts *composeMountPlan) []string {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
@@ -205,17 +215,9 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 		if mount.Type != "bind" {
 			continue
 		}
-		rel, err := filepath.Rel(a.Root, mount.Source)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		spec, ok := a.bindMountSpec(cell, mount, composeMounts)
+		if !ok {
 			continue
-		}
-		source := a.cellSourcePath(cell)
-		if rel != "." {
-			source = filepath.Join(source, rel)
-		}
-		spec := source + ":" + mount.Destination
-		if !mount.RW {
-			spec += ":ro"
 		}
 		out = append(out, spec)
 	}
@@ -223,7 +225,7 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 	return out
 }
 
-func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, mounts []dockerMount) ([]string, error) {
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
@@ -248,22 +250,116 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, serv
 		if mount.Type != "bind" {
 			continue
 		}
-		rel, err := filepath.Rel(a.Root, mount.Source)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		spec, ok := a.bindMountSpec(cell, mount, composeMounts)
+		if !ok {
 			continue
-		}
-		source := a.cellSourcePath(cell)
-		if rel != "." {
-			source = filepath.Join(source, rel)
-		}
-		spec := source + ":" + mount.Destination
-		if !mount.RW {
-			spec += ":ro"
 		}
 		out = append(out, spec)
 	}
 	out = append(out, a.initFileMounts(cell, service)...)
 	return out, nil
+}
+
+func (a DockerCLIAdapter) bindMountSpec(cell domain.Cell, mount dockerMount, composeMounts *composeMountPlan) (string, bool) {
+	source := mount.Source
+	if composeMounts != nil {
+		composeSource, ok := composeMounts.BindSources[mount.Destination]
+		if !ok {
+			return "", false
+		}
+		source = composeSource
+		if mount.Destination == composeMounts.SourceTarget {
+			source = a.cellSourcePath(cell)
+		}
+	} else {
+		rel, err := filepath.Rel(a.Root, mount.Source)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return "", false
+		}
+		source = a.cellSourcePath(cell)
+		if rel != "." {
+			source = filepath.Join(source, rel)
+		}
+	}
+	spec := source + ":" + mount.Destination
+	if !mount.RW {
+		spec += ":ro"
+	}
+	return spec, true
+}
+
+func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[string]string) (*composeMountPlan, error) {
+	workingDir := strings.TrimSpace(labels[composeWorkingDirLabel])
+	configFiles := splitComposeConfigFiles(labels[composeConfigFilesLabel])
+	serviceName := strings.TrimSpace(labels[composeServiceLabel])
+	if workingDir == "" || len(configFiles) == 0 || serviceName == "" {
+		return nil, nil
+	}
+
+	args := []string{"compose", "--project-directory", workingDir}
+	for _, file := range configFiles {
+		args = append(args, "-f", file)
+	}
+	args = append(args, "config", "--format", "json")
+	raw, err := a.Runner.Output(ctx, "docker", args...)
+	if err != nil {
+		return nil, fmt.Errorf("resolve compose config for service %q: %w", serviceName, err)
+	}
+	var project composeProjectConfig
+	if err := json.Unmarshal([]byte(raw), &project); err != nil {
+		return nil, fmt.Errorf("decode compose config for service %q: %w", serviceName, err)
+	}
+	composeService, ok := project.Services[serviceName]
+	if !ok {
+		return nil, fmt.Errorf("service %q not found in compose config", serviceName)
+	}
+	projectRoot, err := canonicalUserPath(a.Root, "")
+	if err != nil {
+		return nil, err
+	}
+	plan := &composeMountPlan{BindSources: make(map[string]string)}
+	for _, volume := range composeService.Volumes {
+		if volume.Type != "bind" {
+			continue
+		}
+		source, err := canonicalUserPath(volume.Source, workingDir)
+		if err != nil {
+			return nil, err
+		}
+		plan.BindSources[volume.Target] = source
+		if source == projectRoot {
+			if volume.Target == "" {
+				return nil, fmt.Errorf("compose bind target is empty for project root %q", projectRoot)
+			}
+			plan.SourceTarget = volume.Target
+		}
+	}
+	return plan, nil
+}
+
+func splitComposeConfigFiles(value string) []string {
+	parts := strings.Split(value, ",")
+	files := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if file := strings.TrimSpace(part); file != "" {
+			files = append(files, file)
+		}
+	}
+	return files
+}
+
+func canonicalUserPath(path string, base string) (string, error) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(base, path)
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve user path %q: %w", path, err)
+	}
+	if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
+		absolute = resolved
+	}
+	return filepath.Clean(absolute), nil
 }
 
 func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellContainer) []string {
@@ -561,6 +657,7 @@ type containerInspection struct {
 type dockerConfig struct {
 	Image       string             `json:"Image"`
 	Env         []string           `json:"Env"`
+	Labels      map[string]string  `json:"Labels"`
 	Entrypoint  []string           `json:"Entrypoint"`
 	Cmd         []string           `json:"Cmd"`
 	WorkingDir  string             `json:"WorkingDir"`
@@ -620,6 +717,25 @@ type dockerMount struct {
 	Source      string `json:"Source"`
 	Destination string `json:"Destination"`
 	RW          bool   `json:"RW"`
+}
+
+type composeProjectConfig struct {
+	Services map[string]composeServiceConfig `json:"services"`
+}
+
+type composeServiceConfig struct {
+	Volumes []composeVolumeConfig `json:"volumes"`
+}
+
+type composeVolumeConfig struct {
+	Type   string `json:"type"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type composeMountPlan struct {
+	SourceTarget string
+	BindSources  map[string]string
 }
 
 type dockerNetworkSettings struct {
