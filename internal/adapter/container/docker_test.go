@@ -494,6 +494,46 @@ func TestCopiedVolumeNameは不正文字を安全な文字へ変換する(t *tes
 	}
 }
 
+func TestCreateContainersはVolumeModeCopyで相対PathのCellSourceをMountする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[{"Type":"bind","Source":"/project","Destination":"/app","RW":true},{"Type":"volume","Name":"myapp_vendor","Source":"/var/lib/docker/volumes/myapp_vendor/_data","Destination":"/app/vendor","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {
+					ContainerName:   "paracell-myapp-123-web",
+					SourceContainer: "myapp-web",
+					VolumeMode:      "copy",
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	got := runner.runCalls[len(runner.runCalls)-1]
+	wantMount := "-v /project/.paracell/cells/123/source:/app"
+	if !strings.Contains(got, wantMount) {
+		t.Fatalf("run call = %q, want source mount %q", got, wantMount)
+	}
+}
+
 func TestCleanContainersはコンテナ削除後にセルネットワークを削除する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := DockerCLIAdapter{Runner: runner}
