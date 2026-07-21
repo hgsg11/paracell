@@ -209,9 +209,9 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		source := cell.Source.Path
+		source := a.cellSourcePath(cell)
 		if rel != "." {
-			source = filepath.Join(cell.Source.Path, rel)
+			source = filepath.Join(source, rel)
 		}
 		spec := source + ":" + mount.Destination
 		if !mount.RW {
@@ -252,9 +252,9 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, serv
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
-		source := cell.Source.Path
+		source := a.cellSourcePath(cell)
 		if rel != "." {
-			source = filepath.Join(cell.Source.Path, rel)
+			source = filepath.Join(source, rel)
 		}
 		spec := source + ":" + mount.Destination
 		if !mount.RW {
@@ -273,11 +273,18 @@ func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellCo
 	out := make([]string, 0, len(service.Database.InitFiles))
 	for _, file := range service.Database.InitFiles {
 		clean := filepath.Clean(file)
-		source := filepath.Join(cell.Source.Path, clean)
+		source := filepath.Join(a.cellSourcePath(cell), clean)
 		target := filepath.Join("/docker-entrypoint-initdb.d", filepath.Base(clean))
 		out = append(out, source+":"+target+":ro")
 	}
 	return out
+}
+
+func (a DockerCLIAdapter) cellSourcePath(cell domain.Cell) string {
+	if filepath.IsAbs(cell.Source.Path) {
+		return filepath.Clean(cell.Source.Path)
+	}
+	return filepath.Join(a.Root, cell.Source.Path)
 }
 
 func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, target string) error {
