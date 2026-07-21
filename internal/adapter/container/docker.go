@@ -300,7 +300,7 @@ func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[s
 	for _, file := range configFiles {
 		args = append(args, "-f", file)
 	}
-	args = append(args, "config", "--format", "json")
+	args = append(args, "--profile", "*", "config", "--format", "json")
 	raw, err := a.Runner.Output(ctx, "docker", args...)
 	if err != nil {
 		return nil, fmt.Errorf("resolve compose config for service %q: %w", serviceName, err)

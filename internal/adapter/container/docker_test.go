@@ -570,7 +570,7 @@ func TestCreateContainersはComposeが解決したSourcePathからCellSourceをM
 
 	wantOutputCalls := []string{
 		`docker inspect -f {{json .}} myapp-web`,
-		`docker compose --project-directory /Users/user/workspace -f /Users/user/workspace/docker-compose.yml config --format json`,
+		`docker compose --project-directory /Users/user/workspace -f /Users/user/workspace/docker-compose.yml --profile * config --format json`,
 	}
 	if !reflect.DeepEqual(runner.outputCalls, wantOutputCalls) {
 		t.Fatalf("output calls = %#v, want %#v", runner.outputCalls, wantOutputCalls)
