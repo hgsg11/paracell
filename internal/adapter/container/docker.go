@@ -268,8 +268,11 @@ func (a DockerCLIAdapter) bindMountSpec(cell domain.Cell, mount dockerMount, com
 			return "", false
 		}
 		source = composeSource
-		if mount.Destination == composeMounts.SourceTarget {
+		if rel, ok := composeMounts.CellSourceRelPaths[mount.Destination]; ok {
 			source = a.cellSourcePath(cell)
+			if rel != "." {
+				source = filepath.Join(source, rel)
+			}
 		}
 	} else {
 		rel, err := filepath.Rel(a.Root, mount.Source)
@@ -317,7 +320,10 @@ func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[s
 	if err != nil {
 		return nil, err
 	}
-	plan := &composeMountPlan{BindSources: make(map[string]string)}
+	plan := &composeMountPlan{
+		BindSources:        make(map[string]string),
+		CellSourceRelPaths: make(map[string]string),
+	}
 	for _, volume := range composeService.Volumes {
 		if volume.Type != "bind" {
 			continue
@@ -327,11 +333,15 @@ func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[s
 			return nil, err
 		}
 		plan.BindSources[volume.Target] = source
-		if source == projectRoot {
+		rel, err := filepath.Rel(projectRoot, source)
+		if err != nil {
+			return nil, fmt.Errorf("resolve compose bind source %q relative to project root %q: %w", source, projectRoot, err)
+		}
+		if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			if volume.Target == "" {
-				return nil, fmt.Errorf("compose bind target is empty for project root %q", projectRoot)
+				return nil, fmt.Errorf("compose bind target is empty for project source %q", source)
 			}
-			plan.SourceTarget = volume.Target
+			plan.CellSourceRelPaths[volume.Target] = rel
 		}
 	}
 	return plan, nil
@@ -731,8 +741,8 @@ type composeVolumeConfig struct {
 }
 
 type composeMountPlan struct {
-	SourceTarget string
-	BindSources  map[string]string
+	BindSources        map[string]string
+	CellSourceRelPaths map[string]string
 }
 
 type dockerNetworkSettings struct {

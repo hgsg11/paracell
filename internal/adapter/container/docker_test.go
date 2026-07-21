@@ -589,6 +589,53 @@ func TestCreateContainersはComposeが解決したSourcePathからCellSourceをM
 	}
 }
 
+func TestCreateContainersはComposeがProjectRoot配下をBindする場合にCellSource配下へ置き換える(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Labels":{"com.docker.compose.project.working_dir":"/Users/user/workspace","com.docker.compose.project.config_files":"/Users/user/workspace/docker-compose.yml","com.docker.compose.service":"web"}},"Mounts":[{"Type":"bind","Source":"/host_mnt/Users/user/workspace/project/src","Destination":"/app/src","RW":true},{"Type":"bind","Source":"/Users/user/workspace/shared","Destination":"/shared","RW":false}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"services":{"web":{"volumes":[{"type":"bind","source":"/Users/user/workspace/project/src","target":"/app/src"},{"type":"bind","source":"/Users/user/workspace/shared","target":"/shared"}]}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/Users/user/workspace/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {
+					ContainerName:   "paracell-myapp-123-web",
+					SourceContainer: "myapp-web",
+				},
+			},
+		},
+	}
+	template := domain.Template{
+		Containers: domain.ContainerTemplate{
+			Services: map[string]domain.ContainerServiceTemplate{
+				"web": {SourceContainer: "myapp-web"},
+			},
+		},
+	}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	got := runner.runCalls[len(runner.runCalls)-1]
+	wantSourceMount := "-v /Users/user/workspace/project/.paracell/cells/123/source/src:/app/src"
+	if !strings.Contains(got, wantSourceMount) {
+		t.Fatalf("run call = %q, want source mount %q", got, wantSourceMount)
+	}
+	if strings.Contains(got, "/host_mnt/Users/user/workspace/project/src:/app/src") {
+		t.Fatalf("run call = %q, Docker daemon側のSource pathを使っている", got)
+	}
+	wantExternalMount := "-v /Users/user/workspace/shared:/shared:ro"
+	if !strings.Contains(got, wantExternalMount) {
+		t.Fatalf("run call = %q, want external mount %q", got, wantExternalMount)
+	}
+}
+
 func TestCleanContainersはコンテナ削除後にセルネットワークを削除する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := DockerCLIAdapter{Runner: runner}
