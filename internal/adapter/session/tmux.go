@@ -73,6 +73,12 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "set-titles-string", "#{@paracell-project}"); err != nil {
 		return err
 	}
+	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "status-left", "#{@paracell-status-label} "); err != nil {
+		return err
+	}
+	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "status-left-length", "100"); err != nil {
+		return err
+	}
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "status-right", "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y"); err != nil {
 		return err
 	}
