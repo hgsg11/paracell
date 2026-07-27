@@ -290,6 +290,51 @@ func TestRunはVersionを出力する(t *testing.T) {
 	}
 }
 
+func TestRunはVersionの開始Stdout完了をProjectログへ保存する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+
+	_, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"version"}, dir)
+	})
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(data)
+	for _, want := range []string{
+		"INFO  [paracell] command version started",
+		"INFO  [paracell] stdout: paracell dev",
+		"INFO  [paracell] stdout: commit: none",
+		"INFO  [paracell] stdout: built: unknown",
+		"INFO  [paracell] command version completed",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("log = %q, want %q", log, want)
+		}
+	}
+}
+
+func TestRunはCLI解析エラーもProjectログへ保存する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+
+	err := Run(context.Background(), []string{"unsupported"}, dir)
+	if err == nil {
+		t.Fatal("unsupported commandでエラーが返らなかった")
+	}
+	data, readErr := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(data), `ERROR [paracell] command parse failed: unsupported command "unsupported"`) {
+		t.Fatalf("log = %q", data)
+	}
+}
+
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
@@ -803,7 +848,17 @@ templates: {}
 		if err != nil {
 			return err
 		}
-		_ = factory
+		providerFactory, ok := factory.(provider.Factory)
+		if !ok {
+			t.Fatalf("factory type = %T, want provider.Factory", factory)
+		}
+		commandRunner, ok := providerFactory.Runner.(system.LoggingRunner)
+		if !ok {
+			t.Fatalf("runner type = %T, want system.LoggingRunner", providerFactory.Runner)
+		}
+		if commandRunner.Logger == nil || commandRunner.Stdin != os.Stdin || commandRunner.Stdout != os.Stdout || commandRunner.Stderr != os.Stderr {
+			t.Fatalf("interactive logging runner is not fully connected: %#v", commandRunner)
+		}
 		called = true
 		gotProject = loaded.Project.Name
 		return nil

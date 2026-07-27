@@ -44,6 +44,13 @@ func New(path string) *Logger {
 	}
 }
 
+func NewFile(path string) *Logger {
+	return &Logger{
+		path: path,
+		now:  time.Now,
+	}
+}
+
 func (l *Logger) Entries() <-chan Entry {
 	return l.entries
 }
@@ -69,7 +76,9 @@ func (l *Logger) Write(level Level, source string, content string) error {
 		if err := l.append(entry); err != nil {
 			return err
 		}
-		l.entries <- entry
+		if l.entries != nil {
+			l.entries <- entry
+		}
 	}
 	return nil
 }

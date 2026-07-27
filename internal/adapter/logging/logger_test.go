@@ -129,3 +129,27 @@ func TestLoggerは同じ日時のローテーション済みログを上書き�
 		t.Fatalf("collision-safe rotated log not found: %v", err)
 	}
 }
+
+func TestFileLoggerは画面購読なしで大量ログを保存できる(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logs", "paracell.log")
+	logger := NewFile(path)
+	lines := make([]string, 1500)
+	for i := range lines {
+		lines[i] = "line"
+	}
+
+	if err := logger.Write(LevelInfo, "paracell", strings.Join(lines, "\n")); err != nil {
+		t.Fatalf("Write failed: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(data), "[paracell] line\n"); got != len(lines) {
+		t.Fatalf("saved lines = %d, want %d", got, len(lines))
+	}
+	if logger.Entries() != nil {
+		t.Fatal("file logger should not expose a display stream")
+	}
+}
