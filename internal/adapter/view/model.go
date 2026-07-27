@@ -474,8 +474,8 @@ func paneHeight(m Model) int {
 		// The existing layout reserves its header, input, exit, and status rows.
 		reserved := 5
 		if logsEnabled(m) {
-			// Fill the remaining pane so the log header and rows stay at the bottom edge.
-			reserved = logAreaHeight(m) + 5
+			// Fill the remaining pane while reserving the log rows at the bottom edge.
+			reserved = logAreaHeight(m) + 4
 			return max(1, m.Height-reserved)
 		}
 		return min(contentHeight, max(1, m.Height-reserved))
@@ -662,9 +662,9 @@ func renderLogArea(m Model) string {
 		lines = lines[len(lines)-height:]
 	}
 	for len(lines) < height {
-		lines = append([]string{""}, lines...)
+		lines = append(lines, "")
 	}
-	return "logs\n" + strings.Join(lines, "\n") + "\n"
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func wrapLine(value string, width int) []string {
