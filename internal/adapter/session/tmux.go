@@ -138,9 +138,9 @@ func (a TmuxAdapter) EnterSession(ctx context.Context, cell domain.Cell) error {
 		return err
 	}
 	if os.Getenv("TMUX") != "" {
-		return a.Runner.Run(ctx, "tmux", "switch-client", "-t", cell.Session.Name)
+		return a.Runner.Run(ctx, "tmux", "switch-client", "-E", "-t", cell.Session.Name)
 	}
-	return a.Runner.Run(ctx, "tmux", "attach-session", "-t", cell.Session.Name)
+	return a.Runner.Run(ctx, "tmux", "attach-session", "-E", "-t", cell.Session.Name)
 }
 
 func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.ProjectConfig) error {
@@ -149,9 +149,9 @@ func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.Projec
 		return err
 	}
 	if os.Getenv("TMUX") != "" {
-		return a.Runner.Run(ctx, "tmux", "switch-client", "-t", name)
+		return a.Runner.Run(ctx, "tmux", "switch-client", "-E", "-t", name)
 	}
-	return a.Runner.Run(ctx, "tmux", "attach-session", "-t", name)
+	return a.Runner.Run(ctx, "tmux", "attach-session", "-E", "-t", name)
 }
 
 func (a TmuxAdapter) ExitSession(ctx context.Context) error {
