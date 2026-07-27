@@ -121,7 +121,29 @@ paracell の root / cell tmux session ではマウス操作が有効です。ド
 
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
 
-paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が `<issue>` です。window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側には時刻と日付を表示し、pane タイトルは表示しません。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
+paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が `<issue>` です。window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側は tmux の既存表示を保ちながら時刻と日付を追加します。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
+
+### PC 再起動後に tmux session を復元する
+
+[tmux-resurrect](https://github.com/tmux-plugins/tmux-resurrect) と [tmux-continuum](https://github.com/tmux-plugins/tmux-continuum) を使う場合は、たとえば TPM の設定を次のようにします。continuum は自動保存用の処理を `status-right` に追加するため、plugin 一覧の最後に置いてください。paracell は既存の `status-right` を残したまま時刻と日付を追加します。
+
+```tmux
+set -g @plugin 'tmux-plugins/tmux-resurrect'
+
+# Codex が動いていた pane は、保存時のコマンドをそのまま再実行せず
+# その作業ディレクトリで最後の会話を再開する。
+set -g @resurrect-processes '"~codex->codex resume --last"'
+
+set -g @continuum-restore 'on'
+set -g @plugin 'tmux-plugins/tmux-continuum'
+
+# TPM の初期化は plugin 設定より後に置く。
+run '~/.tmux/plugins/tpm/tpm'
+```
+
+continuum が tmux server 起動時に通常の resurrect 復元を行います。復元後は従来どおり `paracell` から root session に入り、TUI から cell に入ってください。その際、resurrect が保存対象にしない `PARACELL_ROOT` / `PARACELL_CELL`、paracell key table、new-window hook、復元済み全 window の label を再設定します。復元時点ですでに起動済みの shell は後から session 環境変数を継承できないため、`pending` / `ready` は `PARACELL_CELL` がなくても `.paracell/cells/<cell>/source` 以下の作業ディレクトリから cell を判定します。
+
+これらの plugin や設定がない場合、paracell の session 作成・接続動作は従来どおりです。独自の保存・復元コマンドは追加していません。
 
 `C-p` の popup は幅65列、高さ50%で表示され、tmux の `display-popup` 対応版を前提にしています。
 

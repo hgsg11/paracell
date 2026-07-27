@@ -53,6 +53,7 @@ type ContainerProviderFactory interface {
 type SessionPort interface {
 	CreateSession(ctx context.Context, cell domain.Cell) error
 	CleanSession(ctx context.Context, cell domain.Cell) error
+	PrepareSession(ctx context.Context, cell domain.Cell) error
 	EnterSession(ctx context.Context, cell domain.Cell) error
 	EnterRootSession(ctx context.Context, project domain.ProjectConfig) error
 	ExitSession(ctx context.Context) error
