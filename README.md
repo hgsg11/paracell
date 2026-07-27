@@ -121,7 +121,7 @@ paracell の root / cell tmux session ではマウス操作が有効です。ド
 
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
 
-paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側には時刻と日付を表示し、pane タイトルは表示しません。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
+paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が `<issue>` です。window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側には時刻と日付を表示し、pane タイトルは表示しません。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
 
 `C-p` の popup は幅65列、高さ50%で表示され、tmux の `display-popup` 対応版を前提にしています。
 
