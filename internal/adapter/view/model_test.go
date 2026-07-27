@@ -2,14 +2,19 @@ package view
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
@@ -743,6 +748,96 @@ func TestCapturedExecCommandはStderrを端末へ直結せずエラーへ含め�
 	}
 	if !strings.Contains(err.Error(), "noisy stderr") {
 		t.Fatalf("error = %q, want stderr output included", err.Error())
+	}
+}
+
+func TestModelViewはログの長い行と複数行を画面幅で折り返す(t *testing.T) {
+	model := NewModel(nil)
+	model.Width = 20
+	model.Height = 15
+	model.Logs = []logging.Entry{{
+		Time:    time.Date(2026, 7, 27, 12, 0, 0, 0, time.Local),
+		Level:   logging.LevelError,
+		Source:  "paracell",
+		Content: "first line\nsecond line is long",
+	}}
+
+	got := stripANSI(model.View())
+	if lineCount := strings.Count(got, "\n"); lineCount != model.Height {
+		t.Fatalf("line count = %d, want screen height %d: %q", lineCount, model.Height, got)
+	}
+	if !strings.Contains(got, "logs\n") {
+		t.Fatalf("log area missing: %q", got)
+	}
+	for _, line := range strings.Split(got[strings.Index(got, "logs\n"):], "\n") {
+		if lipgloss.Width(line) > model.Width {
+			t.Fatalf("line width = %d, want <= %d: %q", lipgloss.Width(line), model.Width, line)
+		}
+	}
+	if !strings.Contains(got, "second line is long") {
+		t.Fatalf("multiline content missing: %q", got)
+	}
+}
+
+func TestModelViewは折り返し後の最新行へ追従する(t *testing.T) {
+	model := NewModel(nil)
+	model.Width = 65
+	model.Height = 9
+	for i := 1; i <= 6; i++ {
+		model.Logs = append(model.Logs, logging.Entry{
+			Time:    time.Date(2026, 7, 27, 12, 0, i, 0, time.Local),
+			Level:   logging.LevelInfo,
+			Source:  "git",
+			Content: fmt.Sprintf("line-%d", i),
+		})
+	}
+
+	got := model.View()
+	logArea := got[strings.Index(got, "logs\n"):]
+	if strings.Contains(logArea, "line-1") {
+		t.Fatalf("old line should be outside log area: %q", logArea)
+	}
+	if !strings.Contains(logArea, "line-6") {
+		t.Fatalf("latest line missing: %q", logArea)
+	}
+}
+
+func TestModelはParacellエラーを共通ログへ保存する(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".paracell", "logs", "paracell.log")
+	logger := logging.New(path)
+	model := NewModel(nil)
+	model.Logger = logger
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := next.(Model)
+	if got.Error != "no cells available" {
+		t.Fatalf("error = %q", got.Error)
+	}
+	entry := <-logger.Entries()
+	if entry.Level != logging.LevelError || entry.Source != "paracell" || entry.Content != "no cells available" {
+		t.Fatalf("entry = %#v", entry)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "ERROR [paracell] no cells available") {
+		t.Fatalf("log = %q", data)
+	}
+}
+
+func TestLoggedCapturedExecCommandは成功時もstdoutと完了を保存する(t *testing.T) {
+	logger := logging.New(filepath.Join(t.TempDir(), "logs", "paracell.log"))
+	cmd := exec.Command("sh", "-c", "echo done")
+	wrapped := newLoggedCapturedExecCommand(cmd, logger)
+	wrapped.SetStdout(io.Discard)
+
+	if err := wrapped.Run(); err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+	entries := []logging.Entry{<-logger.Entries(), <-logger.Entries(), <-logger.Entries()}
+	if entries[0].Content != "started" || entries[1].Content != "stdout: done" || entries[2].Content != "completed" {
+		t.Fatalf("entries = %#v", entries)
 	}
 }
 

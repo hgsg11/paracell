@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -289,6 +290,51 @@ func TestRunはVersionを出力する(t *testing.T) {
 	}
 }
 
+func TestRunはVersionの開始Stdout完了をProjectログへ保存する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+
+	_, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"version"}, dir)
+	})
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(data)
+	for _, want := range []string{
+		"INFO  [paracell] command version started",
+		"INFO  [paracell] stdout: paracell dev",
+		"INFO  [paracell] stdout: commit: none",
+		"INFO  [paracell] stdout: built: unknown",
+		"INFO  [paracell] command version completed",
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("log = %q, want %q", log, want)
+		}
+	}
+}
+
+func TestRunはCLI解析エラーもProjectログへ保存する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+
+	err := Run(context.Background(), []string{"unsupported"}, dir)
+	if err == nil {
+		t.Fatal("unsupported commandでエラーが返らなかった")
+	}
+	data, readErr := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(data), `ERROR [paracell] command parse failed: unsupported command "unsupported"`) {
+		t.Fatalf("log = %q", data)
+	}
+}
+
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
@@ -497,6 +543,23 @@ templates:
 	}
 }
 
+func TestRunはView開始前のParacellエラーもProjectログへ保存する(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+
+	err := Run(context.Background(), []string{"view"}, dir)
+	if err == nil {
+		t.Fatal("paracell.yamlがないのにエラーが返らなかった")
+	}
+	data, readErr := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	if readErr != nil {
+		t.Fatalf("log was not saved: %v", readErr)
+	}
+	if !strings.Contains(string(data), "ERROR [paracell]") || !strings.Contains(string(data), err.Error()) {
+		t.Fatalf("log = %q, error = %q", data, err)
+	}
+}
+
 func TestRunはViewにTemplate一覧を渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
@@ -677,7 +740,7 @@ templates:
 	}
 }
 
-func TestRunはViewからのForkでQuietRunnerを使う(t *testing.T) {
+func TestRunはViewからのForkでLoggingRunnerを使う(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
@@ -716,22 +779,22 @@ templates:
 		if !ok {
 			t.Fatalf("source factory type = %T, want provider.Factory", source)
 		}
-		if _, ok := sourceFactory.Runner.(system.CaptureRunner); !ok {
-			t.Fatalf("source runner type = %T, want system.CaptureRunner", sourceFactory.Runner)
+		if _, ok := sourceFactory.Runner.(system.LoggingRunner); !ok {
+			t.Fatalf("source runner type = %T, want system.LoggingRunner", sourceFactory.Runner)
 		}
 		containerFactory, ok := container.(provider.Factory)
 		if !ok {
 			t.Fatalf("container factory type = %T, want provider.Factory", container)
 		}
-		if _, ok := containerFactory.Runner.(system.CaptureRunner); !ok {
-			t.Fatalf("container runner type = %T, want system.CaptureRunner", containerFactory.Runner)
+		if _, ok := containerFactory.Runner.(system.LoggingRunner); !ok {
+			t.Fatalf("container runner type = %T, want system.LoggingRunner", containerFactory.Runner)
 		}
 		sessionFactory, ok := session.(provider.Factory)
 		if !ok {
 			t.Fatalf("session factory type = %T, want provider.Factory", session)
 		}
-		if _, ok := sessionFactory.Runner.(system.CaptureRunner); !ok {
-			t.Fatalf("session runner type = %T, want system.CaptureRunner", sessionFactory.Runner)
+		if _, ok := sessionFactory.Runner.(system.LoggingRunner); !ok {
+			t.Fatalf("session runner type = %T, want system.LoggingRunner", sessionFactory.Runner)
 		}
 		return domain.Cell{ID: "cell-1", Name: "123", Template: "default"}, nil
 	}
@@ -785,7 +848,17 @@ templates: {}
 		if err != nil {
 			return err
 		}
-		_ = factory
+		providerFactory, ok := factory.(provider.Factory)
+		if !ok {
+			t.Fatalf("factory type = %T, want provider.Factory", factory)
+		}
+		commandRunner, ok := providerFactory.Runner.(system.LoggingRunner)
+		if !ok {
+			t.Fatalf("runner type = %T, want system.LoggingRunner", providerFactory.Runner)
+		}
+		if commandRunner.Logger == nil || commandRunner.Stdin != os.Stdin || commandRunner.Stdout != os.Stdout || commandRunner.Stderr != os.Stderr {
+			t.Fatalf("interactive logging runner is not fully connected: %#v", commandRunner)
+		}
 		called = true
 		gotProject = loaded.Project.Name
 		return nil

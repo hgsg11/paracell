@@ -5,8 +5,15 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/domain"
 )
+
+type loggerContextKey struct{}
+
+func WithLogger(ctx context.Context, logger *logging.Logger) context.Context {
+	return context.WithValue(ctx, loggerContextKey{}, logger)
+}
 
 type program interface {
 	Run() (tea.Model, error)
@@ -17,8 +24,8 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 }
 
 func Run(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, delete func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (Result, error) {
-	_ = ctx
 	model := NewModel(cells, templates)
+	model.Logger, _ = ctx.Value(loggerContextKey{}).(*logging.Logger)
 	model.CurrentCell = currentCell
 	model.Reload = reload
 	model.Enter = enter
