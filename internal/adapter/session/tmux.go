@@ -142,7 +142,7 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
 		return err
 	}
-	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup", "-w", "65", "-h", "50%"}
+	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup", "-w", "65", "-h", "24", "-y", "0"}
 	if a.Root != "" {
 		args = append(args, "-d", a.Root, "-E", "env", "PARACELL_ROOT="+a.Root, "paracell", "view")
 	} else {

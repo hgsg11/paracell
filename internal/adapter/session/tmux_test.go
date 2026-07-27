@@ -91,7 +91,7 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -E paracell view",
 		"tmux attach-session -E -t paracell-myapp-123",
 	)
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -205,7 +205,7 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -E paracell view",
 		"tmux switch-client -E -t paracell-myapp-123",
 	)
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -276,7 +276,7 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -316,7 +316,7 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -d /project -E env PARACELL_ROOT=/project paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -356,7 +356,7 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -E paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -391,7 +391,7 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -d /project -E env PARACELL_ROOT=/project paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -444,7 +444,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -492,7 +492,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -546,7 +546,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux bind-key -T paracell MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell C-t next-window",
-		"tmux bind-key -T paracell C-p display-popup -w 65 -h 50% -d /project -E env PARACELL_ROOT=/project paracell view",
+		"tmux bind-key -T paracell C-p display-popup -w 65 -h 24 -y 0 -d /project -E env PARACELL_ROOT=/project paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
