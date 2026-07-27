@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paracell Workspace Manager"
+  short_description: "Create and maintain isolated Paracell workspaces"
+  default_prompt: "Use $paracell to create or update an isolated workspace for this task."
