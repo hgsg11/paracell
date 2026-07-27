@@ -751,7 +751,7 @@ func TestCapturedExecCommandはStderrを端末へ直結せずエラーへ含め�
 	}
 }
 
-func TestModelViewはログの長い行と複数行を画面幅で折り返す(t *testing.T) {
+func TestModelViewはヘッダーなしでログを上詰めし長い行と複数行を画面幅で折り返す(t *testing.T) {
 	model := NewModel(nil)
 	model.Width = 20
 	model.Height = 15
@@ -766,10 +766,16 @@ func TestModelViewはログの長い行と複数行を画面幅で折り返す(t
 	if lineCount := strings.Count(got, "\n"); lineCount != model.Height {
 		t.Fatalf("line count = %d, want screen height %d: %q", lineCount, model.Height, got)
 	}
-	if !strings.Contains(got, "logs\n") {
-		t.Fatalf("log area missing: %q", got)
+	if strings.Contains(got, "logs\n") {
+		t.Fatalf("log header should not be rendered: %q", got)
 	}
-	for _, line := range strings.Split(got[strings.Index(got, "logs\n"):], "\n") {
+	exitLineStart := strings.LastIndex(got, "\ngo root") + 1
+	logAreaStart := exitLineStart + strings.Index(got[exitLineStart:], "\n") + 1
+	logArea := got[logAreaStart:]
+	if !strings.HasPrefix(logArea, "2026-07-27 12:00:00.") {
+		t.Fatalf("log area should start with the first log line: %q", logArea)
+	}
+	for _, line := range strings.Split(logArea, "\n") {
 		if lipgloss.Width(line) > model.Width {
 			t.Fatalf("line width = %d, want <= %d: %q", lipgloss.Width(line), model.Width, line)
 		}
@@ -793,7 +799,9 @@ func TestModelViewは折り返し後の最新行へ追従する(t *testing.T) {
 	}
 
 	got := model.View()
-	logArea := got[strings.Index(got, "logs\n"):]
+	exitLineStart := strings.LastIndex(got, "\ngo root") + 1
+	logAreaStart := exitLineStart + strings.Index(got[exitLineStart:], "\n") + 1
+	logArea := got[logAreaStart:]
 	if strings.Contains(logArea, "line-1") {
 		t.Fatalf("old line should be outside log area: %q", logArea)
 	}
