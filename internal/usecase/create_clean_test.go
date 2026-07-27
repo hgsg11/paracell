@@ -603,6 +603,12 @@ func (f *fakePorts) EnterSession(ctx context.Context, cell domain.Cell) error {
 	return nil
 }
 
+func (f *fakePorts) PrepareSession(ctx context.Context, cell domain.Cell) error {
+	_ = ctx
+	_ = cell
+	return nil
+}
+
 func (f *fakePorts) EnterRootSession(ctx context.Context, project domain.ProjectConfig) error {
 	_ = ctx
 	f.calls = append(f.calls, "session:enter-root:"+project.Name)
