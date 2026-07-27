@@ -14,6 +14,7 @@ import (
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/files"
 	"github.com/hgsg11/paracell/internal/adapter/id"
+	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/adapter/output"
 	"github.com/hgsg11/paracell/internal/adapter/provider"
 	"github.com/hgsg11/paracell/internal/adapter/state"
@@ -258,37 +259,41 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	case CommandExit:
 		return runExit(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
 	case CommandView:
+		viewLogger := logging.New(filepath.Join(workdir, ".paracell", "logs", "paracell.log"))
+		viewRunner := system.LoggingRunner{Dir: workdir, Logger: viewLogger}
+		interactiveViewRunner := system.LoggingRunner{Dir: workdir, Logger: viewLogger, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+		viewContext := viewadapter.WithLogger(ctx, viewLogger)
 		loaded, err := configAdapter.Load(ctx, nil)
 		if err != nil {
-			return err
+			return logViewError(viewLogger, err)
 		}
 		uc := usecase.ViewCellsUseCase{State: stateAdapter}
 		cells, err := uc.Execute(ctx)
 		if err != nil {
-			return err
+			return logViewError(viewLogger, err)
 		}
-		_, err = runView(ctx, cells, templateNames(loaded.Templates), os.Getenv("PARACELL_CELL"), func() ([]domain.Cell, error) {
+		_, err = runView(viewContext, cells, templateNames(loaded.Templates), os.Getenv("PARACELL_CELL"), func() ([]domain.Cell, error) {
 			return stateAdapter.LoadCells(ctx)
 		}, func(cell domain.Cell) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, configAdapter, cell)
 			if err != nil {
 				return viewadapter.EnterFailureCmd(cell, err)
 			}
-			return viewadapter.EnterProcessCmd(cell, cmd)
+			return viewadapter.EnterLoggedProcessCmd(cell, cmd, viewLogger)
 		}, func() error {
-			return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir})
+			return runEnterRoot(ctx, configAdapter, provider.Factory{Runner: interactiveViewRunner, Root: workdir})
 		}, func(cell domain.Cell) error {
-			return runClean(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, cell)
+			return runClean(ctx, configAdapter, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, stateAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
 			return runMarkDone(ctx, stateAdapter, cell)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
-				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, provider.Factory{Runner: quietRunner, Root: workdir}, stateAdapter, issue, template, "", workdir)
+				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, stateAdapter, issue, template, "", workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})
 		if err != nil {
-			return err
+			return logViewError(viewLogger, err)
 		}
 		return nil
 	case CommandFork:
@@ -360,4 +365,11 @@ func templateNames(templates map[string]domain.Template) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func logViewError(logger *logging.Logger, err error) error {
+	if err == nil {
+		return nil
+	}
+	return errors.Join(err, logger.Write(logging.LevelError, "paracell", err.Error()))
 }

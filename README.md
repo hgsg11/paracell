@@ -109,6 +109,10 @@ templates:
 - issue 番号入力後 `enter`: fork
 - `q`: 閉じる
 
+TUI から実行した Git、Docker、tmux などの標準出力・標準エラーと Paracell 自身のエラーは、画面下部の共通ログ領域へリアルタイム表示されます。長い行と複数行のエラーは画面幅で折り返され、表示は常に最新行へ追従します。過去ログは project ごとの `.paracell/logs/paracell.log` に `時刻 レベル [処理元] 内容` のプレーンテキスト形式で保存されます。
+
+`paracell.log` は 5MB に達すると `paracell-日時.log` へローテーションします。ローテーション済みログの自動削除や世代数制限はありません。`.paracell/` は Git 管理外です。
+
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
 `paracell ready` は `Ready: {{.name}}` を `tmux display-message` で表示します。通知は `providers.notifications: tmux` のときだけ有効です。

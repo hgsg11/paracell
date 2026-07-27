@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
@@ -54,6 +57,7 @@ type Model struct {
 	ForkTemplate     string
 	IssueInput       string
 	Error            string
+	Logs             []logging.Entry
 	Width            int
 	Height           int
 	Result           Result
@@ -62,6 +66,7 @@ type Model struct {
 	Delete           func(domain.Cell) error
 	MarkDone         func(domain.Cell) (domain.Cell, error)
 	Reload           func() ([]domain.Cell, error)
+	Logger           *logging.Logger
 }
 
 func NewModel(cells []domain.Cell, templates ...[]string) Model {
@@ -84,7 +89,7 @@ const maxCellPaneWidth = 47
 const maxLayoutWidth = maxTemplatePaneWidth + 3 + maxCellPaneWidth
 
 func (m Model) Init() tea.Cmd {
-	return m.refreshCmd()
+	return tea.Batch(m.refreshCmd(), m.waitLogCmd())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -101,7 +106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case tea.KeyEnter:
 				if strings.TrimSpace(m.IssueInput) == "" {
-					m.Error = "issue is required"
+					m.setError("issue is required")
 					return m, nil
 				}
 				if m.Fork == nil {
@@ -131,11 +136,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.AwaitingDelete = false
 			if key == "d" {
 				if m.isExitSelected() {
-					m.Error = "go root cannot be cleaned"
+					m.setError("go root cannot be cleaned")
 					return m, nil
 				}
 				if len(m.Cells) == 0 {
-					m.Error = "no cells available"
+					m.setError("no cells available")
 					return m, nil
 				}
 				cell := m.Cells[m.Selected]
@@ -203,14 +208,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			if m.Focus == FocusExit {
-				m.Error = "go root cannot be marked done"
+				m.setError("go root cannot be marked done")
 				return m, nil
 			}
 			if m.Focus != FocusCells {
 				return m, nil
 			}
 			if len(m.Cells) == 0 {
-				m.Error = "no cells available"
+				m.setError("no cells available")
 				return m, nil
 			}
 			cell := m.Cells[m.Selected]
@@ -243,7 +248,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 	case enterResultMsg:
 		if msg.err != nil {
-			m.Error = msg.err.Error()
+			m.setError(msg.err.Error())
 			return m, nil
 		}
 		m.Error = ""
@@ -252,7 +257,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case deleteResultMsg:
 		if msg.err != nil {
-			m.Error = msg.err.Error()
+			m.setError(msg.err.Error())
 			return m, nil
 		}
 		m.Error = ""
@@ -277,7 +282,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case markDoneResultMsg:
 		if msg.err != nil {
-			m.Error = msg.err.Error()
+			m.setError(msg.err.Error())
 			return m, nil
 		}
 		m.Error = ""
@@ -298,14 +303,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case forkResultMsg:
 		if msg.err != nil {
-			m.Error = msg.err.Error()
+			m.setError(msg.err.Error())
 			return m, nil
 		}
 		m.Error = ""
 		if m.Reload != nil {
 			cells, err := m.Reload()
 			if err != nil {
-				m.Error = err.Error()
+				m.setError(err.Error())
 				return m, nil
 			}
 			m.Cells = cells
@@ -322,7 +327,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cells, err := m.Reload()
 		if err != nil {
-			m.Error = err.Error()
+			m.setError(err.Error())
 			return m, nil
 		}
 		selectedID := ""
@@ -342,6 +347,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Selected = len(m.Cells)
 		}
 		return m, m.refreshCmd()
+	case logEntryMsg:
+		m.Logs = append(m.Logs, logging.Entry(msg))
+		const maxInMemoryLogEntries = 2000
+		if len(m.Logs) > maxInMemoryLogEntries {
+			m.Logs = append([]logging.Entry(nil), m.Logs[len(m.Logs)-maxInMemoryLogEntries:]...)
+		}
+		return m, m.waitLogCmd()
 	}
 	return m, nil
 }
@@ -371,7 +383,11 @@ func (m Model) View() string {
 	b.WriteString(renderIssueInputLine(m))
 	b.WriteByte('\n')
 	b.WriteString(renderExitLine(m))
-	b.WriteString(statusLine(m))
+	if logsEnabled(m) {
+		b.WriteString(renderLogArea(m))
+	} else {
+		b.WriteString(statusLine(m))
+	}
 	return b.String()
 }
 
@@ -455,8 +471,14 @@ func paneHeight(m Model) int {
 	templateRows, cellRows := naturalPaneHeights(m)
 	contentHeight := max(templateRows, cellRows)
 	if m.Height > 0 {
-		// header, its spacer, issue input, go root, and status each occupy one terminal row.
-		return min(contentHeight, max(1, m.Height-5))
+		// The existing layout reserves its header, input, exit, and status rows.
+		reserved := 5
+		if logsEnabled(m) {
+			// Fill the remaining pane so the log header and rows stay at the bottom edge.
+			reserved = logAreaHeight(m) + 5
+			return max(1, m.Height-reserved)
+		}
+		return min(contentHeight, max(1, m.Height-reserved))
 	}
 	return contentHeight
 }
@@ -613,6 +635,75 @@ func statusLine(m Model) string {
 	return errorLine(m.Error, widthOrDefault(m.Width))
 }
 
+func logsEnabled(m Model) bool {
+	return m.Logger != nil || len(m.Logs) > 0
+}
+
+func logAreaHeight(m Model) int {
+	if m.Height <= 0 {
+		return 4
+	}
+	return max(3, m.Height/3)
+}
+
+func renderLogArea(m Model) string {
+	width := m.Width
+	if width <= 0 {
+		width = maxLayoutWidth
+	}
+	lines := make([]string, 0, len(m.Logs))
+	for _, entry := range m.Logs {
+		for _, line := range strings.Split(entry.String(), "\n") {
+			lines = append(lines, wrapLine(line, width)...)
+		}
+	}
+	height := logAreaHeight(m)
+	if len(lines) > height {
+		lines = lines[len(lines)-height:]
+	}
+	for len(lines) < height {
+		lines = append([]string{""}, lines...)
+	}
+	return "logs\n" + strings.Join(lines, "\n") + "\n"
+}
+
+func wrapLine(value string, width int) []string {
+	if value == "" {
+		return []string{""}
+	}
+	lines := make([]string, 0, 1)
+	var line strings.Builder
+	lineWidth := 0
+	for _, r := range value {
+		runeWidth := lipgloss.Width(string(r))
+		if line.Len() > 0 && lineWidth+runeWidth > width {
+			lines = append(lines, line.String())
+			line.Reset()
+			lineWidth = 0
+		}
+		line.WriteRune(r)
+		lineWidth += runeWidth
+	}
+	lines = append(lines, line.String())
+	return lines
+}
+
+func (m *Model) setError(message string) {
+	m.Error = message
+	if m.Logger == nil {
+		return
+	}
+	if err := m.Logger.Write(logging.LevelError, "paracell", message); err != nil {
+		m.Error = message + "; log error: " + err.Error()
+		m.Logs = append(m.Logs, logging.Entry{
+			Time:    time.Now(),
+			Level:   logging.LevelError,
+			Source:  "paracell",
+			Content: m.Error,
+		})
+	}
+}
+
 func widthOrDefault(width int) int {
 	if width <= 0 || width > maxLayoutWidth {
 		return maxLayoutWidth
@@ -647,6 +738,15 @@ func (m Model) refreshCmd() tea.Cmd {
 	})
 }
 
+func (m Model) waitLogCmd() tea.Cmd {
+	if m.Logger == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		return logEntryMsg(<-m.Logger.Entries())
+	}
+}
+
 type enterResultMsg struct {
 	cell domain.Cell
 	err  error
@@ -658,9 +758,19 @@ func EnterProcessCmd(cell domain.Cell, cmd *exec.Cmd) tea.Cmd {
 	})
 }
 
+func EnterLoggedProcessCmd(cell domain.Cell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
+	return tea.Exec(newLoggedCapturedExecCommand(cmd, logger), func(err error) tea.Msg {
+		return enterResultMsg{cell: cell, err: err}
+	})
+}
+
 type capturedExecCommand struct {
 	cmd    *exec.Cmd
 	stderr bytes.Buffer
+	logger *logging.Logger
+	source string
+	mu     sync.Mutex
+	logErr error
 }
 
 func newCapturedExecCommand(cmd *exec.Cmd) *capturedExecCommand {
@@ -668,6 +778,24 @@ func newCapturedExecCommand(cmd *exec.Cmd) *capturedExecCommand {
 	if wrapped.cmd.Stderr == nil {
 		wrapped.cmd.Stderr = &wrapped.stderr
 	}
+	return wrapped
+}
+
+func newLoggedCapturedExecCommand(cmd *exec.Cmd, logger *logging.Logger) *capturedExecCommand {
+	wrapped := &capturedExecCommand{
+		cmd:    cmd,
+		logger: logger,
+		source: filepath.Base(cmd.Path),
+	}
+	wrapped.cmd.Stderr = io.MultiWriter(&wrapped.stderr, logChunkWriter{
+		level:  logging.LevelError,
+		source: wrapped.source,
+		stream: "stderr",
+		logger: logger,
+		onError: func(err error) {
+			wrapped.addLogError(err)
+		},
+	})
 	return wrapped
 }
 
@@ -679,7 +807,19 @@ func (c *capturedExecCommand) SetStdin(r io.Reader) {
 
 func (c *capturedExecCommand) SetStdout(w io.Writer) {
 	if c.cmd.Stdout == nil {
-		c.cmd.Stdout = w
+		if c.logger == nil {
+			c.cmd.Stdout = w
+			return
+		}
+		c.cmd.Stdout = io.MultiWriter(w, logChunkWriter{
+			level:  logging.LevelInfo,
+			source: c.source,
+			stream: "stdout",
+			logger: c.logger,
+			onError: func(err error) {
+				c.addLogError(err)
+			},
+		})
 	}
 }
 
@@ -690,15 +830,63 @@ func (c *capturedExecCommand) SetStderr(io.Writer) {
 }
 
 func (c *capturedExecCommand) Run() error {
+	if c.logger != nil {
+		if err := c.logger.Write(logging.LevelInfo, c.source, "started"); err != nil {
+			return err
+		}
+	}
 	err := c.cmd.Run()
 	if err == nil {
-		return nil
+		if c.logger != nil {
+			c.addLogError(c.logger.Write(logging.LevelInfo, c.source, "completed"))
+		}
+		return c.loggingError()
 	}
 	output := strings.TrimSpace(c.stderr.String())
-	if output == "" {
-		return err
+	if c.logger != nil {
+		message := "failed: " + err.Error()
+		if output != "" {
+			message += ": " + output
+		}
+		c.addLogError(c.logger.Write(logging.LevelError, c.source, message))
 	}
-	return fmt.Errorf("%w: %s", err, output)
+	if output == "" {
+		return errors.Join(err, c.loggingError())
+	}
+	return errors.Join(fmt.Errorf("%w: %s", err, output), c.loggingError())
+}
+
+func (c *capturedExecCommand) addLogError(err error) {
+	if err == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.logErr = errors.Join(c.logErr, err)
+}
+
+func (c *capturedExecCommand) loggingError() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.logErr
+}
+
+type logChunkWriter struct {
+	level   logging.Level
+	source  string
+	stream  string
+	logger  *logging.Logger
+	onError func(error)
+}
+
+func (w logChunkWriter) Write(data []byte) (int, error) {
+	content := strings.TrimSuffix(strings.TrimSuffix(string(data), "\n"), "\r")
+	for _, line := range strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n") {
+		if err := w.logger.Write(w.level, w.source, w.stream+": "+strings.TrimSuffix(line, "\r")); err != nil {
+			w.onError(err)
+		}
+	}
+	return len(data), nil
 }
 
 func EnterFailureCmd(cell domain.Cell, err error) tea.Cmd {
@@ -724,3 +912,5 @@ type markDoneResultMsg struct {
 }
 
 type refreshMsg struct{}
+
+type logEntryMsg logging.Entry
