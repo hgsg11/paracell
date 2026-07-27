@@ -36,9 +36,9 @@ nix run github:hgsg11/paracell
 nix profile install github:hgsg11/paracell
 ```
 
-Nix package には実行時依存として `git` と `tmux` が含まれます。
+Nix package には実行時依存として `git` と `tmux` が含まれます。Nix build の version は commit 日時と短縮 SHA から生成されます。
 
-リリース前に `./scripts/set-release-version.sh vX.Y.Z` を実行して、`VERSION` の変更をリリース対象へ含めます。リリースワークフローはタグと `VERSION` が一致しない場合に停止します。
+リリースは最新の `main` に `vX.Y.Z` tag を付けて push します。GoReleaser は tag から release version を生成します。
 
 または:
 
