@@ -56,7 +56,7 @@ var (
 		uc := usecase.SetCellStatusUseCase{State: state, Notifier: notifier}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
-	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, cell domain.Cell) (*exec.Cmd, error) {
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) (*exec.Cmd, error) {
 		loaded, err := cfg.Load(ctx, nil)
 		if err != nil {
 			return nil, err
@@ -64,10 +64,17 @@ var (
 		if loaded.Providers.Session != "tmux" {
 			return nil, fmt.Errorf("unsupported providers.session %q", loaded.Providers.Session)
 		}
-		if os.Getenv("TMUX") != "" {
-			return exec.CommandContext(ctx, "tmux", "switch-client", "-t", cell.Session.Name), nil
+		session, err := factory.Session(loaded.Providers)
+		if err != nil {
+			return nil, err
 		}
-		return exec.CommandContext(ctx, "tmux", "attach-session", "-t", cell.Session.Name), nil
+		if err := session.PrepareSession(ctx, cell); err != nil {
+			return nil, err
+		}
+		if os.Getenv("TMUX") != "" {
+			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", cell.Session.Name), nil
+		}
+		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.Session.Name), nil
 	}
 	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
@@ -207,6 +214,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 	if err != nil {
 		return err
 	}
+	invocationWorkdir := workdir
 	workdir = projectRootForWorkdir(workdir)
 	runner := system.OSCommandRunner{Dir: workdir}
 	quietRunner := system.CaptureRunner{Dir: workdir}
@@ -233,14 +241,14 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		_, err = os.Stdout.WriteString(output.FormatCellList(cells))
 		return err
 	case CommandPending:
-		cellName, err := currentCellFromEnv()
+		cellName, err := currentCell(invocationWorkdir)
 		if err != nil {
 			return err
 		}
 		_, err = runSetStatus(ctx, stateAdapter, nil, cellName, domain.Pending)
 		return err
 	case CommandReady:
-		cellName, err := currentCellFromEnv()
+		cellName, err := currentCell(invocationWorkdir)
 		if err != nil {
 			return err
 		}
@@ -275,7 +283,7 @@ func Run(ctx context.Context, args []string, workdir string) error {
 		_, err = runView(viewContext, cells, templateNames(loaded.Templates), os.Getenv("PARACELL_CELL"), func() ([]domain.Cell, error) {
 			return stateAdapter.LoadCells(ctx)
 		}, func(cell domain.Cell) tea.Cmd {
-			cmd, err := runEnterCmd(ctx, configAdapter, cell)
+			cmd, err := runEnterCmd(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, cell)
 			if err != nil {
 				return viewadapter.EnterFailureCmd(cell, err)
 			}
@@ -327,12 +335,24 @@ func formatVersion() string {
 	return fmt.Sprintf("%s %s\ncommit: %s\nbuilt: %s\n", AppName, Version, Commit, BuildDate)
 }
 
-func currentCellFromEnv() (string, error) {
+func currentCell(workdir string) (string, error) {
 	cell := os.Getenv("PARACELL_CELL")
-	if cell == "" {
-		return "", errors.New("PARACELL_CELL is required")
+	if cell != "" {
+		return cell, nil
 	}
-	return cell, nil
+	for dir := filepath.Clean(workdir); ; dir = filepath.Dir(dir) {
+		if filepath.Base(dir) == "source" {
+			cellDir := filepath.Dir(dir)
+			cellsDir := filepath.Dir(cellDir)
+			if filepath.Base(cellsDir) == "cells" && filepath.Base(filepath.Dir(cellsDir)) == ".paracell" {
+				return filepath.Base(cellDir), nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", errors.New("PARACELL_CELL is required")
+		}
+	}
 }
 
 func projectRootForWorkdir(workdir string) string {

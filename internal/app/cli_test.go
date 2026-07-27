@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -17,6 +18,57 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 	"github.com/hgsg11/paracell/internal/usecase"
 )
+
+type prepareSessionFactory struct {
+	session *prepareSession
+}
+
+func (f prepareSessionFactory) Session(domain.ProviderConfig) (usecase.SessionPort, error) {
+	return f.session, nil
+}
+
+type prepareSession struct {
+	prepared domain.Cell
+}
+
+func (*prepareSession) CreateSession(context.Context, domain.Cell) error { return nil }
+func (*prepareSession) CleanSession(context.Context, domain.Cell) error  { return nil }
+func (s *prepareSession) PrepareSession(_ context.Context, cell domain.Cell) error {
+	s.prepared = cell
+	return nil
+}
+func (*prepareSession) EnterSession(context.Context, domain.Cell) error { return nil }
+func (*prepareSession) EnterRootSession(context.Context, domain.ProjectConfig) error {
+	return nil
+}
+func (*prepareSession) ExitSession(context.Context) error { return nil }
+
+type staticConfigPort struct {
+	config domain.Config
+}
+
+func (p staticConfigPort) Load(context.Context, *domain.TemplateVars) (domain.Config, error) {
+	return p.config, nil
+}
+
+func TestRunEnterCmdは復元設定後にSession環境を保持して切り替える(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
+	cell := domain.Cell{Name: "123", Session: domain.Session{Name: "paracell-myapp-123"}}
+	session := &prepareSession{}
+	cmd, err := runEnterCmd(context.Background(), staticConfigPort{
+		config: domain.Config{Providers: domain.ProviderConfig{Session: "tmux"}},
+	}, prepareSessionFactory{session: session}, cell)
+	if err != nil {
+		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
+	}
+	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.Session.Name}
+	if !reflect.DeepEqual(cmd.Args, wantArgs) {
+		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
+	}
+	if !reflect.DeepEqual(session.prepared, cell) {
+		t.Fatalf("prepared cell = %#v, want %#v", session.prepared, cell)
+	}
+}
 
 func TestForkコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"fork", "123", "--template", "webapp"})
@@ -904,6 +956,8 @@ templates: {}
 	defer func() { runView = originalView }()
 	originalEnter := runEnter
 	defer func() { runEnter = originalEnter }()
+	originalEnterCmd := runEnterCmd
+	defer func() { runEnterCmd = originalEnterCmd }()
 	originalClean := runClean
 	defer func() { runClean = originalClean }()
 
@@ -934,6 +988,13 @@ templates: {}
 		_ = factory
 		entered = cell
 		return nil
+	}
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) (*exec.Cmd, error) {
+		_ = ctx
+		_ = cfg
+		_ = factory
+		entered = cell
+		return exec.Command("true"), nil
 	}
 	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
 		_ = ctx
@@ -1247,6 +1308,22 @@ func TestRunはPendingでPARACELL_CELLがないと失敗する(t *testing.T) {
 	}
 	if err.Error() != "PARACELL_CELL is required" {
 		t.Fatalf("error = %q, want %q", err.Error(), "PARACELL_CELL is required")
+	}
+}
+
+func TestCurrentCellはResurrect後の作業DirectoryからCell名を復元する(t *testing.T) {
+	t.Setenv("PARACELL_CELL", "")
+	workdir := filepath.Join(t.TempDir(), ".paracell", "cells", "123", "source", "internal")
+	if err := os.MkdirAll(workdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := currentCell(workdir)
+	if err != nil {
+		t.Fatalf("currentCellでエラーが返った: %v", err)
+	}
+	if got != "123" {
+		t.Fatalf("cell = %q, want %q", got, "123")
 	}
 }
 

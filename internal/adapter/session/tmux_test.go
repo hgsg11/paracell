@@ -5,19 +5,30 @@ import (
 	"errors"
 	"os/exec"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type fakeRunner struct {
-	calls  []string
-	errors map[string]error
+	calls            []string
+	environmentCalls []string
+	errors           map[string]error
+	outputs          map[string]string
+	outputErrors     map[string]error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
 	_ = ctx
 	call := name + " " + joinArgs(args)
+	if name == "tmux" && len(args) > 0 && args[0] == "set-environment" {
+		r.environmentCalls = append(r.environmentCalls, call)
+		if r.errors != nil && r.errors[call] != nil {
+			return r.errors[call]
+		}
+		return nil
+	}
 	r.calls = append(r.calls, call)
 	if r.errors != nil && r.errors[call] != nil {
 		return r.errors[call]
@@ -27,9 +38,8 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 
 func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
 	_ = ctx
-	_ = name
-	_ = args
-	return "", nil
+	call := name + " " + joinArgs(args)
+	return r.outputs[call], r.outputErrors[call]
 }
 
 func joinArgs(args []string) string {
@@ -87,6 +97,94 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
+}
+
+func TestEnterSessionはResurrect後のSession環境を再設定する(t *testing.T) {
+	t.Setenv("TMUX", "")
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{Name: "123", Session: domain.Session{Name: "paracell-myapp-123"}}
+
+	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+		t.Fatalf("EnterSessionでエラーが返った: %v", err)
+	}
+	want := []string{
+		"tmux set-environment -t paracell-myapp-123 PARACELL_CELL 123",
+		"tmux set-environment -t paracell-myapp-123 PARACELL_ROOT /project",
+	}
+	if !reflect.DeepEqual(runner.environmentCalls, want) {
+		t.Fatalf("environment calls = %#v, want %#v", runner.environmentCalls, want)
+	}
+}
+
+func TestConfigureSessionはContinuumのStatusRightを保つ(t *testing.T) {
+	const target = "paracell-myapp-123"
+	const continuum = "#(/plugins/tmux-continuum/scripts/continuum_save.sh)#[fg=green] online"
+	runner := &fakeRunner{outputs: map[string]string{
+		"tmux show-option -v -t " + target + " status-right": continuum + "\n",
+	}}
+	adapter := TmuxAdapter{Runner: runner}
+
+	if err := adapter.configureSession(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
+		t.Fatalf("configureSessionでエラーが返った: %v", err)
+	}
+	want := "tmux set-option -t " + target + " status-right " + continuum + " " + paracellClockFormat
+	if !containsCall(runner.calls, want) {
+		t.Fatalf("status-right call not found: calls = %#v, want %q", runner.calls, want)
+	}
+}
+
+func TestConfigureSessionは時刻表示を重複追加しない(t *testing.T) {
+	const target = "paracell-myapp-123"
+	existing := "#(/plugins/tmux-continuum/scripts/continuum_save.sh) " + paracellClockFormat
+	runner := &fakeRunner{outputs: map[string]string{
+		"tmux show-option -v -t " + target + " status-right": existing + "\n",
+	}}
+	adapter := TmuxAdapter{Runner: runner}
+
+	if err := adapter.configureSession(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
+		t.Fatalf("configureSessionでエラーが返った: %v", err)
+	}
+	for _, call := range runner.calls {
+		if strings.Contains(call, " status-right ") {
+			t.Fatalf("status-rightを再設定した: %q", call)
+		}
+	}
+}
+
+func TestEnterSessionはResurrectで復元された全Windowを再設定する(t *testing.T) {
+	t.Setenv("TMUX", "")
+	const target = "paracell-myapp-123"
+	runner := &fakeRunner{outputs: map[string]string{
+		"tmux list-windows -t " + target + " -F #{window_id}": "%9\n%10\n",
+	}}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{Name: "123", Session: domain.Session{Name: target}}
+
+	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+		t.Fatalf("EnterSessionでエラーが返った: %v", err)
+	}
+	for _, windowID := range []string{"%9", "%10"} {
+		want := "tmux set-window-option -t " + windowID + " window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }"
+		if !containsCall(runner.calls, want) {
+			t.Fatalf("復元windowのlabel再設定がない: calls = %#v, want %q", runner.calls, want)
+		}
+	}
+	if !containsCall(runner.calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'") {
+		t.Fatalf("new-window hookが再設定されていない: calls = %#v", runner.calls)
+	}
+	if !containsCall(runner.calls, "tmux set-option -t "+target+" key-table paracell") {
+		t.Fatalf("key tableが再設定されていない: calls = %#v", runner.calls)
+	}
+}
+
+func containsCall(calls []string, want string) bool {
+	for _, call := range calls {
+		if call == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
