@@ -51,13 +51,19 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		return domain.Config{}, err
 	}
 	templates := make(map[string]domain.Template, len(raw.Templates))
+	templateVars := vars
+	if vars != nil {
+		copied := *vars
+		copied.Project = raw.Project.Name
+		templateVars = &copied
+	}
 	for name, rawTemplate := range raw.Templates {
 		rendered, err := instantiateTemplate(domain.Template{
 			Repository: rawTemplate.Repository,
 			Files:      append([]string(nil), rawTemplate.Files...),
 			Containers: rawTemplate.Containers,
 			Session:    rawTemplate.Session,
-		}, vars)
+		}, templateVars)
 		if err != nil {
 			return domain.Config{}, err
 		}
@@ -156,6 +162,21 @@ func instantiateTemplate(tpl domain.Template, vars *domain.TemplateVars) (domain
 		return tpl, nil
 	}
 	rendered := tpl
+	rendered.Containers.Services = make(map[string]domain.ContainerServiceTemplate, len(tpl.Containers.Services))
+	for role, service := range tpl.Containers.Services {
+		renderedService := service
+		if service.Environment != nil {
+			renderedService.Environment = make(map[string]string, len(service.Environment))
+			for name, value := range service.Environment {
+				renderedValue, err := renderEnvironmentTemplate(value, vars)
+				if err != nil {
+					return domain.Template{}, fmt.Errorf("render environment %q for service %q: %w", name, role, err)
+				}
+				renderedService.Environment[name] = renderedValue
+			}
+		}
+		rendered.Containers.Services[role] = renderedService
+	}
 	rendered.Session.Windows = make([]domain.SessionWindowTemplate, 0, len(tpl.Session.Windows))
 	for _, window := range tpl.Session.Windows {
 		command, err := renderTemplate(window.Command, vars)
@@ -171,16 +192,28 @@ func instantiateTemplate(tpl domain.Template, vars *domain.TemplateVars) (domain
 }
 
 func renderTemplate(value string, vars *domain.TemplateVars) (string, error) {
+	return renderValue(value, map[string]string{
+		"issue":   vars.Issue,
+		"name":    vars.Name,
+		"Command": vars.Command,
+	})
+}
+
+func renderEnvironmentTemplate(value string, vars *domain.TemplateVars) (string, error) {
+	return renderValue(value, map[string]string{
+		"issue":   vars.Issue,
+		"name":    vars.Name,
+		"project": vars.Project,
+	})
+}
+
+func renderValue(value string, vars map[string]string) (string, error) {
 	tmpl, err := template.New("value").Option("missingkey=error").Parse(value)
 	if err != nil {
 		return "", err
 	}
 	var b bytes.Buffer
-	if err := tmpl.Execute(&b, map[string]string{
-		"issue":   vars.Issue,
-		"name":    vars.Name,
-		"Command": vars.Command,
-	}); err != nil {
+	if err := tmpl.Execute(&b, vars); err != nil {
 		return "", err
 	}
 	return b.String(), nil

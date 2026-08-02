@@ -75,6 +75,30 @@ func TestForkCellは同じIssueがある場合に失敗する(t *testing.T) {
 	}
 }
 
+func TestForkCellはEnvironmentTemplateError時にResourceを作成しない(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	ports.configErr = errors.New(`render environment "APP_ENV" for service "web": unknown variable`)
+	uc := ForkCellUseCase{
+		Config:           ports,
+		State:            ports,
+		CellFactory:      ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+		IDs:              fixedIDGenerator{id: "cell-1"},
+	}
+
+	_, err := uc.Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
+	if err == nil {
+		t.Fatal("environment template errorが返らなかった")
+	}
+	if len(ports.calls) != 0 {
+		t.Fatalf("template validation後にresourceが作成された: %#v", ports.calls)
+	}
+}
+
 func TestCleanCellはCellを削除してStateから消す(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
@@ -434,6 +458,7 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 
 type fakePorts struct {
 	config             domain.Config
+	configErr          error
 	cells              []domain.Cell
 	calls              []string
 	cleanSourceErr     error
@@ -474,6 +499,9 @@ func newFakePorts() *fakePorts {
 
 func (f *fakePorts) Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error) {
 	_ = ctx
+	if f.configErr != nil {
+		return domain.Config{}, f.configErr
+	}
 	if vars == nil {
 		return f.config, nil
 	}

@@ -170,6 +170,59 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 }
 
+func TestCreateContainersはSourceEnvironmentをService設定で上書きする(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=source","PATH=/usr/bin","EMPTY=source"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+			},
+		},
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"web": {
+			SourceContainer: "myapp-web",
+			Environment: map[string]string{
+				"APP_ENV": "cell",
+				"EMPTY":   "",
+				"NEW_VAR": "new",
+			},
+		},
+	}}}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantRunCalls := []string{
+		"docker network create paracell-myapp-123",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=cell -e PATH=/usr/bin -e EMPTY= -e NEW_VAR=new myapp-web:latest",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
+	}
+}
+
+func TestMergeEnvironmentは設定がなければSourceを保持する(t *testing.T) {
+	source := []string{"APP_ENV=source", "PATH=/usr/bin"}
+	got := mergeEnvironment(source, nil)
+
+	if !reflect.DeepEqual(got, source) {
+		t.Fatalf("merged environment = %#v, want %#v", got, source)
+	}
+	got[0] = "changed"
+	if source[0] != "APP_ENV=source" {
+		t.Fatalf("source environment was mutated: %#v", source)
+	}
+}
+
 func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピーする(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
