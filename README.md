@@ -101,6 +101,8 @@ Traefik dashboard はデフォルトで有効になり、次の URL から利用
 http://gateway.paracell.localhost/dashboard/
 ```
 
+access log、tracing、Prometheus metrics もデフォルトで有効です。metrics は別portを公開せず、同じhostの `http://gateway.paracell.localhost/metrics` から取得できます。
+
 公開 port が 1 個の container は、すべての HTTP path と WebSocket を次の URL で利用できます。
 
 ```text
