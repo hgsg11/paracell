@@ -17,8 +17,9 @@ const (
 	gatewayImage              = "traefik:v3.7"
 	gatewayManagedLabel       = "io.paracell.gateway"
 	gatewayConfigVersionLabel = "io.paracell.gateway.config-version"
-	gatewayConfigVersion      = "2"
+	gatewayConfigVersion      = "3"
 	gatewayDashboardRouter    = "paracell-gateway-dashboard"
+	gatewayMetricsRouter      = "paracell-gateway-metrics"
 	gatewayDashboardHost      = "gateway.paracell.localhost"
 	gatewayReplacementName    = "paracell-gateway-replaced"
 )
@@ -193,16 +194,20 @@ func (a DockerCLIAdapter) ensureGateway(ctx context.Context, network string) err
 }
 
 func gatewayRunArgs(publish string) []string {
-	router := "traefik.http.routers." + gatewayDashboardRouter
+	dashboardRouter := "traefik.http.routers." + gatewayDashboardRouter
+	metricsRouter := "traefik.http.routers." + gatewayMetricsRouter
 	return []string{
 		"run", "-d",
 		"--name", gatewayContainerName,
 		"--label", gatewayManagedLabel + "=true",
 		"--label", gatewayConfigVersionLabel + "=" + gatewayConfigVersion,
 		"--label", "traefik.enable=true",
-		"--label", router + ".entrypoints=web",
-		"--label", router + ".rule=Host(`" + gatewayDashboardHost + "`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`))",
-		"--label", router + ".service=api@internal",
+		"--label", dashboardRouter + ".entrypoints=web",
+		"--label", dashboardRouter + ".rule=Host(`" + gatewayDashboardHost + "`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`))",
+		"--label", dashboardRouter + ".service=api@internal",
+		"--label", metricsRouter + ".entrypoints=web",
+		"--label", metricsRouter + ".rule=Host(`" + gatewayDashboardHost + "`) && Path(`/metrics`)",
+		"--label", metricsRouter + ".service=prometheus@internal",
 		"--restart", "unless-stopped",
 		"-p", publish,
 		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
@@ -211,6 +216,10 @@ func gatewayRunArgs(publish string) []string {
 		"--providers.docker.exposedbydefault=false",
 		"--entrypoints.web.address=:80",
 		"--api.dashboard=true",
+		"--accesslog=true",
+		"--metrics.prometheus=true",
+		"--metrics.prometheus.manualrouting=true",
+		"--tracing=true",
 	}
 }
 
