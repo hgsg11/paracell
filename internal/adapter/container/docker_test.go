@@ -17,13 +17,17 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		Image:          "nginx:latest",
 		Network:        "paracell-myapp-123",
 		NetworkAliases: []string{"web", "api"},
-		Env:            []string{"APP_ENV=dev"},
-		Entrypoint:     []string{"/docker-entrypoint.sh"},
-		Command:        []string{"nginx", "-g", "daemon off;"},
-		WorkDir:        "/app",
-		User:           "node",
-		Tty:            true,
-		OpenStdin:      true,
+		Labels: map[string]string{
+			"com.docker.compose.service": "web",
+			"com.docker.compose.project": "paracell-myapp-123",
+		},
+		Env:        []string{"APP_ENV=dev"},
+		Entrypoint: []string{"/docker-entrypoint.sh"},
+		Command:    []string{"nginx", "-g", "daemon off;"},
+		WorkDir:    "/app",
+		User:       "node",
+		Tty:        true,
+		OpenStdin:  true,
 		Health: HealthcheckSpec{
 			Command:  "curl -f http://localhost:8080/health || exit 1",
 			Interval: 30 * time.Second,
@@ -42,6 +46,8 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 		"--network", "paracell-myapp-123",
 		"--network-alias", "web",
 		"--network-alias", "api",
+		"--label", "com.docker.compose.project=paracell-myapp-123",
+		"--label", "com.docker.compose.service=web",
 		"-e", "APP_ENV=dev",
 		"--entrypoint", "/docker-entrypoint.sh",
 		"-w", "/app",
@@ -59,6 +65,44 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 	}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("docker run args = %#v, want %#v", args, want)
+	}
+}
+
+func TestCreateContainersはIsolatedの複数ContainerをCell単位でグループ化する(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name: "123",
+		Containers: domain.Containers{
+			NetworkMode: "isolated",
+			Network:     "paracell-myapp-123",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+				"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"},
+			},
+		},
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"web": {SourceContainer: "myapp-web"},
+		"db":  {SourceContainer: "myapp-db"},
+	}}}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	wantRunCalls := []string{
+		"docker network create paracell-myapp-123",
+		"docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db myapp-db:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
 	}
 }
 
@@ -119,7 +163,7 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -152,7 +196,7 @@ func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピー�
 
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias frontend --network-alias myapp-web-1 --network-alias web myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias frontend --network-alias myapp-web-1 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -337,7 +381,7 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	if got := runner.runCalls[1]; got != "docker volume create paracell-myapp-123-db-var-lib-mysql" {
 		t.Fatalf("volume create call = %q", got)
 	}
-	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
+	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
 		t.Fatalf("first run call = %q", got)
 	}
 	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u root -prootsecret --silent" {
@@ -479,7 +523,7 @@ func TestCreateContainersはVolumeModeCopyでNamedVolumeを複製する(t *testi
 		"docker network create paracell-myapp-123",
 		"docker volume create paracell-myapp-123-web-app-vendor",
 		"docker run --rm -v myapp_vendor:/from:ro -v paracell-myapp-123-web-app-vendor:/to alpine sh -c cp -a /from/. /to/",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 -e APP_ENV=dev -v paracell-myapp-123-web-app-vendor:/app/vendor myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=dev -v paracell-myapp-123-web-app-vendor:/app/vendor myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
