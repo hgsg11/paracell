@@ -12,7 +12,13 @@
         "x86_64-linux"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-      version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ./VERSION);
+      revision =
+        if self ? shortRev then self.shortRev
+        else if self ? dirtyShortRev then self.dirtyShortRev
+        else "unknown";
+      modified = self.lastModifiedDate or "19700101000000";
+      date = "${builtins.substring 0 4 modified}-${builtins.substring 4 2 modified}-${builtins.substring 6 2 modified}";
+      version = "0-unstable-${date}-${revision}";
     in
     {
       packages = forAllSystems (system:
@@ -28,7 +34,7 @@
             ldflags = [
               "-s"
               "-w"
-              "-X github.com/hgsg11/paracell/internal/app.Version=v${version}"
+              "-X github.com/hgsg11/paracell/internal/app.Version=${version}"
             ];
 
             nativeBuildInputs = [ pkgs.makeWrapper ];

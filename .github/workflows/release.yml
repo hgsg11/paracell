@@ -22,16 +22,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Verify release version
-        shell: bash
-        run: |
-          release_version="${GITHUB_REF_NAME#v}"
-          nix_version="$(tr -d '\n' < VERSION)"
-          if [[ "$release_version" != "$nix_version" ]]; then
-            echo "release tag $GITHUB_REF_NAME does not match VERSION ($nix_version)" >&2
-            exit 1
-          fi
-
       - name: Run tests
         run: go test ./...
 
