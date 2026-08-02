@@ -1,27 +1,53 @@
 # paracell
 
-issue ごとに、git worktree・tmux session・container・状態管理をまとめて作る CLI です。
+**AI agent ごとに、issue 単位の独立した開発環境を。**
 
-`paracell fork 123 --template feat` で issue 用の作業部屋を作り、`paracell` で project 用 root tmux session に入り、そこから cell を見る・入る・片付ける。agent の hooks から `paracell pending` / `paracell ready` を呼べば、作業状態も自動で動きます。
+Paracell は、git worktree・tmux session・container・network・状態管理を、ひとつの **cell** としてまとめて作る CLI です。複数の AI agent を同じ repository で動かしても、branch、作業ディレクトリ、依存 service、port を issue ごとに分離できます。
 
-## できること
+```sh
+paracell fork 123 --template feat
+```
 
-- 🧩 issue ごとの git worktree と branch を作る
-- 🪟 tmux session / window / 初期コマンドを template 化する
-- 📦 container、volume、network、`.env` などを cell ごとに用意する
-- 🌐 isolated cell の HTTP / WebSocket を `.localhost` URL で開く
-- 👀 `ready` / `pending` / `done` を TUI で見る
-- 🤖 agent hooks から状態を自動更新する
+この1コマンドで、issue #123を進めるための独立した作業環境を起動できます。
 
-## ユースケース
+## AI agent の並行開発を、環境ごと分離する
 
-| ユースケース | paracell なし | paracell あり |
-| --- | --- | --- |
-| 🛠️ ローカル開発環境を作る | branch、作業ディレクトリ、tmux、container を手でそろえる | `paracell fork <issue>` で cell としてまとめて作る |
-| 🔍 レビュー用に動作確認する | レビュー対象ごとに checkout や環境切り替えをする | review 用 cell を作り、今の作業環境と分けて確認する |
-| 🧯 レビュー指摘を修正する | 元の作業環境に戻り、必要な window や service を開き直す | 対象 cell に入り直して、そのまま修正を続ける |
-| 🤖 agent に修正を任せる | 進行中か完了かをログやメモで追う | hooks で `pending` / `ready` を呼び、TUI に状態を出す |
-| 🧹 作業環境を片付ける | worktree、tmux session、container を個別に消す | `paracell clean <cell>` でまとめて片付ける |
+AI agent を並行実行すると、同じファイル、同じcontainer名、同じhost portを取り合いやすくなります。Paracellは作業単位をcellとして分け、agentに「専用のrepository checkoutと実行環境」を渡します。
+
+### 1 issue = 1 cell
+
+| Cellに含まれるもの | 分離される内容 |
+| --- | --- |
+| Source | issue用branchとgit worktree |
+| Terminal | 専用tmux session、window、agentの初期コマンド |
+| Runtime | container、volume、環境変数、Docker network |
+| Endpoint | cell名を含む `.localhost` URL |
+| State | `pending` / `ready` / `done` と実行ログ |
+
+templateへCodexなどのagent起動コマンドを設定すれば、cell作成と同時にagentへ作業を渡せます。agentのhookから `paracell pending` / `paracell ready` を呼び、人間はTUIから複数cellの状態を確認できます。
+
+### Traefikで、issueごとの通信を調査する
+
+isolated networkを使うcellには、共有Traefik gatewayが自動で接続されます。frontendとbackendが同じcontainer portを使っていても、issueとservice aliasを含むURLで衝突せずアクセスできます。
+
+```text
+http://frontend.123.myapp.localhost
+http://backend.123.myapp.localhost
+```
+
+Traefik dashboardでrouterと接続先を確認し、access logで「どのissueのURLが、どのcontainerへ流れたか」を追跡できます。Prometheus metricsとOpenTelemetry tracingも利用できます。
+
+```sh
+open http://gateway.paracell.localhost/dashboard/
+docker logs -f paracell-gateway
+curl http://gateway.paracell.localhost/metrics
+```
+
+cellを使い終えたら、worktree、tmux session、container、networkをまとめて片付けます。
+
+```sh
+paracell clean 123
+```
 
 ## インストール
 
@@ -38,8 +64,6 @@ nix profile install github:hgsg11/paracell
 ```
 
 Nix package には実行時依存として `git` と `tmux` が含まれます。
-
-リリース前に `./scripts/set-release-version.sh vX.Y.Z` を実行して、`VERSION` の変更をリリース対象へ含めます。リリースワークフローはタグと `VERSION` が一致しない場合に停止します。
 
 または:
 
@@ -100,6 +124,23 @@ Traefik dashboard はデフォルトで有効になり、次の URL から利用
 ```text
 http://gateway.paracell.localhost/dashboard/
 ```
+
+access log、tracing、Prometheus metrics もデフォルトで有効です。metrics は別portを公開せず、同じhostの `http://gateway.paracell.localhost/metrics` から取得できます。
+
+通信を調査するときは、用途に応じて次を使います。
+
+```sh
+# router、service、middleware、設定errorを確認する
+open http://gateway.paracell.localhost/dashboard/
+
+# requestのHost、path、status、接続先、処理時間を追う
+docker logs -f paracell-gateway
+
+# Prometheus形式の現在値を取得する
+curl http://gateway.paracell.localhost/metrics
+```
+
+dashboardはrouting設定を確認する画面で、access logや時系列graphの保存先ではありません。metricsの履歴とgraphが必要ならPrometheus / Grafana、traceの検索画面が必要ならOpenTelemetry CollectorとJaeger / Tempoなどを接続してください。
 
 公開 port が 1 個の container は、すべての HTTP path と WebSocket を次の URL で利用できます。
 

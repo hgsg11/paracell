@@ -73,7 +73,7 @@ func TestEnsureGatewayはLoopbackにGatewayを作りCellNetworkへ接続する(t
 }
 
 func TestEnsureGatewayは実行中かつ接続済みのGatewayを再利用する(t *testing.T) {
-	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"2"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-123":{}}}}`
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"3"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-123":{}}}}`
 	runner := &fakeRunner{gatewayInspectOutput: &output}
 	adapter := DockerCLIAdapter{Runner: runner}
 
@@ -86,7 +86,7 @@ func TestEnsureGatewayは実行中かつ接続済みのGatewayを再利用する
 }
 
 func TestEnsureGatewayは既存Gatewayを別CellNetworkへ接続する(t *testing.T) {
-	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"2"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-122":{}}}}`
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"3"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-122":{}}}}`
 	runner := &fakeRunner{gatewayInspectOutput: &output}
 	adapter := DockerCLIAdapter{Runner: runner}
 
@@ -153,10 +153,17 @@ func TestGatewayRunArgsはInternalAPIだけをWebEntryPointへ公開する(t *te
 	command := gatewayRunCommand("127.0.0.1:80:80")
 	for _, want := range []string{
 		"--api.dashboard=true",
+		"--accesslog=true",
+		"--metrics.prometheus=true",
+		"--metrics.prometheus.manualrouting=true",
+		"--tracing=true",
 		"--label traefik.enable=true",
 		"--label traefik.http.routers.paracell-gateway-dashboard.entrypoints=web",
 		"--label traefik.http.routers.paracell-gateway-dashboard.rule=Host(`gateway.paracell.localhost`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`))",
 		"--label traefik.http.routers.paracell-gateway-dashboard.service=api@internal",
+		"--label traefik.http.routers.paracell-gateway-metrics.entrypoints=web",
+		"--label traefik.http.routers.paracell-gateway-metrics.rule=Host(`gateway.paracell.localhost`) && Path(`/metrics`)",
+		"--label traefik.http.routers.paracell-gateway-metrics.service=prometheus@internal",
 	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("gateway command = %q, want fragment %q", command, want)

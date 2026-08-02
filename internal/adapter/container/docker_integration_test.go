@@ -109,7 +109,7 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 
 func verifyGatewayDashboard(t *testing.T, gatewayEndpoint string) {
 	t.Helper()
-	for _, path := range []string{"/dashboard/", "/api/overview"} {
+	for _, path := range []string{"/dashboard/", "/api/overview", "/metrics"} {
 		deadline := time.Now().Add(15 * time.Second)
 		var lastErr error
 		available := false
@@ -124,8 +124,26 @@ func verifyGatewayDashboard(t *testing.T, gatewayEndpoint string) {
 				body, readErr := io.ReadAll(response.Body)
 				_ = response.Body.Close()
 				if readErr == nil && response.StatusCode == http.StatusOK && len(body) > 0 {
-					available = true
-					break
+					switch path {
+					case "/api/overview":
+						var overview struct {
+							Features struct {
+								Tracing   string `json:"tracing"`
+								Metrics   string `json:"metrics"`
+								AccessLog bool   `json:"accessLog"`
+							} `json:"features"`
+						}
+						if err := json.Unmarshal(body, &overview); err == nil && overview.Features.Tracing != "" && overview.Features.Metrics != "" && overview.Features.AccessLog {
+							available = true
+						}
+					case "/metrics":
+						available = strings.Contains(string(body), "traefik_")
+					default:
+						available = true
+					}
+					if available {
+						break
+					}
 				}
 				lastErr = fmt.Errorf("status=%s body=%q readErr=%v", response.Status, strings.TrimSpace(string(body)), readErr)
 			} else {
