@@ -9,6 +9,7 @@ issue ごとに、git worktree・tmux session・container・状態管理をま�
 - 🧩 issue ごとの git worktree と branch を作る
 - 🪟 tmux session / window / 初期コマンドを template 化する
 - 📦 container、volume、network、`.env` などを cell ごとに用意する
+- 🌐 isolated cell の HTTP / WebSocket を `.localhost` URL で開く
 - 👀 `ready` / `pending` / `done` を TUI で見る
 - 🤖 agent hooks から状態を自動更新する
 
@@ -89,6 +90,28 @@ templates:
     session:
       windows: []
 ```
+
+## Isolated container gateway
+
+Docker provider で `containers.network: isolated` を使うと、paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各 cell 専用 network へ接続され、source container からコピーした network alias と公開済み TCP container port を使って route を自動生成します。gateway 用の設定を `paracell.yaml` に追加する必要はありません。
+
+公開 port が 1 個の container は、すべての HTTP path と WebSocket を次の URL で利用できます。
+
+```text
+http://<alias>.<cell>.<project>.localhost
+```
+
+公開 port が複数ある場合は、container port ごとに prefix が付きます。
+
+```text
+http://p<containerPort>.<alias>.<cell>.<project>.localhost
+```
+
+たとえば project `myapp` の cell `123` で alias `web` が container port `3000` と `8080` を公開していれば、`http://p3000.web.123.myapp.localhost` と `http://p8080.web.123.myapp.localhost` を使います。route の upstream は alias ではなく cell 固有の copied container と internal port です。そのため、複数 cell が同じ `web` alias を持っていても衝突しません。alias または公開 TCP port がない container には route を作りません。
+
+`paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
+
+初回起動時には Docker が `traefik:v3.7` image を利用できる必要があります。まず `127.0.0.1:80` を使い、port 80 が別 process/container に使われていれば loopback 上の空き port を Docker に自動割当させます。fallback 先は `docker port paracell-gateway 80/tcp` で確認でき、その場合は表示された port を URL へ付けてください。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
 
 ## TUI
 
@@ -183,7 +206,7 @@ paracell --version
 - `repository.branchMode: reuse`: 既存 branch があればその branch の worktree を作り、なければ新規作成する
 - `repository.branchMode: require`: 既存 branch の worktree だけを作る。branch がなければ失敗する
 - `files`: cell の source にコピーするファイル
-- `containers.network: isolated`: cell 用 Docker network を作る
+- `containers.network: isolated`: cell 用 Docker network と自動 HTTP gateway route を作る
 - `containers.network: shared`: source container の network を使う
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
