@@ -8,7 +8,7 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml` | Fails when the file already exists |
-| `paracell fork <issue> --template <name> [--command <text>]` | Create and start a cell | The named template must exist |
+| `paracell fork <issue> --template <name> [--command <text>]` | Create and start a cell | For Skill dispatch, `<issue>` is the numeric GitHub issue number |
 | `paracell view` | Open the cell/template TUI | Interactive |
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
 | `paracell pending` | Set the current cell to pending | Requires `PARACELL_CELL` |
@@ -62,13 +62,23 @@ templates:
 
 Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
 
+## Issue-Backed Dispatch
+
+The Paracell Skill stores the complete work package in a GitHub issue before dispatch. The CLI itself accepts the issue identifier but does not create or fetch the GitHub issue.
+
+- Create a new issue body with `gh issue create --body-file <path>`; do not pass a long body as a shell argument.
+- Pass the numeric issue number as the positional `fork` argument.
+- Keep `--command` short: tell the worker to read the issue and treat it as the single source of truth.
+- If issue creation succeeds but `fork` fails, retain the issue and retry with the same number.
+- A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
+
 ## Template Variables
 
 Session window commands support:
 
-- `{{.issue}}`: the argument supplied to `fork`.
+- `{{.issue}}`: the argument supplied to `fork`; the Skill uses a numeric GitHub issue number.
 - `{{.name}}`: the resulting cell name.
-- `{{.Command}}`: the value supplied through `fork --command`; empty when omitted or when forked through the TUI.
+- `{{.Command}}`: the value supplied through `fork --command`; the Skill uses only a short instruction to read `{{.issue}}`. It is empty when omitted or when forked through the TUI.
 
 The template is rendered before the shell starts. Keep YAML, Go-template, and shell quoting distinct.
 
