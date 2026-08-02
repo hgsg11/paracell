@@ -824,7 +824,7 @@ func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (s
 				break
 			}
 		}
-		return `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"` + network + `":{}}}}`, nil
+		return `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"2"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"` + network + `":{}}}}`, nil
 	}
 	r.outputCalls = append(r.outputCalls, name+" "+joinArgs(args))
 	out := r.outputs[0]

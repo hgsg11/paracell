@@ -64,7 +64,7 @@ func TestEnsureGatewayはLoopbackにGatewayを作りCellNetworkへ接続する(t
 	}
 
 	want := []string{
-		"docker run -d --name paracell-gateway --label io.paracell.gateway=true --restart unless-stopped -p 127.0.0.1:80:80 -v /var/run/docker.sock:/var/run/docker.sock:ro traefik:v3.7 --providers.docker=true --providers.docker.exposedbydefault=false --entrypoints.web.address=:80",
+		gatewayRunCommand("127.0.0.1:80:80"),
 		"docker network connect paracell-myapp-123 paracell-gateway",
 	}
 	if !reflect.DeepEqual(runner.runCalls, want) {
@@ -73,7 +73,7 @@ func TestEnsureGatewayはLoopbackにGatewayを作りCellNetworkへ接続する(t
 }
 
 func TestEnsureGatewayは実行中かつ接続済みのGatewayを再利用する(t *testing.T) {
-	output := `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-123":{}}}}`
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"2"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-123":{}}}}`
 	runner := &fakeRunner{gatewayInspectOutput: &output}
 	adapter := DockerCLIAdapter{Runner: runner}
 
@@ -86,7 +86,7 @@ func TestEnsureGatewayは実行中かつ接続済みのGatewayを再利用する
 }
 
 func TestEnsureGatewayは既存Gatewayを別CellNetworkへ接続する(t *testing.T) {
-	output := `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-122":{}}}}`
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true","io.paracell.gateway.config-version":"2"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-myapp-122":{}}}}`
 	runner := &fakeRunner{gatewayInspectOutput: &output}
 	adapter := DockerCLIAdapter{Runner: runner}
 
@@ -96,6 +96,76 @@ func TestEnsureGatewayは既存Gatewayを別CellNetworkへ接続する(t *testin
 	want := []string{"docker network connect paracell-myapp-123 paracell-gateway"}
 	if !reflect.DeepEqual(runner.runCalls, want) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestEnsureGatewayは旧ManagedGatewayをDashboard設定付きで再作成しNetworkを復元する(t *testing.T) {
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"HostConfig":{"PortBindings":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"49152"}]}},"State":{"Running":true},"NetworkSettings":{"Networks":{"bridge":{},"paracell-zeta-456":{},"paracell-alpha-123":{}},"Ports":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"49152"}]}}}`
+	runner := &fakeRunner{gatewayInspectOutput: &output}
+	adapter := DockerCLIAdapter{Runner: runner}
+
+	if err := adapter.ensureGateway(context.Background(), "paracell-new-789"); err != nil {
+		t.Fatalf("ensureGateway returned error: %v", err)
+	}
+	want := []string{
+		"docker rename paracell-gateway paracell-gateway-replaced",
+		"docker stop paracell-gateway-replaced",
+		gatewayRunCommand("127.0.0.1:49152:80"),
+		"docker network connect paracell-alpha-123 paracell-gateway",
+		"docker network connect paracell-zeta-456 paracell-gateway",
+		"docker rm paracell-gateway-replaced",
+		"docker network connect paracell-new-789 paracell-gateway",
+	}
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestEnsureGatewayは旧Gateway再作成失敗時に元のGatewayを復元する(t *testing.T) {
+	output := `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"paracell-alpha-123":{}},"Ports":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"80"}]}}}`
+	gatewayRun := gatewayRunCommand("127.0.0.1:80:80")
+	runner := &fakeRunner{
+		gatewayInspectOutput: &output,
+		runErrors: map[string]error{
+			gatewayRun: errors.New("replacement failed"),
+		},
+	}
+	adapter := DockerCLIAdapter{Runner: runner}
+
+	err := adapter.ensureGateway(context.Background(), "paracell-alpha-123")
+	if err == nil || !strings.Contains(err.Error(), "replacement failed") {
+		t.Fatalf("error = %v, want replacement failure", err)
+	}
+	want := []string{
+		"docker rename paracell-gateway paracell-gateway-replaced",
+		"docker stop paracell-gateway-replaced",
+		gatewayRun,
+		"docker rm -f paracell-gateway",
+		"docker rename paracell-gateway-replaced paracell-gateway",
+		"docker start paracell-gateway",
+	}
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestGatewayRunArgsはInternalAPIだけをWebEntryPointへ公開する(t *testing.T) {
+	command := gatewayRunCommand("127.0.0.1:80:80")
+	for _, want := range []string{
+		"--api.dashboard=true",
+		"--label traefik.enable=true",
+		"--label traefik.http.routers.paracell-gateway-dashboard.entrypoints=web",
+		"--label traefik.http.routers.paracell-gateway-dashboard.rule=Host(`gateway.paracell.localhost`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`))",
+		"--label traefik.http.routers.paracell-gateway-dashboard.service=api@internal",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("gateway command = %q, want fragment %q", command, want)
+		}
+	}
+	for _, unwanted := range []string{"api.insecure", "8080:8080", "--entrypoints.traefik"} {
+		if strings.Contains(command, unwanted) {
+			t.Fatalf("gateway command = %q, must not contain %q", command, unwanted)
+		}
 	}
 }
 
@@ -184,7 +254,7 @@ func TestCreateContainersはAliasやPortがなくてもIsolatedGatewayを接続�
 
 func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackする(t *testing.T) {
 	empty := ""
-	gatewayRun := "docker run -d --name paracell-gateway --label io.paracell.gateway=true --restart unless-stopped -p 127.0.0.1:80:80 -v /var/run/docker.sock:/var/run/docker.sock:ro traefik:v3.7 --providers.docker=true --providers.docker.exposedbydefault=false --entrypoints.web.address=:80"
+	gatewayRun := gatewayRunCommand("127.0.0.1:80:80")
 	runner := &fakeRunner{
 		gatewayInspectOutput: &empty,
 		gatewayInspectError:  errors.New("No such container: paracell-gateway"),
@@ -210,7 +280,7 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 		"docker network create paracell-myapp-123",
 		gatewayRun,
 		"docker rm -f paracell-gateway",
-		"docker run -d --name paracell-gateway --label io.paracell.gateway=true --restart unless-stopped -p 127.0.0.1::80 -v /var/run/docker.sock:/var/run/docker.sock:ro traefik:v3.7 --providers.docker=true --providers.docker.exposedbydefault=false --entrypoints.web.address=:80",
+		gatewayRunCommand("127.0.0.1::80"),
 		"docker network connect paracell-myapp-123 paracell-gateway",
 	}
 	if !reflect.DeepEqual(runner.runCalls, want) {
@@ -261,4 +331,8 @@ func gatewayTestCell() domain.Cell {
 			},
 		},
 	}
+}
+
+func gatewayRunCommand(publish string) string {
+	return "docker " + joinArgs(gatewayRunArgs(publish))
 }
