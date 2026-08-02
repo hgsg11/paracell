@@ -1,11 +1,11 @@
 ---
 name: paracell
-description: Prepare and dispatch explicitly requested parallel or isolated work to a Paracell cell by clarifying requirements, detecting contradictions, and selecting the best existing template from paracell.yaml. Use when the user explicitly asks to use Paracell, run work in parallel or concurrently, or move work into another, separate, or isolated cell, including requests phrased as "並行", "並列", or "別cell"; also use for explicit Paracell template, fork, resume, inspection, configuration, or lifecycle operations. Do not trigger solely because the user asks to add, fix, change, update, or refactor something.
+description: Prepare an issue-backed work package and dispatch explicitly requested parallel or isolated work to a Paracell cell by clarifying requirements, detecting contradictions, creating or reusing a GitHub issue, and selecting the best existing template from paracell.yaml. Use when the user explicitly asks to use Paracell, run work in parallel or concurrently, or move work into another, separate, or isolated cell, including requests phrased as "並行", "並列", or "別cell"; also use for explicit Paracell template, fork, resume, inspection, configuration, or lifecycle operations. Do not trigger solely because the user asks to add, fix, change, update, or refactor something.
 ---
 
 # Paracell
 
-Turn an explicitly parallel or isolated request into a coherent work package and hand it to the most suitable existing Paracell template. Do not create a cell while a blocking contradiction remains.
+Turn an explicitly parallel or isolated request into a coherent GitHub issue and hand its issue number to the most suitable existing Paracell template. Treat the issue body as the single source of truth. Do not create an issue or cell while a blocking contradiction remains.
 
 ## Keep the Trigger Explicit
 
@@ -75,19 +75,31 @@ Evaluate every template in `paracell.yaml`; never select by name alone.
 
 If no existing template is compatible, stop and explain the missing capability. Add or edit a template only when the user requested configuration changes or explicitly approves them.
 
+## Use the Issue as the Source of Truth
+
+Do not place the work package itself in `--command`, a tmux command, or an environment variable.
+
+1. If the user supplied an issue number, read it with `gh issue view` and confirm that its body matches the approved work package. Update a stale body only after the user approves the changed requirements.
+2. If no issue number was supplied, write the approved work package to a temporary Markdown file and create one GitHub issue with `gh issue create --body-file`. Use a concise title and never interpolate the body through a shell argument.
+3. Use the returned numeric issue number as the Paracell identifier. Do not derive a slug when issue-backed dispatch is available.
+4. Keep secrets out of the issue body. Treat repository visibility as the visibility boundary for the work package.
+5. If issue creation fails, do not create a cell. If cell creation fails after issue creation, keep the issue and report its number so dispatch can be retried without creating a duplicate.
+
+Treat a missing `gh` executable, missing GitHub authentication, or a repository without a usable GitHub remote as blocking for new issue-backed dispatch. Existing issue inspection and analysis may continue without creating a cell.
+
 ## Dispatch the Work
 
 Dispatch only when the user explicitly requested Paracell, parallel or concurrent execution, or another, separate, or isolated cell and has confirmed the shared understanding reached by the requirements interview. These requests count as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package and template choice without side effects.
 
-1. Reuse the user's issue number or task identifier. If absent, derive a short stable kebab-case slug only when doing so cannot collide with or misrepresent existing work.
-2. Check `paracell ls` for an existing cell for the same work. Resume it instead of creating a duplicate.
-3. Render the work package as the `--command` value. Make it self-contained, direct the worker to inspect repository instructions, and include acceptance and verification criteria. Do not include secrets or irrelevant conversation history.
-4. Run `paracell fork <identifier> --template <template> --command <work-package>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
-5. Run `paracell ls` and confirm the new cell and status. Report the identifier, selected template, and the dispatched objective.
+1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
+2. Check `paracell ls` for a cell with that issue number. Resume it instead of creating a duplicate.
+3. Build only a short instruction such as `Read GitHub issue #123 first and treat its body as the single source of truth. Implement it, verify the acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body.
+4. Run `paracell fork <issue-number> --template <template> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
+5. Run `paracell ls` and confirm the new cell and status. Report the issue URL or number, selected template, and dispatched objective.
 
 Stop after reporting the confirmed dispatch. Do not capture the cell's tmux pane, monitor the worker, type follow-up input into it, wait for completion, or operate on its worktree unless the user explicitly requests that additional operation.
 
-If the selected template's session does not consume `{{.Command}}`, warn that the work package cannot be delivered through `--command` and treat that as blocking unless another configured window delivers the instruction.
+If the selected template's session does not consume `{{.Command}}`, check whether it uses `{{.issue}}` to tell the worker to read the issue. Treat the dispatch as blocking when neither variable delivers the issue number to the worker.
 
 ## Operate Safely
 

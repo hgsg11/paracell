@@ -1,4 +1,4 @@
 interface:
-  display_name: "Paracell Requirement Dispatcher"
-  short_description: "Dispatch explicit parallel work to Paracell"
-  default_prompt: "Use $paracell to clarify this explicitly parallel request, then dispatch it to the best matching Paracell template."
+  display_name: "Paracell Issue Dispatcher"
+  short_description: "Dispatch issue-backed parallel work to Paracell"
+  default_prompt: "Use $paracell to turn this explicit parallel request into a GitHub issue and dispatch its issue number to the best matching Paracell template."
