@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,10 +133,23 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
+func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) (returnErr error) {
 	network := cellNetworkName(cell)
-	if shouldCreateIsolatedNetwork(cell.Containers.NetworkMode) && network != "" {
+	isolated := shouldCreateIsolatedNetwork(cell.Containers.NetworkMode)
+	networkCreated := false
+	createdContainers := make([]string, 0, len(cell.Containers.Services))
+	if isolated && network != "" {
 		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
+			return err
+		}
+		networkCreated = true
+		defer func() {
+			if returnErr == nil {
+				return
+			}
+			returnErr = errors.Join(returnErr, a.rollbackIsolatedCell(ctx, network, createdContainers, networkCreated))
+		}()
+		if err := a.ensureGateway(ctx, network); err != nil {
 			return err
 		}
 	}
@@ -165,6 +179,9 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 				composeProjectLabel: network,
 				composeServiceLabel: role,
 			}
+			for name, value := range gatewayLabels(cell, service.ContainerName, networkAliases, inspection.HostConfig.PortBindings) {
+				labels[name] = value
+			}
 		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:           service.ContainerName,
@@ -186,6 +203,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return err
 		}
+		createdContainers = append(createdContainers, service.ContainerName)
 		for _, extraNetwork := range extraNetworks {
 			if err := a.Runner.Run(ctx, "docker", "network", "connect", extraNetwork, service.ContainerName); err != nil {
 				return err
@@ -196,6 +214,24 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		}
 	}
 	return nil
+}
+
+func (a DockerCLIAdapter) rollbackIsolatedCell(ctx context.Context, network string, containers []string, networkCreated bool) error {
+	var rollbackErr error
+	for i := len(containers) - 1; i >= 0; i-- {
+		if err := a.Runner.Run(ctx, "docker", "rm", "-f", containers[i]); err != nil && !isMissingDockerResourceError(err) {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
+	}
+	if err := a.disconnectGateway(ctx, network); err != nil {
+		rollbackErr = errors.Join(rollbackErr, err)
+	}
+	if networkCreated {
+		if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
+			rollbackErr = errors.Join(rollbackErr, err)
+		}
+	}
+	return rollbackErr
 }
 
 func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (containerInspection, error) {
@@ -657,6 +693,9 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 	}
 	if cell.Containers.NetworkMode == string(domain.ContainerNetworkIsolated) || cell.Containers.NetworkMode == "" {
 		if network := cellNetworkName(cell); network != "" {
+			if err := a.disconnectGateway(ctx, network); err != nil {
+				return err
+			}
 			if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
 				return err
 			}

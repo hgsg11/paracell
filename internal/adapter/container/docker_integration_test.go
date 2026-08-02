@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,6 +16,100 @@ import (
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	"github.com/hgsg11/paracell/internal/domain"
 )
+
+func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(t *testing.T) {
+	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
+		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Docker is not available: %v", err)
+	}
+	for _, image := range []string{"nginx:alpine", gatewayImage} {
+		if err := exec.Command("docker", "image", "inspect", image).Run(); err != nil {
+			t.Skipf("%s image is required: %v", image, err)
+		}
+	}
+
+	removeGateway := false
+	if output, err := exec.Command("docker", "inspect", "-f", "{{index .Config.Labels \"io.paracell.gateway\"}} {{.Config.Image}}", gatewayContainerName).Output(); err == nil {
+		if strings.TrimSpace(string(output)) != "true "+gatewayImage {
+			t.Skipf("container %s already exists but is not the managed %s image", gatewayContainerName, gatewayImage)
+		}
+	} else {
+		listener, listenErr := net.Listen("tcp", "127.0.0.1:80")
+		if listenErr != nil {
+			t.Skipf("127.0.0.1:80 is unavailable: %v", listenErr)
+		}
+		_ = listener.Close()
+		removeGateway = true
+	}
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	cellName := "gateway-" + suffix
+	cellNetwork := "paracell-integrationgw-" + cellName
+	sourceNetwork := cellNetwork + "-source"
+	sourceContainer := cellNetwork + "-source"
+	targetContainer := cellNetwork + "-web"
+	adapter := DockerCLIAdapter{Runner: system.CaptureRunner{}}
+	cell := domain.Cell{
+		Name: cellName,
+		Containers: domain.Containers{
+			Network:     cellNetwork,
+			NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"web": {ContainerName: targetContainer, SourceContainer: sourceContainer},
+			},
+		},
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"web": {SourceContainer: sourceContainer},
+	}}}
+
+	t.Cleanup(func() {
+		_ = adapter.CleanContainers(context.Background(), cell)
+		_ = exec.Command("docker", "rm", "-f", sourceContainer).Run()
+		_ = exec.Command("docker", "network", "rm", sourceNetwork).Run()
+		if removeGateway {
+			_ = exec.Command("docker", "rm", "-f", gatewayContainerName).Run()
+		}
+	})
+
+	runDockerIntegrationCommand(t, "network", "create", sourceNetwork)
+	runDockerIntegrationCommand(t,
+		"run", "-d", "--name", sourceContainer,
+		"--network", sourceNetwork,
+		"--network-alias", "web",
+		"-p", "80",
+		"nginx:alpine",
+	)
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainers failed: %v", err)
+	}
+
+	host := "web." + cellName + ".integrationgw.localhost"
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		response, err := http.DefaultClient.Do(req)
+		if err == nil {
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr == nil && response.StatusCode == http.StatusOK && strings.Contains(string(body), "Welcome to nginx") {
+				return
+			}
+			lastErr = fmt.Errorf("status=%s body=%q readErr=%v", response.Status, strings.TrimSpace(string(body)), readErr)
+		} else {
+			lastErr = err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	t.Fatalf("gateway did not route host %q to %q: %v", host, targetContainer, lastErr)
+}
 
 func TestDockerIntegrationはIsolatedNetworkへAliasをコピーする(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {

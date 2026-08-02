@@ -701,6 +701,7 @@ func TestCleanContainersはコンテナ削除後にセルネットワークを�
 	want := []string{
 		"docker rm -f paracell-myapp-123-db",
 		"docker rm -f paracell-myapp-123-web",
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
 		"docker network rm paracell-myapp-123",
 	}
 	if !reflect.DeepEqual(runner.runCalls, want) {
@@ -733,10 +734,13 @@ func TestCleanContainersは見つからないContainerとNetworkを無視する(
 }
 
 type fakeRunner struct {
-	outputs     []string
-	outputCalls []string
-	runCalls    []string
-	runErrors   map[string]error
+	outputs              []string
+	outputErrors         []error
+	outputCalls          []string
+	runCalls             []string
+	runErrors            map[string]error
+	gatewayInspectOutput *string
+	gatewayInspectError  error
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
@@ -751,10 +755,33 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 
 func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
 	_ = ctx
+	if name == "docker" && len(args) > 0 && args[len(args)-1] == gatewayContainerName {
+		if r.gatewayInspectOutput != nil || r.gatewayInspectError != nil {
+			r.outputCalls = append(r.outputCalls, name+" "+joinArgs(args))
+			if r.gatewayInspectOutput == nil {
+				return "", r.gatewayInspectError
+			}
+			return *r.gatewayInspectOutput, r.gatewayInspectError
+		}
+		network := ""
+		for i := len(r.runCalls) - 1; i >= 0; i-- {
+			const prefix = "docker network create "
+			if strings.HasPrefix(r.runCalls[i], prefix) {
+				network = strings.TrimPrefix(r.runCalls[i], prefix)
+				break
+			}
+		}
+		return `{"Config":{"Labels":{"io.paracell.gateway":"true"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"` + network + `":{}}}}`, nil
+	}
 	r.outputCalls = append(r.outputCalls, name+" "+joinArgs(args))
 	out := r.outputs[0]
 	r.outputs = r.outputs[1:]
-	return out, nil
+	var err error
+	if len(r.outputErrors) > 0 {
+		err = r.outputErrors[0]
+		r.outputErrors = r.outputErrors[1:]
+	}
+	return out, err
 }
 
 func joinArgs(args []string) string {
