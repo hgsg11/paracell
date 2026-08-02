@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paracell Requirement Dispatcher"
+  short_description: "Grill requirements, then dispatch to Paracell"
+  default_prompt: "Use $paracell to grill this request one decision at a time, then dispatch it to the best matching Paracell template."
