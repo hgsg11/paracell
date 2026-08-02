@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -36,11 +35,6 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 			t.Skipf("container %s already exists but is not the managed %s image", gatewayContainerName, gatewayImage)
 		}
 	} else {
-		listener, listenErr := net.Listen("tcp", "127.0.0.1:80")
-		if listenErr != nil {
-			t.Skipf("127.0.0.1:80 is unavailable: %v", listenErr)
-		}
-		_ = listener.Close()
 		removeGateway = true
 	}
 
@@ -85,12 +79,13 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
 		t.Fatalf("CreateContainers failed: %v", err)
 	}
+	gatewayEndpoint := strings.Split(dockerIntegrationOutput(t, "port", gatewayContainerName, "80/tcp"), "\n")[0]
 
 	host := "web." + cellName + ".integrationgw.localhost"
 	deadline := time.Now().Add(15 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+		req, err := http.NewRequest(http.MethodGet, "http://"+gatewayEndpoint+"/", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

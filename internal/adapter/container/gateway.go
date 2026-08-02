@@ -141,19 +141,16 @@ func gatewayRouteName(containerName string, port string) string {
 func (a DockerCLIAdapter) ensureGateway(ctx context.Context, network string) error {
 	raw, err := a.Runner.Output(ctx, "docker", "inspect", "-f", "{{json .}}", gatewayContainerName)
 	if err != nil {
-		if err := a.Runner.Run(ctx, "docker",
-			"run", "-d",
-			"--name", gatewayContainerName,
-			"--label", gatewayManagedLabel+"=true",
-			"--restart", "unless-stopped",
-			"-p", "127.0.0.1:80:80",
-			"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
-			gatewayImage,
-			"--providers.docker=true",
-			"--providers.docker.exposedbydefault=false",
-			"--entrypoints.web.address=:80",
-		); err != nil {
-			return fmt.Errorf("start Paracell gateway on 127.0.0.1:80: %w", err)
+		if err := a.Runner.Run(ctx, "docker", gatewayRunArgs("127.0.0.1:80:80")...); err != nil {
+			if !isGatewayPortConflict(err) {
+				return fmt.Errorf("start Paracell gateway on 127.0.0.1:80: %w", err)
+			}
+			if removeErr := a.Runner.Run(ctx, "docker", "rm", "-f", gatewayContainerName); removeErr != nil && !isMissingDockerResourceError(removeErr) {
+				return fmt.Errorf("remove Paracell gateway after port 80 conflict: %w", removeErr)
+			}
+			if fallbackErr := a.Runner.Run(ctx, "docker", gatewayRunArgs("127.0.0.1::80")...); fallbackErr != nil {
+				return fmt.Errorf("start Paracell gateway on an available 127.0.0.1 port: %w", fallbackErr)
+			}
 		}
 		if err := a.Runner.Run(ctx, "docker", "network", "connect", network, gatewayContainerName); err != nil {
 			return fmt.Errorf("connect Paracell gateway to network %q: %w", network, err)
@@ -180,6 +177,26 @@ func (a DockerCLIAdapter) ensureGateway(ctx context.Context, network string) err
 		return fmt.Errorf("connect Paracell gateway to network %q: %w", network, err)
 	}
 	return nil
+}
+
+func gatewayRunArgs(publish string) []string {
+	return []string{
+		"run", "-d",
+		"--name", gatewayContainerName,
+		"--label", gatewayManagedLabel + "=true",
+		"--restart", "unless-stopped",
+		"-p", publish,
+		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
+		gatewayImage,
+		"--providers.docker=true",
+		"--providers.docker.exposedbydefault=false",
+		"--entrypoints.web.address=:80",
+	}
+}
+
+func isGatewayPortConflict(err error) bool {
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "port is already allocated") || strings.Contains(message, "address already in use")
 }
 
 func (a DockerCLIAdapter) disconnectGateway(ctx context.Context, network string) error {

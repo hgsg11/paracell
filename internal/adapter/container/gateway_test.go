@@ -173,7 +173,7 @@ func TestCreateContainersはAliasやPortがなくてもIsolatedGatewayを接続�
 	}
 }
 
-func TestCreateContainersはGatewayのPort競合時にCellNetworkをRollbackする(t *testing.T) {
+func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackする(t *testing.T) {
 	empty := ""
 	gatewayRun := "docker run -d --name paracell-gateway --label io.paracell.gateway=true --restart unless-stopped -p 127.0.0.1:80:80 -v /var/run/docker.sock:/var/run/docker.sock:ro traefik:v3.7 --providers.docker=true --providers.docker.exposedbydefault=false --entrypoints.web.address=:80"
 	runner := &fakeRunner{
@@ -184,17 +184,28 @@ func TestCreateContainersはGatewayのPort競合時にCellNetworkをRollbackす�
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{
+		Name: "123",
+		Containers: domain.Containers{
+			Network:     "paracell-myapp-123",
+			NetworkMode: "isolated",
+			Services:    map[string]domain.CellContainer{},
+		},
+	}
 
-	err := adapter.CreateContainers(context.Background(), gatewayTestCell(), domain.Template{})
-	if err == nil || !strings.Contains(err.Error(), "start Paracell gateway on 127.0.0.1:80") {
-		t.Fatalf("error = %v, want actionable port conflict", err)
+	err := adapter.CreateContainers(context.Background(), cell, domain.Template{})
+	if err != nil {
+		t.Fatalf("CreateContainers returned error: %v", err)
 	}
-	wantTail := []string{
-		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
-		"docker network rm paracell-myapp-123",
+	want := []string{
+		"docker network create paracell-myapp-123",
+		gatewayRun,
+		"docker rm -f paracell-gateway",
+		"docker run -d --name paracell-gateway --label io.paracell.gateway=true --restart unless-stopped -p 127.0.0.1::80 -v /var/run/docker.sock:/var/run/docker.sock:ro traefik:v3.7 --providers.docker=true --providers.docker.exposedbydefault=false --entrypoints.web.address=:80",
+		"docker network connect paracell-myapp-123 paracell-gateway",
 	}
-	if !reflect.DeepEqual(runner.runCalls[len(runner.runCalls)-2:], wantTail) {
-		t.Fatalf("rollback calls = %#v, want %#v", runner.runCalls, wantTail)
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
 	}
 }
 

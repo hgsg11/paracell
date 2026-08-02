@@ -111,7 +111,7 @@ http://p<containerPort>.<alias>.<cell>.<project>.localhost
 
 `paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
 
-初回起動時には Docker が `traefik:v3.7` image を利用でき、`127.0.0.1:80` が空いている必要があります。port 80 が別 process/container に使われている場合、cell 作成は gateway 起動エラーとして停止し、作成途中の isolated network を片付けます。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
+初回起動時には Docker が `traefik:v3.7` image を利用できる必要があります。まず `127.0.0.1:80` を使い、port 80 が別 process/container に使われていれば loopback 上の空き port を Docker に自動割当させます。fallback 先は `docker port paracell-gateway 80/tcp` で確認でき、その場合は表示された port を URL へ付けてください。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
 
 ## TUI
 
