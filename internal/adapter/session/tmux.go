@@ -72,6 +72,7 @@ func (a TmuxAdapter) configureCellSession(ctx context.Context, cell domain.Cell)
 }
 
 func (a TmuxAdapter) configureSession(ctx context.Context, target string, project string, label string, windowTargets []string) error {
+	keyTable := "paracell-" + target
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "@paracell-project", project); err != nil {
 		return err
 	}
@@ -121,7 +122,7 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	if err := a.Runner.Run(ctx, "tmux", "set-hook", "-t", target, "after-new-window[100]", newWindowHook); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "key-table", "paracell"); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "key-table", keyTable); err != nil {
 		return err
 	}
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "mouse", "on"); err != nil {
@@ -130,24 +131,23 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "set-clipboard", "on"); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "MouseDown1Pane", "select-pane", "-t", "=", "\\;", "send-keys", "-M"); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", keyTable, "MouseDown1Pane", "select-pane", "-t", "=", "\\;", "send-keys", "-M"); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", keyTable, "MouseDrag1Pane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -M"); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "WheelUpPane", "if-shell", "-F", "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e"); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", keyTable, "WheelUpPane", "if-shell", "-F", "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e"); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", "paracell", "C-t", "next-window"); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", keyTable, "C-t", "next-window"); err != nil {
 		return err
 	}
-	args := []string{"bind-key", "-T", "paracell", "C-p", "display-popup", "-w", "65", "-h", "24", "-y", "0"}
+	args := []string{"bind-key", "-T", keyTable, "C-p", "display-popup", "-t", target, "-w", "65", "-h", "24", "-y", "0"}
 	if a.Root != "" {
-		args = append(args, "-d", a.Root, "-E", "env", "PARACELL_ROOT="+a.Root, "paracell", "view")
-	} else {
-		args = append(args, "-E", "paracell", "view")
+		args = append(args, "-d", a.Root)
 	}
+	args = append(args, "-E", "paracell", "view")
 	return a.Runner.Run(ctx, "tmux", args...)
 }
 
