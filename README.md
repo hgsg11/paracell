@@ -208,6 +208,7 @@ paracell --version
 - `files`: cell の source にコピーするファイル
 - `containers.network: isolated`: cell 用 Docker network と自動 HTTP gateway route を作る
 - `containers.network: shared`: source container の network を使う
+- `containers.services.<service>.environment`: service ごとの環境変数を設定する。source container の環境変数をコピーした後、同名の変数をこの設定で上書きする
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
 - database service の `volumeMode` は `copy` のみ対応する
@@ -215,6 +216,21 @@ paracell --version
 - `database.copyMode: data`: 予約済み。まだ未実装
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
+
+container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。isolated service でも environment は application container に適用され、共有 gateway の設定と route はそのまま維持されます。
+
+```yaml
+containers:
+  network: isolated
+  services:
+    web:
+      sourceContainer: myapp-web
+      environment:
+        PARACELL_ISSUE: "{{.issue}}"
+        PARACELL_CELL: "{{.name}}"
+        PARACELL_PROJECT: "{{.project}}"
+        OPTIONAL_VALUE: ""
+```
 
 ## ファイル
 

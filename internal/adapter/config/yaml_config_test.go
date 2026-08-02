@@ -2,8 +2,11 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -32,6 +35,11 @@ templates:
       services:
         web:
           sourceContainer: myapp-web
+          environment:
+            CELL_ISSUE: "{{.issue}}"
+            CELL_NAME: "{{.name}}"
+            PROJECT_NAME: "{{.project}}"
+            EXPLICIT_EMPTY: ""
         db:
           sourceContainer: myapp-db
     session:
@@ -44,7 +52,7 @@ templates:
 	}
 
 	loader := YAMLConfigAdapter{Path: configPath}
-	cfg, err := loader.Load(context.Background(), nil)
+	cfg, err := loader.Load(context.Background(), &domain.TemplateVars{Issue: "issue-123", Name: "cell-123"})
 
 	if err != nil {
 		t.Fatalf("設定読み込みでエラーが返った: %v", err)
@@ -70,6 +78,18 @@ templates:
 	}
 	if template.Containers.Services["web"].SourceContainer != "myapp-web" {
 		t.Fatalf("webのsourceContainer = %q, want %q", template.Containers.Services["web"].SourceContainer, "myapp-web")
+	}
+	wantEnvironment := map[string]string{
+		"CELL_ISSUE":     "issue-123",
+		"CELL_NAME":      "cell-123",
+		"PROJECT_NAME":   "myapp",
+		"EXPLICIT_EMPTY": "",
+	}
+	if got := template.Containers.Services["web"].Environment; !reflect.DeepEqual(got, wantEnvironment) {
+		t.Fatalf("web environment = %#v, want %#v", got, wantEnvironment)
+	}
+	if got := template.Containers.Services["db"].Environment; got != nil {
+		t.Fatalf("db environment = %#v, want nil", got)
 	}
 	if template.Containers.Network != "isolated" {
 		t.Fatalf("containers.network = %q, want %q", template.Containers.Network, "isolated")
@@ -106,7 +126,10 @@ func TestYAML設定を保存できる(t *testing.T) {
 				Containers: domain.ContainerTemplate{
 					Network: "shared",
 					Services: map[string]domain.ContainerServiceTemplate{
-						"web": {SourceContainer: "myapp-web"},
+						"web": {
+							SourceContainer: "myapp-web",
+							Environment:     map[string]string{"APP_ENV": "cell"},
+						},
 					},
 				},
 				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
@@ -140,6 +163,8 @@ templates:
             services:
                 web:
                     sourceContainer: myapp-web
+                    environment:
+                        APP_ENV: cell
         session:
             windows: []
 `
@@ -152,6 +177,82 @@ templates:
 	}
 	if !info.IsDir() {
 		t.Fatal(".paracell がdirectoryではない")
+	}
+}
+
+func TestYAMLConfigは不正なEnvironmentTemplateを拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+          environment:
+            BROKEN: "{{.issue"
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), &domain.TemplateVars{Issue: "123", Name: "123"})
+	if err == nil {
+		t.Fatal("不正なenvironment templateなのにエラーが返らなかった")
+	}
+	if !strings.Contains(err.Error(), `render environment "BROKEN" for service "web"`) {
+		t.Fatalf("error = %q, want environment context", err)
+	}
+}
+
+func TestYAMLConfigは未知のEnvironmentTemplate変数を拒否する(t *testing.T) {
+	for _, unknown := range []string{"unknown", "Command"} {
+		t.Run(unknown, func(t *testing.T) {
+			dir := t.TempDir()
+			configPath := filepath.Join(dir, "paracell.yaml")
+			content := []byte(strings.ReplaceAll(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      services:
+        web:
+          sourceContainer: myapp-web
+          environment:
+            UNKNOWN: "{{.UNKNOWN}}"
+    session:
+      windows: []
+`, "UNKNOWN", unknown))
+			if err := os.WriteFile(configPath, content, 0o644); err != nil {
+				t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+			}
+
+			_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), &domain.TemplateVars{Issue: "123", Name: "123"})
+			if err == nil {
+				t.Fatal("未知のenvironment template変数なのにエラーが返らなかった")
+			}
+			if !strings.Contains(err.Error(), fmt.Sprintf(`map has no entry for key %q`, unknown)) {
+				t.Fatalf("error = %q, want unknown variable error", err)
+			}
+		})
 	}
 }
 

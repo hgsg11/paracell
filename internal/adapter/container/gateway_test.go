@@ -119,13 +119,19 @@ func TestCreateContainersはIsolatedContainerへGatewayRouteを登録する(t *t
 		gatewayInspectOutput: &empty,
 		gatewayInspectError:  errors.New("No such container: paracell-gateway"),
 		outputs: []string{
-			`{"Config":{"Image":"myapp-web:latest"},"HostConfig":{"PortBindings":{"3000/tcp":[{"HostPort":"13000"}]}},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["web"]}}}}`,
+			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=source","KEEP_VALUE=keep"]},"HostConfig":{"PortBindings":{"3000/tcp":[{"HostPort":"13000"}]}},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["web"]}}}}`,
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
 	cell := gatewayTestCell()
 	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"web": {SourceContainer: "myapp-web"},
+		"web": {
+			SourceContainer: "myapp-web",
+			Environment: map[string]string{
+				"APP_ENV":     "cell",
+				"EMPTY_VALUE": "",
+			},
+		},
 	}}}
 
 	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
@@ -140,6 +146,9 @@ func TestCreateContainersはIsolatedContainerへGatewayRouteを登録する(t *t
 		"--label traefik.enable=true",
 		"--label traefik.http.routers.paracell-myapp-123-web-p3000.rule=Host(`web.123.myapp.localhost`)",
 		"--label traefik.http.services.paracell-myapp-123-web-p3000.loadbalancer.server.port=3000",
+		"-e APP_ENV=cell",
+		"-e KEEP_VALUE=keep",
+		"-e EMPTY_VALUE=",
 	} {
 		if !strings.Contains(applicationRun, want) {
 			t.Fatalf("application run = %q, want fragment %q", applicationRun, want)

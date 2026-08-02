@@ -189,7 +189,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			Network:        runNetwork,
 			NetworkAliases: networkAliases,
 			Labels:         labels,
-			Env:            append([]string(nil), inspection.Config.Env...),
+			Env:            mergeEnvironment(inspection.Config.Env, template.Containers.Services[role].Environment),
 			Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
 			Command:        append([]string(nil), inspection.Config.Cmd...),
 			WorkDir:        inspection.Config.WorkingDir,
@@ -214,6 +214,34 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		}
 	}
 	return nil
+}
+
+func mergeEnvironment(source []string, overrides map[string]string) []string {
+	merged := append([]string(nil), source...)
+	if len(overrides) == 0 {
+		return merged
+	}
+
+	indexes := make(map[string]int, len(merged))
+	for index, entry := range merged {
+		name, _, _ := strings.Cut(entry, "=")
+		indexes[name] = index
+	}
+
+	names := make([]string, 0, len(overrides))
+	for name := range overrides {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		entry := name + "=" + overrides[name]
+		if index, ok := indexes[name]; ok {
+			merged[index] = entry
+			continue
+		}
+		merged = append(merged, entry)
+	}
+	return merged
 }
 
 func (a DockerCLIAdapter) rollbackIsolatedCell(ctx context.Context, network string, containers []string, networkCreated bool) error {

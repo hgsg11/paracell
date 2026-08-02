@@ -18,6 +18,7 @@ type Template struct {
 type TemplateVars struct {
 	Issue   string
 	Name    string
+	Project string
 	Command string
 }
 
@@ -85,9 +86,10 @@ func (n *ContainerNetwork) UnmarshalJSON(data []byte) error {
 }
 
 type ContainerServiceTemplate struct {
-	SourceContainer string          `yaml:"sourceContainer" json:"sourceContainer"`
-	VolumeMode      string          `yaml:"volumeMode,omitempty" json:"volumeMode,omitempty"`
-	Database        *DatabaseConfig `yaml:"database,omitempty" json:"database,omitempty"`
+	SourceContainer string            `yaml:"sourceContainer" json:"sourceContainer"`
+	VolumeMode      string            `yaml:"volumeMode,omitempty" json:"volumeMode,omitempty"`
+	Environment     map[string]string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Database        *DatabaseConfig   `yaml:"database,omitempty" json:"database,omitempty"`
 }
 
 type DatabaseConfig struct {
