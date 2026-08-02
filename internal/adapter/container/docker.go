@@ -829,7 +829,8 @@ type composeMountPlan struct {
 }
 
 type dockerNetworkSettings struct {
-	Networks map[string]dockerNetwork `json:"Networks"`
+	Networks map[string]dockerNetwork       `json:"Networks"`
+	Ports    map[string][]dockerPortBinding `json:"Ports"`
 }
 
 type dockerNetwork struct {

@@ -95,6 +95,7 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 			body, readErr := io.ReadAll(response.Body)
 			_ = response.Body.Close()
 			if readErr == nil && response.StatusCode == http.StatusOK && strings.Contains(string(body), "Welcome to nginx") {
+				verifyGatewayDashboard(t, gatewayEndpoint)
 				return
 			}
 			lastErr = fmt.Errorf("status=%s body=%q readErr=%v", response.Status, strings.TrimSpace(string(body)), readErr)
@@ -104,6 +105,38 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 		time.Sleep(250 * time.Millisecond)
 	}
 	t.Fatalf("gateway did not route host %q to %q: %v", host, targetContainer, lastErr)
+}
+
+func verifyGatewayDashboard(t *testing.T, gatewayEndpoint string) {
+	t.Helper()
+	for _, path := range []string{"/dashboard/", "/api/overview"} {
+		deadline := time.Now().Add(15 * time.Second)
+		var lastErr error
+		available := false
+		for time.Now().Before(deadline) {
+			req, err := http.NewRequest(http.MethodGet, "http://"+gatewayEndpoint+path, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = gatewayDashboardHost
+			response, err := http.DefaultClient.Do(req)
+			if err == nil {
+				body, readErr := io.ReadAll(response.Body)
+				_ = response.Body.Close()
+				if readErr == nil && response.StatusCode == http.StatusOK && len(body) > 0 {
+					available = true
+					break
+				}
+				lastErr = fmt.Errorf("status=%s body=%q readErr=%v", response.Status, strings.TrimSpace(string(body)), readErr)
+			} else {
+				lastErr = err
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+		if !available {
+			t.Fatalf("gateway dashboard path %q was not available: %v", path, lastErr)
+		}
+	}
 }
 
 func TestDockerIntegrationはIsolatedNetworkへAliasをコピーする(t *testing.T) {

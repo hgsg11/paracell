@@ -95,6 +95,12 @@ templates:
 
 Docker provider で `containers.network: isolated` を使うと、paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各 cell 専用 network へ接続され、source container からコピーした network alias と公開済み TCP container port を使って route を自動生成します。gateway 用の設定を `paracell.yaml` に追加する必要はありません。
 
+Traefik dashboard はデフォルトで有効になり、次の URL から利用できます。末尾の `/` は必須です。dashboard と API は専用の管理 port や `api.insecure` を使わず、既存の loopback-only web entrypoint を通じて `gateway.paracell.localhost` にだけ route されます。
+
+```text
+http://gateway.paracell.localhost/dashboard/
+```
+
 公開 port が 1 個の container は、すべての HTTP path と WebSocket を次の URL で利用できます。
 
 ```text
@@ -111,7 +117,7 @@ http://p<containerPort>.<alias>.<cell>.<project>.localhost
 
 `paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
 
-初回起動時には Docker が `traefik:v3.7` image を利用できる必要があります。まず `127.0.0.1:80` を使い、port 80 が別 process/container に使われていれば loopback 上の空き port を Docker に自動割当させます。fallback 先は `docker port paracell-gateway 80/tcp` で確認でき、その場合は表示された port を URL へ付けてください。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
+初回起動時には Docker が `traefik:v3.7` image を利用できる必要があります。まず `127.0.0.1:80` を使い、port 80 が別 process/container に使われていれば loopback 上の空き port を Docker に自動割当させます。fallback 先は `docker port paracell-gateway 80/tcp` で確認でき、その場合は表示された port を URL へ付けてください。たとえば fallback port が `49152` なら dashboard は `http://gateway.paracell.localhost:49152/dashboard/` です。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
 
 ## TUI
 

@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -12,14 +13,20 @@ import (
 )
 
 const (
-	gatewayContainerName = "paracell-gateway"
-	gatewayImage         = "traefik:v3.7"
-	gatewayManagedLabel  = "io.paracell.gateway"
+	gatewayContainerName      = "paracell-gateway"
+	gatewayImage              = "traefik:v3.7"
+	gatewayManagedLabel       = "io.paracell.gateway"
+	gatewayConfigVersionLabel = "io.paracell.gateway.config-version"
+	gatewayConfigVersion      = "2"
+	gatewayDashboardRouter    = "paracell-gateway-dashboard"
+	gatewayDashboardHost      = "gateway.paracell.localhost"
+	gatewayReplacementName    = "paracell-gateway-replaced"
 )
 
 type gatewayInspection struct {
-	Config dockerConfig `json:"Config"`
-	State  struct {
+	Config     dockerConfig     `json:"Config"`
+	HostConfig dockerHostConfig `json:"HostConfig"`
+	State      struct {
 		Running bool `json:"Running"`
 	} `json:"State"`
 	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
@@ -165,6 +172,15 @@ func (a DockerCLIAdapter) ensureGateway(ctx context.Context, network string) err
 	if inspection.Config.Labels[gatewayManagedLabel] != "true" {
 		return fmt.Errorf("container %q already exists and is not managed by Paracell", gatewayContainerName)
 	}
+	if inspection.Config.Labels[gatewayConfigVersionLabel] != gatewayConfigVersion {
+		if err := a.recreateGateway(ctx, inspection); err != nil {
+			return err
+		}
+		if _, connected := inspection.NetworkSettings.Networks[network]; connected {
+			return nil
+		}
+		return a.connectGateway(ctx, network)
+	}
 	if !inspection.State.Running {
 		if err := a.Runner.Run(ctx, "docker", "start", gatewayContainerName); err != nil {
 			return fmt.Errorf("start Paracell gateway on 127.0.0.1:80: %w", err)
@@ -173,17 +189,20 @@ func (a DockerCLIAdapter) ensureGateway(ctx context.Context, network string) err
 	if _, connected := inspection.NetworkSettings.Networks[network]; connected {
 		return nil
 	}
-	if err := a.Runner.Run(ctx, "docker", "network", "connect", network, gatewayContainerName); err != nil {
-		return fmt.Errorf("connect Paracell gateway to network %q: %w", network, err)
-	}
-	return nil
+	return a.connectGateway(ctx, network)
 }
 
 func gatewayRunArgs(publish string) []string {
+	router := "traefik.http.routers." + gatewayDashboardRouter
 	return []string{
 		"run", "-d",
 		"--name", gatewayContainerName,
 		"--label", gatewayManagedLabel + "=true",
+		"--label", gatewayConfigVersionLabel + "=" + gatewayConfigVersion,
+		"--label", "traefik.enable=true",
+		"--label", router + ".entrypoints=web",
+		"--label", router + ".rule=Host(`" + gatewayDashboardHost + "`) && (PathPrefix(`/dashboard/`) || PathPrefix(`/api`))",
+		"--label", router + ".service=api@internal",
 		"--restart", "unless-stopped",
 		"-p", publish,
 		"-v", "/var/run/docker.sock:/var/run/docker.sock:ro",
@@ -191,7 +210,79 @@ func gatewayRunArgs(publish string) []string {
 		"--providers.docker=true",
 		"--providers.docker.exposedbydefault=false",
 		"--entrypoints.web.address=:80",
+		"--api.dashboard=true",
 	}
+}
+
+func (a DockerCLIAdapter) recreateGateway(ctx context.Context, inspection gatewayInspection) error {
+	publish := gatewayPublish(inspection)
+	networks := gatewayCellNetworks(inspection.NetworkSettings.Networks)
+	if err := a.Runner.Run(ctx, "docker", "rename", gatewayContainerName, gatewayReplacementName); err != nil {
+		return fmt.Errorf("preserve outdated Paracell gateway before replacement: %w", err)
+	}
+	if err := a.Runner.Run(ctx, "docker", "stop", gatewayReplacementName); err != nil {
+		restoreErr := a.Runner.Run(ctx, "docker", "rename", gatewayReplacementName, gatewayContainerName)
+		return errors.Join(fmt.Errorf("stop outdated Paracell gateway: %w", err), restoreErr)
+	}
+	if err := a.Runner.Run(ctx, "docker", gatewayRunArgs(publish)...); err != nil {
+		return errors.Join(fmt.Errorf("recreate Paracell gateway on %s: %w", publish, err), a.restoreReplacedGateway(ctx, inspection.State.Running))
+	}
+	for _, network := range networks {
+		if err := a.connectGateway(ctx, network); err != nil {
+			return errors.Join(err, a.restoreReplacedGateway(ctx, inspection.State.Running))
+		}
+	}
+	if err := a.Runner.Run(ctx, "docker", "rm", gatewayReplacementName); err != nil {
+		return fmt.Errorf("remove replaced Paracell gateway: %w", err)
+	}
+	return nil
+}
+
+func (a DockerCLIAdapter) restoreReplacedGateway(ctx context.Context, wasRunning bool) error {
+	var restoreErr error
+	if err := a.Runner.Run(ctx, "docker", "rm", "-f", gatewayContainerName); err != nil && !isMissingDockerResourceError(err) {
+		restoreErr = errors.Join(restoreErr, err)
+	}
+	if err := a.Runner.Run(ctx, "docker", "rename", gatewayReplacementName, gatewayContainerName); err != nil {
+		return errors.Join(restoreErr, err)
+	}
+	if wasRunning {
+		if err := a.Runner.Run(ctx, "docker", "start", gatewayContainerName); err != nil {
+			restoreErr = errors.Join(restoreErr, err)
+		}
+	}
+	return restoreErr
+}
+
+func gatewayPublish(inspection gatewayInspection) string {
+	bindings := inspection.NetworkSettings.Ports["80/tcp"]
+	if len(bindings) == 0 {
+		bindings = inspection.HostConfig.PortBindings["80/tcp"]
+	}
+	for _, binding := range bindings {
+		if binding.HostPort != "" && (binding.HostIP == "127.0.0.1" || binding.HostIP == "") {
+			return "127.0.0.1:" + binding.HostPort + ":80"
+		}
+	}
+	return "127.0.0.1:80:80"
+}
+
+func gatewayCellNetworks(networks map[string]dockerNetwork) []string {
+	names := make([]string, 0, len(networks))
+	for name := range networks {
+		if strings.HasPrefix(name, "paracell-") {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (a DockerCLIAdapter) connectGateway(ctx context.Context, network string) error {
+	if err := a.Runner.Run(ctx, "docker", "network", "connect", network, gatewayContainerName); err != nil {
+		return fmt.Errorf("connect Paracell gateway to network %q: %w", network, err)
+	}
+	return nil
 }
 
 func isGatewayPortConflict(err error) bool {
