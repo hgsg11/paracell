@@ -20,6 +20,7 @@ type RunSpec struct {
 	Image          string
 	Network        string
 	NetworkAliases []string
+	Labels         map[string]string
 	Env            []string
 	Entrypoint     []string
 	Command        []string
@@ -49,6 +50,14 @@ func BuildDockerRunArgs(spec RunSpec) []string {
 	}
 	for _, alias := range spec.NetworkAliases {
 		args = append(args, "--network-alias", alias)
+	}
+	labelNames := make([]string, 0, len(spec.Labels))
+	for name := range spec.Labels {
+		labelNames = append(labelNames, name)
+	}
+	sort.Strings(labelNames)
+	for _, name := range labelNames {
+		args = append(args, "--label", name+"="+spec.Labels[name])
 	}
 	for _, env := range spec.Env {
 		args = append(args, "-e", env)
@@ -117,6 +126,7 @@ type DockerCLIAdapter struct {
 }
 
 const (
+	composeProjectLabel     = "com.docker.compose.project"
 	composeWorkingDirLabel  = "com.docker.compose.project.working_dir"
 	composeConfigFilesLabel = "com.docker.compose.project.config_files"
 	composeServiceLabel     = "com.docker.compose.service"
@@ -146,16 +156,22 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		runNetwork := network
 		extraNetworks := []string(nil)
 		networkAliases := []string(nil)
+		labels := map[string]string(nil)
 		if cell.Containers.NetworkMode == string(domain.ContainerNetworkShared) {
 			runNetwork, extraNetworks = sharedNetworks(inspection.NetworkSettings.Networks)
 		} else {
 			networkAliases = isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+			labels = map[string]string{
+				composeProjectLabel: network,
+				composeServiceLabel: role,
+			}
 		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:           service.ContainerName,
 			Image:          inspection.Config.Image,
 			Network:        runNetwork,
 			NetworkAliases: networkAliases,
+			Labels:         labels,
 			Env:            append([]string(nil), inspection.Config.Env...),
 			Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
 			Command:        append([]string(nil), inspection.Config.Cmd...),
