@@ -175,11 +175,12 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			runNetwork, extraNetworks = sharedNetworks(inspection.NetworkSettings.Networks)
 		} else {
 			networkAliases = isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+			networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(role, "service"))
 			labels = map[string]string{
 				composeProjectLabel: network,
 				composeServiceLabel: role,
 			}
-			for name, value := range gatewayLabels(cell, service.ContainerName, networkAliases, inspection.HostConfig.PortBindings) {
+			for name, value := range gatewayLabels(cell, service.ContainerName, role, inspection.HostConfig.PortBindings) {
 				labels[name] = value
 			}
 		}
@@ -699,6 +700,20 @@ func isolatedNetworkAliases(networks map[string]dockerNetwork) []string {
 	for alias := range unique {
 		aliases = append(aliases, alias)
 	}
+	sort.Strings(aliases)
+	return aliases
+}
+
+func appendNetworkAlias(aliases []string, alias string) []string {
+	if alias == "" {
+		return aliases
+	}
+	for _, existing := range aliases {
+		if existing == alias {
+			return aliases
+		}
+	}
+	aliases = append(aliases, alias)
 	sort.Strings(aliases)
 	return aliases
 }

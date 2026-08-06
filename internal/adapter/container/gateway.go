@@ -33,35 +33,18 @@ type gatewayInspection struct {
 	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
 }
 
-func gatewayLabels(cell domain.Cell, containerName string, aliases []string, bindings map[string][]dockerPortBinding) map[string]string {
+func gatewayLabels(cell domain.Cell, containerName string, role string, bindings map[string][]dockerPortBinding) map[string]string {
 	ports := publishedTCPPorts(bindings)
-	if len(aliases) == 0 || len(ports) == 0 {
+	if len(ports) == 0 {
 		return nil
 	}
 
 	project := gatewayProjectName(cell)
 	cellName := gatewayHostLabel(cell.Name)
-	if project == "" || cellName == "" {
+	serviceRole := gatewayHostLabel(domain.SafeResourceName(role, "service"))
+	if project == "" || cellName == "" || serviceRole == "" {
 		return nil
 	}
-
-	hostAliases := make([]string, 0, len(aliases))
-	seenAliases := make(map[string]struct{}, len(aliases))
-	for _, alias := range aliases {
-		hostAlias := gatewayHostLabel(alias)
-		if hostAlias == "" {
-			continue
-		}
-		if _, ok := seenAliases[hostAlias]; ok {
-			continue
-		}
-		seenAliases[hostAlias] = struct{}{}
-		hostAliases = append(hostAliases, hostAlias)
-	}
-	if len(hostAliases) == 0 {
-		return nil
-	}
-	sort.Strings(hostAliases)
 
 	labels := map[string]string{
 		"traefik.enable":         "true",
@@ -69,18 +52,14 @@ func gatewayLabels(cell domain.Cell, containerName string, aliases []string, bin
 	}
 	for _, port := range ports {
 		name := gatewayRouteName(containerName, port)
-		hosts := make([]string, 0, len(hostAliases))
-		for _, alias := range hostAliases {
-			prefix := alias
-			if len(ports) > 1 {
-				prefix = "p" + port + "." + prefix
-			}
-			hosts = append(hosts, fmt.Sprintf("Host(`%s.%s.%s.localhost`)", prefix, cellName, project))
+		hostPrefix := serviceRole
+		if len(ports) > 1 {
+			hostPrefix = "p" + port + "." + hostPrefix
 		}
 		router := "traefik.http.routers." + name
 		service := "traefik.http.services." + name
 		labels[router+".entrypoints"] = "web"
-		labels[router+".rule"] = strings.Join(hosts, " || ")
+		labels[router+".rule"] = fmt.Sprintf("Host(`%s.%s.%s.localhost`)", hostPrefix, cellName, project)
 		labels[router+".service"] = name
 		labels[service+".loadbalancer.server.port"] = port
 	}

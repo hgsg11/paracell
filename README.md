@@ -117,7 +117,7 @@ templates:
 
 ## Isolated container gateway
 
-Docker provider で `containers.network: isolated` を使うと、paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各 cell 専用 network へ接続され、source container からコピーした network alias と公開済み TCP container port を使って route を自動生成します。gateway 用の設定を `paracell.yaml` に追加する必要はありません。
+Docker provider で `containers.network: isolated` を使うと、paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各 cell 専用 network へ接続され、`paracell.yaml` の `containers.services` map key（service role）と公開済み TCP container port を使って route を自動生成します。gateway 用の設定を `paracell.yaml` に追加する必要はありません。
 
 Traefik dashboard はデフォルトで有効になり、次の URL から利用できます。末尾の `/` は必須です。dashboard と API は専用の管理 port や `api.insecure` を使わず、既存の loopback-only web entrypoint を通じて `gateway.paracell.localhost` にだけ route されます。
 
@@ -145,16 +145,20 @@ dashboardはrouting設定を確認する画面で、access logや時系列graph�
 公開 port が 1 個の container は、すべての HTTP path と WebSocket を次の URL で利用できます。
 
 ```text
-http://<alias>.<cell>.<project>.localhost
+http://<service-role>.<cell>.<project>.localhost
 ```
 
 公開 port が複数ある場合は、container port ごとに prefix が付きます。
 
 ```text
-http://p<containerPort>.<alias>.<cell>.<project>.localhost
+http://p<containerPort>.<service-role>.<cell>.<project>.localhost
 ```
 
-たとえば project `myapp` の cell `123` で alias `web` が container port `3000` と `8080` を公開していれば、`http://p3000.web.123.myapp.localhost` と `http://p8080.web.123.myapp.localhost` を使います。route の upstream は alias ではなく cell 固有の copied container と internal port です。そのため、複数 cell が同じ `web` alias を持っていても衝突しません。alias または公開 TCP port がない container には route を作りません。
+たとえば project `myapp` の cell `123` で service role `frontend` が container port `3000` と `8080` を公開していれば、`http://p3000.frontend.123.myapp.localhost` と `http://p8080.frontend.123.myapp.localhost` を使います。source container名、Composeが生成したalias、追加のnetwork aliasはURLになりません。route の upstream はcell固有のcopied containerとinternal portです。そのため、複数cellが同じservice roleを持っていても衝突しません。公開TCP portがないcontainerにはrouteを作りません。
+
+source network aliasは、copied containerから`http://backend`のようにcontainer間通信するため、isolated networkへ引き続きコピーされます。さらにcopied containerにはservice role自身もnetwork aliasとして必ず追加されます。これらの内部通信用aliasと、外部公開するcanonical URLは別のものです。
+
+Paracellが作成するDocker resource名は、networkが`paracell-<project>-<cell>`、copied containerが`paracell-<project>-<cell>-<service-role>`です。ユーザーが起動したsource containerの名前は変更せず、このmanaged resource命名の対象にもなりません。project名自体が`paracell`なら`paracell-paracell-...`となりますが、先頭の`paracell`は管理namespace、2つ目はproject名であり、重複を省略しません。既存cellのresourceやURLは自動renameされず、修正版でcellを再作成した時点からこの規則が適用されます。
 
 `paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
 

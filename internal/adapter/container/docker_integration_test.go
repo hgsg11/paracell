@@ -16,7 +16,7 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(t *testing.T) {
+func TestDockerIntegrationは同じSourceComposeから作った2CellのFrontendBackendURLを分離する(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
 		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
 	}
@@ -39,29 +39,39 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 	}
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	cellName := "gateway-" + suffix
-	cellNetwork := "paracell-integrationgw-" + cellName
-	sourceNetwork := cellNetwork + "-source"
-	sourceContainer := cellNetwork + "-source"
-	targetContainer := cellNetwork + "-web"
+	sourceNetwork := "paracell-integrationgw-source-" + suffix
+	sourceContainers := map[string]string{
+		"frontend": "integrationgw-source-frontend-" + suffix,
+		"backend":  "integrationgw-source-backend-" + suffix,
+	}
 	adapter := DockerCLIAdapter{Runner: system.CaptureRunner{}}
-	cell := domain.Cell{
-		Name: cellName,
-		Containers: domain.Containers{
-			Network:     cellNetwork,
-			NetworkMode: "isolated",
-			Services: map[string]domain.CellContainer{
-				"web": {ContainerName: targetContainer, SourceContainer: sourceContainer},
+	cells := make([]domain.Cell, 0, 2)
+	for _, issue := range []string{"issue-a-" + suffix, "issue-b-" + suffix} {
+		network := "paracell-integrationgw-" + issue
+		cells = append(cells, domain.Cell{
+			Name: issue,
+			Containers: domain.Containers{
+				Network:     network,
+				NetworkMode: "isolated",
+				Services: map[string]domain.CellContainer{
+					"frontend": {ContainerName: network + "-frontend", SourceContainer: sourceContainers["frontend"]},
+					"backend":  {ContainerName: network + "-backend", SourceContainer: sourceContainers["backend"]},
+				},
 			},
-		},
+		})
 	}
 	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"web": {SourceContainer: sourceContainer},
+		"frontend": {SourceContainer: sourceContainers["frontend"]},
+		"backend":  {SourceContainer: sourceContainers["backend"]},
 	}}}
 
 	t.Cleanup(func() {
-		_ = adapter.CleanContainers(context.Background(), cell)
-		_ = exec.Command("docker", "rm", "-f", sourceContainer).Run()
+		for _, cell := range cells {
+			_ = adapter.CleanContainers(context.Background(), cell)
+		}
+		for _, sourceContainer := range sourceContainers {
+			_ = exec.Command("docker", "rm", "-f", sourceContainer).Run()
+		}
 		_ = exec.Command("docker", "network", "rm", sourceNetwork).Run()
 		if removeGateway {
 			_ = exec.Command("docker", "rm", "-f", gatewayContainerName).Run()
@@ -69,19 +79,47 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 	})
 
 	runDockerIntegrationCommand(t, "network", "create", sourceNetwork)
-	runDockerIntegrationCommand(t,
-		"run", "-d", "--name", sourceContainer,
-		"--network", sourceNetwork,
-		"--network-alias", "web",
-		"-p", "80",
-		"nginx:alpine",
-	)
-	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
-		t.Fatalf("CreateContainers failed: %v", err)
+	for role, sourceContainer := range sourceContainers {
+		runDockerIntegrationCommand(t,
+			"run", "-d", "--name", sourceContainer,
+			"--network", sourceNetwork,
+			"--network-alias", role,
+			"--network-alias", "compose-generated-"+role,
+			"-p", "80",
+			"nginx:alpine",
+		)
+	}
+	for _, cell := range cells {
+		if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+			t.Fatalf("CreateContainers for cell %q failed: %v", cell.Name, err)
+		}
 	}
 	gatewayEndpoint := strings.Split(dockerIntegrationOutput(t, "port", gatewayContainerName, "80/tcp"), "\n")[0]
 
-	host := "web." + cellName + ".integrationgw.localhost"
+	for _, cell := range cells {
+		for _, role := range []string{"frontend", "backend"} {
+			host := role + "." + cell.Name + ".integrationgw.localhost"
+			waitForGatewayHost(t, gatewayEndpoint, host)
+		}
+	}
+	verifyGatewayDashboard(t, gatewayEndpoint)
+
+	for _, cell := range cells {
+		for role, service := range cell.Containers.Services {
+			networks := dockerIntegrationOutput(t, "inspect", "-f", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}", service.ContainerName)
+			if networks != cell.Containers.Network {
+				t.Fatalf("%s container networks = %q, want %q", role, networks, cell.Containers.Network)
+			}
+			labels := dockerIntegrationOutput(t, "inspect", "-f", "{{json .Config.Labels}}", service.ContainerName)
+			if strings.Contains(labels, "compose-generated-") || strings.Contains(labels, sourceContainers[role]+".") {
+				t.Fatalf("%s labels contain a source alias Host rule: %s", service.ContainerName, labels)
+			}
+		}
+	}
+}
+
+func waitForGatewayHost(t *testing.T, gatewayEndpoint string, host string) {
+	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
@@ -95,7 +133,6 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 			body, readErr := io.ReadAll(response.Body)
 			_ = response.Body.Close()
 			if readErr == nil && response.StatusCode == http.StatusOK && strings.Contains(string(body), "Welcome to nginx") {
-				verifyGatewayDashboard(t, gatewayEndpoint)
 				return
 			}
 			lastErr = fmt.Errorf("status=%s body=%q readErr=%v", response.Status, strings.TrimSpace(string(body)), readErr)
@@ -104,7 +141,7 @@ func TestDockerIntegrationはIsolatedCellを共有Gateway経由でRoutingする(
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	t.Fatalf("gateway did not route host %q to %q: %v", host, targetContainer, lastErr)
+	t.Fatalf("gateway did not route host %q: %v", host, lastErr)
 }
 
 func verifyGatewayDashboard(t *testing.T, gatewayEndpoint string) {
