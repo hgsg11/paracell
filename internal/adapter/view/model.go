@@ -53,6 +53,7 @@ type Model struct {
 	Quitting         bool
 	AwaitingDelete   bool
 	AwaitingFork     bool
+	ForkInProgress   bool
 	IssueInputActive bool
 	ForkTemplate     string
 	IssueInput       string
@@ -112,7 +113,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.Fork == nil {
 					return m, nil
 				}
-				return m, m.Fork(m.IssueInput, m.ForkTemplate)
+				issue := m.IssueInput
+				template := m.ForkTemplate
+				forkCmd := m.Fork(issue, template)
+				m = resetForkInput(m)
+				if forkCmd == nil {
+					m.setError("cell creation did not start")
+					return m, nil
+				}
+				m.ForkInProgress = true
+				return m, forkCmd
 			case tea.KeyEsc:
 				return resetForkInput(m), nil
 			}
@@ -196,6 +206,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "y":
 			if m.Focus == FocusTemplates {
+				if m.ForkInProgress {
+					m.setError("cell creation is already in progress")
+					return m, nil
+				}
 				if m.AwaitingFork {
 					m.IssueInputActive = true
 					if len(m.Templates) > 0 && m.TemplateSelected < len(m.Templates) {
@@ -302,6 +316,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Cells[index] = msg.cell
 		return m, nil
 	case forkResultMsg:
+		m.ForkInProgress = false
 		if msg.err != nil {
 			m.setError(msg.err.Error())
 			return m, nil
