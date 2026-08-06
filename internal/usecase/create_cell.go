@@ -74,8 +74,12 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := session.CreateSession(ctx, cell); err != nil {
 		return domain.Cell{}, err
 	}
-	existing = append(existing, cell)
-	if err := u.State.SaveCells(ctx, existing); err != nil {
+	if err := u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
+		if err := (domain.CellUniquenessChecker{}).EnsureUnique(latest, input.Issue, cell.Name); err != nil {
+			return nil, err
+		}
+		return append(latest, cell), nil
+	}); err != nil {
 		return domain.Cell{}, err
 	}
 	return cell, nil
