@@ -533,7 +533,11 @@ func (f *fakePorts) LoadCells(ctx context.Context) ([]domain.Cell, error) {
 	return append([]domain.Cell(nil), f.cells...), nil
 }
 
-func (f *fakePorts) SaveCells(ctx context.Context, cells []domain.Cell) error {
+func (f *fakePorts) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
+	cells, err := update(append([]domain.Cell(nil), f.cells...))
+	if err != nil {
+		return err
+	}
 	f.cells = append([]domain.Cell(nil), cells...)
 	f.calls = append(f.calls, "state:save:"+string(rune('0'+len(cells))))
 	return nil

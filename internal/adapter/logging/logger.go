@@ -14,8 +14,6 @@ type Level string
 const (
 	LevelInfo  Level = "INFO"
 	LevelError Level = "ERROR"
-
-	MaxFileSize int64 = 5 * 1024 * 1024
 )
 
 type Entry struct {
@@ -84,14 +82,12 @@ func (l *Logger) Write(level Level, source string, content string) error {
 }
 
 func (l *Logger) append(entry Entry) error {
-	if err := os.MkdirAll(filepath.Dir(l.path), 0o755); err != nil {
+	path := dailyPath(l.path, entry.Time)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 	line := entry.String() + "\n"
-	if err := l.rotateIfNeeded(int64(len([]byte(line))), entry.Time); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
 	}
@@ -105,41 +101,8 @@ func (l *Logger) append(entry Entry) error {
 	return nil
 }
 
-func (l *Logger) rotateIfNeeded(nextSize int64, now time.Time) error {
-	info, err := os.Stat(l.path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("stat log file: %w", err)
-	}
-	if info.Size() == 0 || info.Size()+nextSize <= MaxFileSize {
-		return nil
-	}
-	rotated, err := availableRotatedPath(filepath.Dir(l.path), now)
-	if err != nil {
-		return err
-	}
-	if err := os.Rename(l.path, rotated); err != nil {
-		return fmt.Errorf("rotate log file: %w", err)
-	}
-	return nil
-}
-
-func availableRotatedPath(dir string, now time.Time) (string, error) {
-	base := "paracell-" + now.Format("20060102-150405.000000000")
-	for generation := 0; ; generation++ {
-		name := base + ".log"
-		if generation > 0 {
-			name = fmt.Sprintf("%s-%d.log", base, generation)
-		}
-		path := filepath.Join(dir, name)
-		_, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			return path, nil
-		}
-		if err != nil {
-			return "", fmt.Errorf("stat rotated log file: %w", err)
-		}
-	}
+func dailyPath(path string, now time.Time) string {
+	ext := filepath.Ext(path)
+	base := strings.TrimSuffix(filepath.Base(path), ext)
+	return filepath.Join(filepath.Dir(path), base+"-"+now.Format("20060102")+ext)
 }

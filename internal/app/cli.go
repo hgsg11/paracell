@@ -236,7 +236,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	runner := system.LoggingRunner{Dir: workdir, Logger: logger, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 	quietRunner := system.LoggingRunner{Dir: workdir, Logger: logger}
 	configAdapter := config.YAMLConfigAdapter{Path: filepath.Join(workdir, "paracell.yaml")}
-	stateAdapter := state.JSONCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.json")}
+	stateAdapter := state.SQLiteCellStateAdapter{Path: filepath.Join(workdir, ".paracell", "state.db")}
 
 	switch cmd.Kind {
 	case CommandVersion:

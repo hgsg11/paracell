@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -300,7 +301,7 @@ func TestRunはVersionの開始Stdout完了をProjectログへ保存する(t *te
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	data, err := readProjectLog(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +327,7 @@ func TestRunはCLI解析エラーもProjectログへ保存する(t *testing.T) {
 	if err == nil {
 		t.Fatal("unsupported commandでエラーが返らなかった")
 	}
-	data, readErr := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	data, readErr := readProjectLog(dir)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
@@ -338,10 +339,10 @@ func TestRunはCLI解析エラーもProjectログへ保存する(t *testing.T) {
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
-		{Name: "123", Template: "default"},
-		{Name: "456", Template: "webapp"},
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -374,18 +375,18 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".paracell", "state.json")); !os.IsNotExist(err) {
-		t.Fatalf("state.json existence error = %v, want not exist", err)
+	if _, err := os.Stat(filepath.Join(dir, ".paracell", "state.db")); err != nil {
+		t.Fatalf("state.db was not initialized: %v", err)
 	}
 }
 
 func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
-		{Name: "123", Template: "default"},
-		{Name: "456", Template: "webapp"},
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -409,10 +410,10 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 
 func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootのStateを読む(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
-		{Name: "123", Template: "default"},
-		{Name: "456", Template: "webapp"},
+		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-2", Name: "456", Template: "webapp"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -451,7 +452,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 		{ID: "cell-2", Name: "456", Template: "webapp"},
@@ -551,7 +552,7 @@ func TestRunはView開始前のParacellエラーもProjectログへ保存する(
 	if err == nil {
 		t.Fatal("paracell.yamlがないのにエラーが返らなかった")
 	}
-	data, readErr := os.ReadFile(filepath.Join(dir, ".paracell", "logs", "paracell.log"))
+	data, readErr := readProjectLog(dir)
 	if readErr != nil {
 		t.Fatalf("log was not saved: %v", readErr)
 	}
@@ -929,7 +930,7 @@ templates: {}
 
 func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -989,7 +990,7 @@ templates:
 func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}); err != nil {
@@ -1073,7 +1074,7 @@ templates: {}
 func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "default"},
 	}); err != nil {
@@ -1142,7 +1143,7 @@ templates: {}
 
 func TestRunはViewのGoRoot選択でRootSessionEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -1280,7 +1281,7 @@ templates: {}
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{
 			ID:    "cell-1",
@@ -1332,7 +1333,7 @@ templates:
 `), 0o644); err != nil {
 		t.Fatalf("config保存でエラーが返った: %v", err)
 	}
-	store := state.JSONCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.json")}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		{ID: "cell-1", Issue: "123", Name: "123"},
 	}); err != nil {
@@ -1403,6 +1404,17 @@ func captureStdout(fn func() error) (string, error) {
 		runErr = readErr
 	}
 	return string(output), runErr
+}
+
+func readProjectLog(dir string) ([]byte, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, ".paracell", "logs", "paracell-*.log"))
+	if err != nil {
+		return nil, err
+	}
+	if len(paths) != 1 {
+		return nil, fmt.Errorf("daily log files = %v, want one file", paths)
+	}
+	return os.ReadFile(paths[0])
 }
 
 func Test未対応コマンドはエラーにする(t *testing.T) {

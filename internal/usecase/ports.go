@@ -17,7 +17,7 @@ type InitConfigPort interface {
 
 type CellStatePort interface {
 	LoadCells(ctx context.Context) ([]domain.Cell, error)
-	SaveCells(ctx context.Context, cells []domain.Cell) error
+	UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error
 }
 
 type Notifier interface {

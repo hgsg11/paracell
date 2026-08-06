@@ -53,8 +53,12 @@ func (p *setStatusTestPorts) LoadCells(ctx context.Context) ([]domain.Cell, erro
 	return append([]domain.Cell(nil), p.cells...), nil
 }
 
-func (p *setStatusTestPorts) SaveCells(ctx context.Context, cells []domain.Cell) error {
+func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
 	_ = ctx
+	cells, err := update(append([]domain.Cell(nil), p.cells...))
+	if err != nil {
+		return err
+	}
 	p.cells = append([]domain.Cell(nil), cells...)
 	p.calls = append(p.calls, "save:1")
 	return nil

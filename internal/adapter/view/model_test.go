@@ -825,7 +825,14 @@ func TestModelはParacellエラーを共通ログへ保存する(t *testing.T) {
 	if entry.Level != logging.LevelError || entry.Source != "paracell" || entry.Content != "no cells available" {
 		t.Fatalf("entry = %#v", entry)
 	}
-	data, err := os.ReadFile(path)
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(path), "paracell-*.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("daily log files = %v, want one file", paths)
+	}
+	data, err := os.ReadFile(paths[0])
 	if err != nil {
 		t.Fatal(err)
 	}

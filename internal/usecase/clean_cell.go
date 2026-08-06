@@ -65,9 +65,16 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err := ignoreNotFound(source.CleanSource(ctx, target)); err != nil {
 		return err
 	}
-	next := append([]domain.Cell{}, cells[:index]...)
-	next = append(next, cells[index+1:]...)
-	return u.State.SaveCells(ctx, next)
+	return u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
+		for i, cell := range latest {
+			if cell.ID != target.ID {
+				continue
+			}
+			next := append([]domain.Cell{}, latest[:i]...)
+			return append(next, latest[i+1:]...), nil
+		}
+		return latest, nil
+	})
 }
 
 func ignoreNotFound(err error) error {
