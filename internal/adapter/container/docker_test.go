@@ -98,8 +98,8 @@ func TestCreateContainersはIsolatedの複数ContainerをCell単位でグルー�
 
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db myapp-db:latest",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --network-alias db --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db myapp-db:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -163,7 +163,7 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 	}
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web --label traefik.docker.network=paracell-myapp-123 --label traefik.enable=true --label traefik.http.routers.paracell-myapp-123-web-p3000.entrypoints=web --label traefik.http.routers.paracell-myapp-123-web-p3000.rule=Host(`web.123.myapp.localhost`) --label traefik.http.routers.paracell-myapp-123-web-p3000.service=paracell-myapp-123-web-p3000 --label traefik.http.services.paracell-myapp-123-web-p3000.loadbalancer.server.port=3000 -e APP_ENV=dev -e PATH=/usr/bin --entrypoint /docker-entrypoint.sh -w /app --user node -t -i -v /project/.paracell/cells/123/source:/app -v /project/.paracell/cells/123/source/config:/config:ro -v myapp_vendor:/app/vendor:ro -p 3000 --health-cmd curl -f http://localhost:3000/health || exit 1 --health-interval 30s --health-timeout 5s --health-retries 3 myapp-web:latest npm run dev",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -203,7 +203,7 @@ func TestCreateContainersはSourceEnvironmentをService設定で上書きする(
 
 	wantRunCalls := []string{
 		"docker network create paracell-myapp-123",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=cell -e PATH=/usr/bin -e EMPTY= -e NEW_VAR=new myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=cell -e PATH=/usr/bin -e EMPTY= -e NEW_VAR=new myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
@@ -226,7 +226,7 @@ func TestMergeEnvironmentは設定がなければSourceを保持する(t *testin
 func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピーする(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
-			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["myapp-web-1","web"]},"shared":{"Aliases":["web","frontend",""]}}}}`,
+			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["myapp-web-1"]},"shared":{"Aliases":["frontend",""]}}}}`,
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
@@ -434,7 +434,7 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	if got := runner.runCalls[1]; got != "docker volume create paracell-myapp-123-db-var-lib-mysql" {
 		t.Fatalf("volume create call = %q", got)
 	}
-	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
+	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --network-alias db --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
 		t.Fatalf("first run call = %q", got)
 	}
 	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u root -prootsecret --silent" {
@@ -576,7 +576,7 @@ func TestCreateContainersはVolumeModeCopyでNamedVolumeを複製する(t *testi
 		"docker network create paracell-myapp-123",
 		"docker volume create paracell-myapp-123-web-app-vendor",
 		"docker run --rm -v myapp_vendor:/from:ro -v paracell-myapp-123-web-app-vendor:/to alpine sh -c cp -a /from/. /to/",
-		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=dev -v paracell-myapp-123-web-app-vendor:/app/vendor myapp-web:latest",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web -e APP_ENV=dev -v paracell-myapp-123-web-app-vendor:/app/vendor myapp-web:latest",
 	}
 	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)

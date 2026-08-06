@@ -121,3 +121,38 @@ func TestIssueの不正文字をリソース名では安全なハイフンへ変
 		t.Fatalf("branch = %q, want original issue", cell.Branch)
 	}
 }
+
+func TestManagedDockerResource名はProjectCellServiceRoleで分離する(t *testing.T) {
+	factory := Factory{}
+	template := domain.Template{
+		Name: "webapp",
+		Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+			"frontend": {},
+			"backend":  {},
+		}},
+	}
+
+	first, err := factory.NewCell("cell-67", "67", template, "paracell")
+	if err != nil {
+		t.Fatalf("first cell creation failed: %v", err)
+	}
+	second, err := factory.NewCell("cell-68", "68", template, "paracell")
+	if err != nil {
+		t.Fatalf("second cell creation failed: %v", err)
+	}
+
+	if first.Containers.Network != "paracell-paracell-67" {
+		t.Fatalf("first network = %q", first.Containers.Network)
+	}
+	if second.Containers.Network != "paracell-paracell-68" {
+		t.Fatalf("second network = %q", second.Containers.Network)
+	}
+	for role, want := range map[string]string{
+		"frontend": "paracell-paracell-67-frontend",
+		"backend":  "paracell-paracell-67-backend",
+	} {
+		if got := first.Containers.Services[role].ContainerName; got != want {
+			t.Fatalf("%s container = %q, want %q", role, got, want)
+		}
+	}
+}

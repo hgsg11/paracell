@@ -10,10 +10,10 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestGatewayLabelsは単一PortをAliasCellProjectのHostへRouteする(t *testing.T) {
+func TestGatewayLabelsは単一PortをServiceRoleCellProjectのHostだけへRouteする(t *testing.T) {
 	cell := gatewayTestCell()
 
-	labels := gatewayLabels(cell, "paracell-myapp-123-web", []string{"web", "frontend"}, map[string][]dockerPortBinding{
+	labels := gatewayLabels(cell, "paracell-myapp-123-web", "frontend", map[string][]dockerPortBinding{
 		"3000/tcp": {{HostPort: "13000"}},
 	})
 
@@ -22,7 +22,7 @@ func TestGatewayLabelsは単一PortをAliasCellProjectのHostへRouteする(t *t
 		"traefik.enable":                                              "true",
 		"traefik.docker.network":                                      "paracell-myapp-123",
 		"traefik.http.routers." + name + ".entrypoints":               "web",
-		"traefik.http.routers." + name + ".rule":                      "Host(`frontend.123.myapp.localhost`) || Host(`web.123.myapp.localhost`)",
+		"traefik.http.routers." + name + ".rule":                      "Host(`frontend.123.myapp.localhost`)",
 		"traefik.http.routers." + name + ".service":                   name,
 		"traefik.http.services." + name + ".loadbalancer.server.port": "3000",
 	}
@@ -34,16 +34,16 @@ func TestGatewayLabelsは単一PortをAliasCellProjectのHostへRouteする(t *t
 func TestGatewayLabelsは複数PortへPortPrefix付きHostを作る(t *testing.T) {
 	cell := gatewayTestCell()
 
-	labels := gatewayLabels(cell, "paracell-myapp-123-web", []string{"web"}, map[string][]dockerPortBinding{
+	labels := gatewayLabels(cell, "paracell-myapp-123-web", "frontend", map[string][]dockerPortBinding{
 		"8080/tcp": nil,
 		"3000/tcp": nil,
 		"53/udp":   nil,
 	})
 
-	if got := labels["traefik.http.routers.paracell-myapp-123-web-p3000.rule"]; got != "Host(`p3000.web.123.myapp.localhost`)" {
+	if got := labels["traefik.http.routers.paracell-myapp-123-web-p3000.rule"]; got != "Host(`p3000.frontend.123.myapp.localhost`)" {
 		t.Fatalf("3000 route = %q", got)
 	}
-	if got := labels["traefik.http.routers.paracell-myapp-123-web-p8080.rule"]; got != "Host(`p8080.web.123.myapp.localhost`)" {
+	if got := labels["traefik.http.routers.paracell-myapp-123-web-p8080.rule"]; got != "Host(`p8080.frontend.123.myapp.localhost`)" {
 		t.Fatalf("8080 route = %q", got)
 	}
 	if _, exists := labels["traefik.http.services.paracell-myapp-123-web-p53.loadbalancer.server.port"]; exists {
@@ -302,7 +302,7 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
 		},
 		runErrors: map[string]error{
-			"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest": errors.New("container start failed"),
+			"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest": errors.New("container start failed"),
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
