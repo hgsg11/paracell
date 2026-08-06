@@ -1058,11 +1058,75 @@ func TestModelはIssue入力後にEnterでForkHandlerを呼ぶ(t *testing.T) {
 	if !called {
 		t.Fatal("Fork handlerが呼ばれなかった")
 	}
+	started := next.(Model)
+	if started.IssueInputActive {
+		t.Fatal("fork開始直後のIssueInputActive = true, want false")
+	}
+	if started.AwaitingFork {
+		t.Fatal("fork開始直後のAwaitingFork = true, want false")
+	}
+	if started.IssueInput != "" {
+		t.Fatalf("fork開始直後のIssueInput = %q, want empty", started.IssueInput)
+	}
+	if started.ForkTemplate != "" {
+		t.Fatalf("fork開始直後のForkTemplate = %q, want empty", started.ForkTemplate)
+	}
+	if !started.ForkInProgress {
+		t.Fatal("fork開始直後のForkInProgress = false, want true")
+	}
 
-	updated, _ := next.(Model).Update(cmd())
+	updated, _ := started.Update(cmd())
 	got := updated.(Model)
 	if got.IssueInputActive {
 		t.Fatal("IssueInputActive = true, want false")
+	}
+	if got.ForkInProgress {
+		t.Fatal("fork完了後のForkInProgress = true, want false")
+	}
+}
+
+func TestModelはCell作成中に別のIssue入力を開始しない(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.ForkInProgress = true
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if cmd != nil {
+		t.Fatal("cell作成中のyでコマンドが返った")
+	}
+	got := next.(Model)
+	if got.AwaitingFork || got.IssueInputActive {
+		t.Fatal("cell作成中にIssue入力待機へ入った")
+	}
+	if got.Error != "cell creation is already in progress" {
+		t.Fatalf("error = %q", got.Error)
+	}
+}
+
+func TestModelはFork失敗後もIssue入力を閉じたまま作成中状態を解除する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.IssueInputActive = true
+	model.AwaitingFork = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "123"
+	model.Fork = func(string, string) tea.Cmd {
+		return func() tea.Msg { return forkResultMsg{err: errors.New("fork failed")} }
+	}
+
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("issue入力のEnterでforkコマンドが返らなかった")
+	}
+	updated, _ := next.(Model).Update(cmd())
+	got := updated.(Model)
+	if got.ForkInProgress {
+		t.Fatal("fork失敗後のForkInProgress = true, want false")
+	}
+	if got.IssueInputActive || got.AwaitingFork || got.IssueInput != "" {
+		t.Fatal("fork失敗後にIssue入力状態が残った")
+	}
+	if got.Error != "fork failed" {
+		t.Fatalf("error = %q", got.Error)
 	}
 }
 
