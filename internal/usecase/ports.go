@@ -29,8 +29,13 @@ type NotificationProviderFactory interface {
 }
 
 type SourcePort interface {
-	CreateSource(ctx context.Context, cell domain.Cell) error
+	CreateSource(ctx context.Context, cell domain.Cell) (SourceCreation, error)
+	RollbackSource(ctx context.Context, cell domain.Cell, creation SourceCreation) error
 	CleanSource(ctx context.Context, cell domain.Cell) error
+}
+
+type SourceCreation struct {
+	BranchCreated bool
 }
 
 type SourceProviderFactory interface {

@@ -81,6 +81,22 @@ func ignoreNotFound(err error) error {
 	if err == nil {
 		return nil
 	}
+	type multiUnwrapper interface {
+		Unwrap() []error
+	}
+	if joined, ok := err.(multiUnwrapper); ok {
+		var remaining error
+		for _, nested := range joined.Unwrap() {
+			remaining = errors.Join(remaining, ignoreNotFound(nested))
+		}
+		return remaining
+	}
+	type singleUnwrapper interface {
+		Unwrap() error
+	}
+	if wrapped, ok := err.(singleUnwrapper); ok && errors.Is(wrapped.Unwrap(), domain.ErrNotFound) {
+		return ignoreNotFound(wrapped.Unwrap())
+	}
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
