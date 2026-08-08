@@ -786,6 +786,43 @@ func TestCleanContainersは見つからないContainerとNetworkを無視する(
 	}
 }
 
+func TestCleanContainersは削除失敗を結合して残りのResourceも削除する(t *testing.T) {
+	dbErr := errors.New("db removal failed")
+	gatewayErr := errors.New("gateway disconnect failed")
+	networkErr := errors.New("network removal failed")
+	runner := &fakeRunner{runErrors: map[string]error{
+		"docker rm -f paracell-myapp-123-db":                               dbErr,
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway": gatewayErr,
+		"docker network rm paracell-myapp-123":                             networkErr,
+	}}
+	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{Containers: domain.Containers{
+		NetworkMode: "isolated",
+		Network:     "paracell-myapp-123",
+		Services: map[string]domain.CellContainer{
+			"web": {ContainerName: "paracell-myapp-123-web"},
+			"db":  {ContainerName: "paracell-myapp-123-db"},
+		},
+	}}
+
+	err := adapter.CleanContainers(context.Background(), cell)
+
+	for _, want := range []error{dbErr, gatewayErr, networkErr} {
+		if !errors.Is(err, want) {
+			t.Errorf("error = %v, want errors.Is(_, %v)", err, want)
+		}
+	}
+	wantCalls := []string{
+		"docker rm -f paracell-myapp-123-db",
+		"docker rm -f paracell-myapp-123-web",
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
+		"docker network rm paracell-myapp-123",
+	}
+	if !reflect.DeepEqual(runner.runCalls, wantCalls) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantCalls)
+	}
+}
+
 type fakeRunner struct {
 	outputs              []string
 	outputErrors         []error

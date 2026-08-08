@@ -728,23 +728,24 @@ func sortedServiceRoles(services map[string]domain.CellContainer) []string {
 }
 
 func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
+	var cleanupErr error
 	for _, role := range sortedServiceRoles(cell.Containers.Services) {
 		service := cell.Containers.Services[role]
 		if err := a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName); err != nil && !isMissingDockerResourceError(err) {
-			return err
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
 	if cell.Containers.NetworkMode == string(domain.ContainerNetworkIsolated) || cell.Containers.NetworkMode == "" {
 		if network := cellNetworkName(cell); network != "" {
 			if err := a.disconnectGateway(ctx, network); err != nil {
-				return err
+				cleanupErr = errors.Join(cleanupErr, err)
 			}
 			if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
-				return err
+				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		}
 	}
-	return nil
+	return cleanupErr
 }
 
 func isMissingDockerResourceError(err error) bool {

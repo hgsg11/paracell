@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"text/template"
 
@@ -47,6 +49,173 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, wantCalls)
+	}
+}
+
+func TestForkCellは失敗した作成段階を含め到達済みResourceを逆順でRollbackする(t *testing.T) {
+	originalErr := errors.New("creation failed")
+	tests := []struct {
+		name      string
+		configure func(*fakePorts)
+		wantCalls []string
+	}{
+		{
+			name: "source作成",
+			configure: func(ports *fakePorts) {
+				ports.createSourceErr = originalErr
+			},
+			wantCalls: []string{
+				"factory:source:git", "factory:container:docker", "factory:session:tmux",
+				"source:fork:123", "source:rollback:123",
+			},
+		},
+		{
+			name: "fileコピー",
+			configure: func(ports *fakePorts) {
+				ports.copyFilesErr = originalErr
+			},
+			wantCalls: []string{
+				"factory:source:git", "factory:container:docker", "factory:session:tmux",
+				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "source:rollback:123",
+			},
+		},
+		{
+			name: "container作成",
+			configure: func(ports *fakePorts) {
+				ports.createContainersErr = originalErr
+			},
+			wantCalls: []string{
+				"factory:source:git", "factory:container:docker", "factory:session:tmux",
+				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
+				"containers:clean:123", "source:rollback:123",
+			},
+		},
+		{
+			name: "session作成",
+			configure: func(ports *fakePorts) {
+				ports.createSessionErr = originalErr
+			},
+			wantCalls: []string{
+				"factory:source:git", "factory:container:docker", "factory:session:tmux",
+				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
+				"session:fork:123:nvim 123; codex ", "session:clean:123", "containers:clean:123", "source:rollback:123",
+			},
+		},
+		{
+			name: "State保存",
+			configure: func(ports *fakePorts) {
+				ports.updateCellsErr = originalErr
+			},
+			wantCalls: []string{
+				"factory:source:git", "factory:container:docker", "factory:session:tmux",
+				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
+				"session:fork:123:nvim 123; codex ", "state:save:1",
+				"session:clean:123", "containers:clean:123", "source:rollback:123",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ports := newFakePorts()
+			tt.configure(ports)
+			uc := newForkCellUseCase(ports)
+
+			_, err := uc.Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+
+			if !errors.Is(err, originalErr) {
+				t.Fatalf("error = %v, want original error", err)
+			}
+			if !reflect.DeepEqual(ports.calls, tt.wantCalls) {
+				t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, tt.wantCalls)
+			}
+			if len(ports.cells) != 0 {
+				t.Fatalf("失敗後のcells = %#v, want empty", ports.cells)
+			}
+		})
+	}
+}
+
+func TestForkCellはRollback失敗を結合して残りのCleanupを継続する(t *testing.T) {
+	originalErr := errors.New("state write failed")
+	sessionErr := errors.New("tmux cleanup failed")
+	containerErr := errors.New("docker cleanup failed")
+	sourceErr := &typedCleanupError{message: "git cleanup failed"}
+	ports := newFakePorts()
+	ports.updateCellsErr = originalErr
+	ports.cleanSessionErr = sessionErr
+	ports.cleanContainersErr = containerErr
+	ports.rollbackSourceErr = sourceErr
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+
+	for _, want := range []error{originalErr, sessionErr, containerErr, sourceErr} {
+		if !errors.Is(err, want) {
+			t.Errorf("error = %v, want errors.Is(_, %v)", err, want)
+		}
+	}
+	var typedErr *typedCleanupError
+	if !errors.As(err, &typedErr) || typedErr != sourceErr {
+		t.Fatalf("error = %v, want errors.As(_, *typedCleanupError)", err)
+	}
+	wantTail := []string{"session:clean:123", "containers:clean:123", "source:rollback:123"}
+	if got := ports.calls[len(ports.calls)-len(wantTail):]; !reflect.DeepEqual(got, wantTail) {
+		t.Fatalf("cleanup calls = %#v, want %#v", got, wantTail)
+	}
+}
+
+type typedCleanupError struct {
+	message string
+}
+
+func (e *typedCleanupError) Error() string {
+	return e.message
+}
+
+func TestForkCellはCanceledContextから切り離してRollbackする(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	ports := newFakePorts()
+	ports.createSourceErr = context.Canceled
+
+	_, err := newForkCellUseCase(ports).Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if len(ports.cleanupContextErrors) != 1 || ports.cleanupContextErrors[0] != nil {
+		t.Fatalf("rollback context errors = %#v, want [nil]", ports.cleanupContextErrors)
+	}
+}
+
+func TestForkCellはRollbackのNotFoundを無視する(t *testing.T) {
+	originalErr := errors.New("state write failed")
+	ports := newFakePorts()
+	ports.updateCellsErr = originalErr
+	ports.cleanSessionErr = domain.ErrNotFound
+	ports.cleanContainersErr = fmt.Errorf("container missing: %w", domain.ErrNotFound)
+	ports.rollbackSourceErr = errors.Join(domain.ErrNotFound, errors.New("source cleanup failed"))
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+
+	if !errors.Is(err, originalErr) || !strings.Contains(err.Error(), "source cleanup failed") {
+		t.Fatalf("error = %v, want original and non-not-found cleanup error", err)
+	}
+	if strings.Contains(err.Error(), "container missing") {
+		t.Fatalf("not found error was not ignored: %v", err)
+	}
+}
+
+func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
+	return ForkCellUseCase{
+		Config:           ports,
+		State:            ports,
+		CellFactory:      ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+		IDs:              fixedIDGenerator{id: "cell-1"},
 	}
 }
 
@@ -457,13 +626,21 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 }
 
 type fakePorts struct {
-	config             domain.Config
-	configErr          error
-	cells              []domain.Cell
-	calls              []string
-	cleanSourceErr     error
-	cleanContainersErr error
-	cleanSessionErr    error
+	config               domain.Config
+	configErr            error
+	cells                []domain.Cell
+	calls                []string
+	createSourceErr      error
+	copyFilesErr         error
+	createContainersErr  error
+	createSessionErr     error
+	updateCellsErr       error
+	sourceCreation       SourceCreation
+	rollbackSourceErr    error
+	cleanSourceErr       error
+	cleanContainersErr   error
+	cleanSessionErr      error
+	cleanupContextErrors []error
 }
 
 func newFakePorts() *fakePorts {
@@ -538,8 +715,11 @@ func (f *fakePorts) UpdateCells(ctx context.Context, update func([]domain.Cell) 
 	if err != nil {
 		return err
 	}
-	f.cells = append([]domain.Cell(nil), cells...)
 	f.calls = append(f.calls, "state:save:"+string(rune('0'+len(cells))))
+	if f.updateCellsErr != nil {
+		return f.updateCellsErr
+	}
+	f.cells = append([]domain.Cell(nil), cells...)
 	return nil
 }
 
@@ -591,9 +771,15 @@ func (f *fakePorts) NewCell(id string, issue string, template domain.Template, p
 	return cell, nil
 }
 
-func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) error {
+func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) (SourceCreation, error) {
 	f.calls = append(f.calls, "source:fork:"+cell.Name)
-	return nil
+	return f.sourceCreation, f.createSourceErr
+}
+
+func (f *fakePorts) RollbackSource(ctx context.Context, cell domain.Cell, creation SourceCreation) error {
+	f.calls = append(f.calls, "source:rollback:"+cell.Name)
+	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
+	return f.rollbackSourceErr
 }
 
 func (f *fakePorts) CleanSource(ctx context.Context, cell domain.Cell) error {
@@ -603,16 +789,17 @@ func (f *fakePorts) CleanSource(ctx context.Context, cell domain.Cell) error {
 
 func (f *fakePorts) CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	f.calls = append(f.calls, "files:copy:"+cell.Name+":"+joinStrings(template.Files))
-	return nil
+	return f.copyFilesErr
 }
 
 func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	f.calls = append(f.calls, "containers:fork:"+cell.Name)
-	return nil
+	return f.createContainersErr
 }
 
 func (f *fakePorts) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "containers:clean:"+cell.Name)
+	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
 	return f.cleanContainersErr
 }
 
@@ -622,11 +809,12 @@ func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
 		command = ":" + cell.Session.Windows[0].Command
 	}
 	f.calls = append(f.calls, "session:fork:"+cell.Name+command)
-	return nil
+	return f.createSessionErr
 }
 
 func (f *fakePorts) CleanSession(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "session:clean:"+cell.Name)
+	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
 	return f.cleanSessionErr
 }
 
