@@ -1,17 +1,22 @@
 ---
 name: paracell
-description: Prepare an issue-backed work package and dispatch explicitly requested parallel or isolated work to a Paracell cell by clarifying requirements, detecting contradictions, creating or reusing a GitHub issue, and selecting the best existing template from paracell.yaml. Use when the user explicitly asks to use Paracell, run work in parallel or concurrently, or move work into another, separate, or isolated cell, including requests phrased as "並行", "並列", or "別cell"; also use for explicit Paracell template, fork, resume, inspection, configuration, or lifecycle operations. Do not trigger solely because the user asks to add, fix, change, update, or refactor something.
+description: "Prepare an issue-backed work package and dispatch development work to a Paracell cell. Use when both conditions are true: (1) the request is a development task that requires changing the system, such as source code, tests, application or infrastructure configuration, schemas, build files, or deployment behavior; and (2) the target project has a paracell.yaml in its root or an ancestor directory. Also use for explicit Paracell lifecycle or configuration operations within such a configured project. Do not trigger for a mere mention of Paracell, or for explanation, investigation, review, planning, or status requests that do not require a system change."
 ---
 
 # Paracell
 
-Turn an explicitly parallel or isolated request into a coherent GitHub issue and hand its issue number to the most suitable existing Paracell template. Treat the issue body as the single source of truth. Do not create an issue or cell while a blocking contradiction remains.
+Turn system-changing development work in a project configured by `paracell.yaml` into a coherent GitHub issue and hand its issue number to the most suitable existing Paracell template. Treat the issue body as the single source of truth. Do not create an issue or cell while a blocking contradiction remains.
 
-## Keep the Trigger Explicit
+## Apply the Eligibility Gate First
 
-- Treat an explicit request to use Paracell, work in parallel or concurrently, or use another, separate, or isolated cell as authorization to prepare a Paracell dispatch.
-- Do not invoke this Skill merely because the user requests a feature, fix, change, update, refactor, investigation, or review. Handle such requests in the current workspace unless the user also requests parallel or isolated execution.
-- Continue to use this Skill when the user explicitly asks to inspect, resume, configure, or clean Paracell resources.
+Before making the first workspace edit, apply this two-part gate:
+
+1. Classify the request as system-changing development work. Include changes to source code, tests, runtime or application configuration, database schemas, infrastructure, build or packaging files, deployment behavior, plugins, and Skills.
+2. Resolve the target project from the working directory and confirm that `paracell.yaml` exists at its root or in an ancestor directory.
+
+Use this Skill only when both conditions pass. When they pass, read this entire file and do not implement the requested system change directly in the current workspace. A feature, fix, refactor, or configuration change qualifies even when the user does not mention Paracell.
+
+Do not auto-trigger solely because the request contains `paracell`, asks for an explanation, investigation, review, plan, or status, or targets a project without `paracell.yaml`. Explicit Paracell configuration and lifecycle operations qualify when they target a project that passes the configuration check.
 
 ## Inspect the Project
 
@@ -89,7 +94,7 @@ Treat a missing `gh` executable, missing GitHub authentication, or a repository 
 
 ## Dispatch the Work
 
-Dispatch only when the user explicitly requested Paracell, parallel or concurrent execution, or another, separate, or isolated cell and has confirmed the shared understanding reached by the requirements interview. These requests count as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package and template choice without side effects.
+Dispatch only when the eligibility gate passed and the user has confirmed the shared understanding reached by the requirements interview. A qualifying system-change request counts as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package without side effects.
 
 1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
 2. Check `paracell ls` for a cell with that issue number. Resume it instead of creating a duplicate.

@@ -1,4 +1,4 @@
 interface:
-  display_name: "Paracell Issue Dispatcher"
-  short_description: "Dispatch issue-backed parallel work to Paracell"
-  default_prompt: "Use $paracell to turn this explicit parallel request into a GitHub issue and dispatch its issue number to the best matching Paracell template."
+  display_name: "Paracell Code Change Dispatcher"
+  short_description: "Dispatch configured development changes"
+  default_prompt: "Use $paracell for this system-changing development task when the target project contains paracell.yaml, then create an issue-backed work package and dispatch it to the best matching template."
