@@ -20,7 +20,7 @@ type Factory struct {
 func (f Factory) Source(provider domain.ProviderConfig) (usecase.SourcePort, error) {
 	switch provider.Source {
 	case "git":
-		return source.GitSourceAdapter{Runner: f.Runner}, nil
+		return source.GitSourceAdapter{Runner: f.Runner, Root: f.Root}, nil
 	default:
 		return nil, fmt.Errorf("unsupported providers.source %q", provider.Source)
 	}

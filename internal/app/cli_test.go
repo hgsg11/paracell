@@ -99,6 +99,22 @@ func TestForkコマンドはcommand付きで解析できる(t *testing.T) {
 	}
 }
 
+func TestRetryコマンドを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"retry", "cell-123"})
+	if err != nil {
+		t.Fatalf("retry parse error: %v", err)
+	}
+	if cmd.Kind != CommandRetry || cmd.Cell != "cell-123" {
+		t.Fatalf("command = %#v", cmd)
+	}
+}
+
+func TestRetryコマンドはCell指定を必須にする(t *testing.T) {
+	if _, err := ParseCommand([]string{"retry"}); err == nil || err.Error() != "usage: paracell retry <cell>" {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestInitコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"init"})
 
@@ -258,9 +274,30 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|ls|view|clean|pending|ready|exit|version|help]\n"
+	want := "usage: paracell [init|fork|retry|ls|view|clean|pending|ready|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
+func TestRunはRetryUseCaseをCell指定で呼ぶ(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PARACELL_ROOT", "")
+	originalRetry := runRetry
+	defer func() { runRetry = originalRetry }()
+	called := false
+	runRetry = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell string, root string) (domain.Cell, error) {
+		called = true
+		if cell != "cell-123" || root != dir {
+			t.Fatalf("cell=%q root=%q", cell, root)
+		}
+		return domain.Cell{Name: "123"}, nil
+	}
+	if err := Run(context.Background(), []string{"retry", "cell-123"}, dir); err != nil {
+		t.Fatalf("Run retry error: %v", err)
+	}
+	if !called {
+		t.Fatal("runRetry was not called")
 	}
 }
 
@@ -354,7 +391,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -371,7 +408,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\n"
+	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -402,7 +439,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -427,7 +464,7 @@ func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootの
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\n123\tdefault\n456\twebapp\n"
+	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -444,8 +481,9 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if output != "NAME\tTEMPLATE\n" {
-		t.Fatalf("output = %q, want %q", output, "NAME\tTEMPLATE\n")
+	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+	if output != want {
+		t.Fatalf("output = %q, want %q", output, want)
 	}
 }
 

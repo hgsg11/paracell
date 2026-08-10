@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -13,6 +15,7 @@ import (
 
 type GitSourceAdapter struct {
 	Runner system.Runner
+	Root   string
 }
 
 func (a GitSourceAdapter) CreateSource(ctx context.Context, cell domain.Cell) (usecase.SourceCreation, error) {
@@ -55,17 +58,50 @@ func (a GitSourceAdapter) branchExists(ctx context.Context, branch string) (bool
 	return false, fmt.Errorf("check git branch %q: %w", branch, err)
 }
 
-func (a GitSourceAdapter) RollbackSource(ctx context.Context, cell domain.Cell, creation usecase.SourceCreation) error {
-	var rollbackErr error
-	if err := a.CleanSource(ctx, cell); err != nil && !errors.Is(err, domain.ErrNotFound) {
-		rollbackErr = errors.Join(rollbackErr, err)
+func (a GitSourceAdapter) ResumeSource(ctx context.Context, cell domain.Cell) error {
+	path := cell.Source.Path
+	if !filepath.IsAbs(path) && a.Root != "" {
+		path = filepath.Join(a.Root, path)
 	}
-	if creation.BranchCreated {
-		if err := a.Runner.Run(ctx, "git", "branch", "-D", cell.Branch); err != nil && !isMissingBranchError(err) {
-			rollbackErr = errors.Join(rollbackErr, err)
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		branch, branchErr := a.Runner.Output(ctx, "git", "-C", cell.Source.Path, "branch", "--show-current")
+		if branchErr != nil {
+			return fmt.Errorf("inspect existing worktree %q: %w", cell.Source.Path, branchErr)
 		}
+		if strings.TrimSpace(branch) != cell.Branch {
+			return fmt.Errorf("worktree %q uses branch %q, want %q", cell.Source.Path, strings.TrimSpace(branch), cell.Branch)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect worktree %q: %w", cell.Source.Path, err)
 	}
-	return rollbackErr
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("worktree path %q exists and is not a directory", cell.Source.Path)
+		}
+		entries, readErr := os.ReadDir(path)
+		if readErr != nil {
+			return fmt.Errorf("inspect partial worktree %q: %w", cell.Source.Path, readErr)
+		}
+		if len(entries) != 0 {
+			return fmt.Errorf("refusing to replace non-empty partial worktree %q", cell.Source.Path)
+		}
+		if removeErr := os.Remove(path); removeErr != nil {
+			return fmt.Errorf("remove empty partial worktree %q: %w", cell.Source.Path, removeErr)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect partial worktree %q: %w", cell.Source.Path, err)
+	}
+
+	exists, err := a.branchExists(ctx, cell.Branch)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return a.Runner.Run(ctx, "git", "worktree", "add", cell.Source.Path, cell.Branch)
+	}
+	_, err = a.CreateSource(ctx, cell)
+	return err
 }
 
 func (a GitSourceAdapter) CleanSource(ctx context.Context, cell domain.Cell) error {
@@ -77,9 +113,4 @@ func (a GitSourceAdapter) CleanSource(ctx context.Context, cell domain.Cell) err
 		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
 	}
 	return err
-}
-
-func isMissingBranchError(err error) bool {
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "branch") && (strings.Contains(message, "not found") || strings.Contains(message, "not exist"))
 }

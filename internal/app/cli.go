@@ -90,6 +90,18 @@ var (
 		}
 		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command})
 	}
+	runRetry = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell string, root string) (domain.Cell, error) {
+		uc := usecase.RetryCellUseCase{
+			Config:           cfg,
+			State:            state,
+			CellFactory:      celladapter.Factory{},
+			SourceFactory:    source,
+			Files:            files.CopyAdapter{Root: root},
+			ContainerFactory: container,
+			SessionFactory:   session,
+		}
+		return uc.Execute(ctx, usecase.RetryCellInput{Cell: cell})
+	}
 )
 
 var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
@@ -110,6 +122,7 @@ const AppName = "paracell"
 const (
 	CommandInit    CommandKind = "init"
 	CommandFork    CommandKind = "fork"
+	CommandRetry   CommandKind = "retry"
 	CommandClean   CommandKind = "clean"
 	CommandList    CommandKind = "ls"
 	CommandPending CommandKind = "pending"
@@ -121,7 +134,7 @@ const (
 	CommandHelp    CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|ls|view|clean|pending|ready|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|retry|ls|view|clean|pending|ready|exit|version|help]\n"
 
 var (
 	Version   = "dev"
@@ -200,6 +213,11 @@ func ParseCommand(args []string) (Command, error) {
 			cmd.Command = args[5]
 		}
 		return cmd, nil
+	case "retry":
+		if len(args) != 2 || args[1] == "" {
+			return Command{}, errors.New("usage: paracell retry <cell>")
+		}
+		return Command{Kind: CommandRetry, Cell: args[1]}, nil
 	case "clean":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--force") {
 			return Command{}, errors.New("usage: paracell clean <cell> [--force]")
@@ -330,6 +348,9 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			IDs:              id.RandomGenerator{},
 		}
 		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command})
+		return err
+	case CommandRetry:
+		_, err = runRetry(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cmd.Cell, workdir)
 		return err
 	case CommandClean:
 		uc := usecase.CleanCellUseCase{

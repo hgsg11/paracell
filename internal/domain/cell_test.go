@@ -1,6 +1,11 @@
 package domain
 
-import "testing"
+import (
+	"encoding/json"
+	"errors"
+	"reflect"
+	"testing"
+)
 
 func Test同じIssueのCellは重複として扱う(t *testing.T) {
 	checker := CellUniquenessChecker{}
@@ -98,5 +103,35 @@ func TestCellは未対応Statusを拒否する(t *testing.T) {
 	}
 	if err.Error() != `unsupported status "running"` {
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported status "running"`)
+	}
+}
+
+func TestCellは作成LifecycleとCheckpointをJSONでRoundTripできる(t *testing.T) {
+	cell := Cell{ID: "cell-1", Issue: "73", Name: "73", Template: "fix"}
+	cell.BeginCreation("read issue")
+	cell.CompleteCreationStage(CreationStageSource)
+	wantErr := errors.New("copy failed")
+	cell.FailCreation(CreationStageFiles, wantErr)
+
+	data, err := json.Marshal(cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Cell
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.CreationStatus() != CreationFailed || !reflect.DeepEqual(decoded.Creation, cell.Creation) {
+		t.Fatalf("creation = %#v, want %#v", decoded.Creation, cell.Creation)
+	}
+}
+
+func TestCellはCreation情報のない旧JSONをReadyとして扱う(t *testing.T) {
+	var cell Cell
+	if err := json.Unmarshal([]byte(`{"id":"legacy","name":"legacy","status":"pending"}`), &cell); err != nil {
+		t.Fatal(err)
+	}
+	if cell.CreationStatus() != CreationReady || cell.Status() != Pending {
+		t.Fatalf("creation=%q status=%q", cell.CreationStatus(), cell.Status())
 	}
 }

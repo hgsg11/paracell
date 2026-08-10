@@ -64,6 +64,63 @@ func TestCopyAdapterは親Directoryへ抜けるPathを拒否する(t *testing.T)
 	}
 }
 
+func TestCopyAdapterはRetry時に同じ内容の既存Fileを再利用する(t *testing.T) {
+	root := t.TempDir()
+	cellSource := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(cellSource, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{filepath.Join(root, ".env"), filepath.Join(cellSource, ".env")} {
+		if err := os.WriteFile(path, []byte("same\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	adapter := CopyAdapter{Root: root}
+	if err := adapter.ResumeFiles(context.Background(), domain.Cell{Source: domain.Source{Path: cellSource}}, domain.Template{Files: []string{".env"}}); err != nil {
+		t.Fatalf("same file retry failed: %v", err)
+	}
+}
+
+func TestCopyAdapterは初回Copyでは既存Fileを従来どおり更新する(t *testing.T) {
+	root := t.TempDir()
+	cellSource := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(cellSource, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("template\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(cellSource, ".env")
+	if err := os.WriteFile(target, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := CopyAdapter{Root: root}
+	if err := adapter.CopyFiles(context.Background(), domain.Cell{Source: domain.Source{Path: cellSource}}, domain.Template{Files: []string{".env"}}); err != nil {
+		t.Fatalf("initial copy failed: %v", err)
+	}
+	assertFileContent(t, target, "template\n")
+}
+
+func TestCopyAdapterはRetry時に変更済みFileを上書きしない(t *testing.T) {
+	root := t.TempDir()
+	cellSource := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(cellSource, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("template\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(cellSource, ".env")
+	if err := os.WriteFile(target, []byte("user change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := CopyAdapter{Root: root}
+	if err := adapter.ResumeFiles(context.Background(), domain.Cell{Source: domain.Source{Path: cellSource}}, domain.Template{Files: []string{".env"}}); err == nil {
+		t.Fatal("changed file was overwritten")
+	}
+	assertFileContent(t, target, "user change\n")
+}
+
 func assertFileContent(t *testing.T, path string, want string) {
 	t.Helper()
 	data, err := os.ReadFile(path)

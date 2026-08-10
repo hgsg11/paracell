@@ -30,7 +30,7 @@ type NotificationProviderFactory interface {
 
 type SourcePort interface {
 	CreateSource(ctx context.Context, cell domain.Cell) (SourceCreation, error)
-	RollbackSource(ctx context.Context, cell domain.Cell, creation SourceCreation) error
+	ResumeSource(ctx context.Context, cell domain.Cell) error
 	CleanSource(ctx context.Context, cell domain.Cell) error
 }
 
@@ -44,6 +44,7 @@ type SourceProviderFactory interface {
 
 type FilePort interface {
 	CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error
+	ResumeFiles(ctx context.Context, cell domain.Cell, template domain.Template) error
 }
 
 type ContainerPort interface {

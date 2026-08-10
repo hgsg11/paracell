@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,6 +64,29 @@ func TestSQLiteStateは未設定StatusをReadyとして読み戻せる(t *testin
 	}
 	if got := cells[0].Status(); got != domain.Ready {
 		t.Fatalf("Status = %q, want %q", got, domain.Ready)
+	}
+}
+
+func TestSQLiteStateは作成Checkpointと失敗情報を保存して読み戻せる(t *testing.T) {
+	store := SQLiteCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.db")}
+	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+	if err := cell.SetStatus(domain.Ready); err != nil {
+		t.Fatal(err)
+	}
+	cell.BeginCreation("fix issue")
+	cell.CompleteCreationStage(domain.CreationStageSource)
+	cell.CompleteCreationStage(domain.CreationStageFiles)
+	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport busy"))
+
+	if err := store.SaveCells(context.Background(), []domain.Cell{cell}); err != nil {
+		t.Fatal(err)
+	}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cells, []domain.Cell{cell}) {
+		t.Fatalf("cells = %#v, want %#v", cells, []domain.Cell{cell})
 	}
 }
 
