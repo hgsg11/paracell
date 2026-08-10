@@ -165,7 +165,7 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	if err := a.Runner.Run(ctx, "tmux", "bind-key", "-T", keyTable, "C-t", "next-window"); err != nil {
 		return err
 	}
-	args := []string{"bind-key", "-T", keyTable, "C-p", "display-popup", "-t", target, "-w", "65", "-h", "24", "-y", "0"}
+	args := []string{"bind-key", "-T", keyTable, "C-p", "display-popup", "-t", target, "-w", "65", "-h", "24"}
 	if a.Root != "" {
 		args = append(args, "-d", a.Root)
 	}

@@ -248,7 +248,7 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 
 これらの plugin や設定がない場合、paracell の session 作成・接続動作は従来どおりです。独自の保存・復元コマンドは追加していません。
 
-`C-p` の popup は幅65列、高さ24行の固定サイズで画面上端に表示され、tmux の `display-popup` 対応版を前提にしています。
+`C-p` の popup は幅65列、高さ24行の固定サイズで画面中央に表示され、tmux の `display-popup` 対応版を前提にしています。
 
 ## コマンド
 
