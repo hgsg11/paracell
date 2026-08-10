@@ -112,12 +112,14 @@ func ensureForkUnique(existing []domain.Cell, issue string, name string) error {
 }
 
 type cellCreationRunner struct {
-	State      CellStatePort
-	Files      FilePort
-	Source     SourcePort
-	Containers ContainerPort
-	Session    SessionPort
-	RetryBase  *domain.Cell
+	State          CellStatePort
+	Files          FilePort
+	Source         SourcePort
+	Containers     ContainerPort
+	Session        SessionPort
+	RetryBase      *domain.Cell
+	AttemptID      string
+	BeforeTerminal func() error
 }
 
 func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template domain.Template, retry bool) error {
@@ -134,19 +136,35 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 		before := cloneCell(*cell)
 		if err := r.runStage(ctx, *cell, template, stage, retry); err != nil {
 			*cell = before
-			return r.fail(ctx, cell, stage, err)
+			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal()))
 		}
 		cell.CompleteCreationStage(stage)
 		if stage == domain.CreationStageSession {
+			if err := r.beforeTerminal(); err != nil {
+				*cell = before
+				return r.fail(ctx, cell, stage, err)
+			}
 			cell.FinishCreation()
 		}
-		if err := replaceCell(ctx, r.State, *cell); err != nil {
+		saveCtx := ctx
+		if stage == domain.CreationStageSession && r.BeforeTerminal != nil {
+			saveCtx = context.WithoutCancel(ctx)
+		}
+		if err := r.save(saveCtx, *cell); err != nil {
+			terminalErr := r.beforeTerminal()
 			cleanupErr := r.cleanupUncheckpointedStage(context.WithoutCancel(ctx), before, stage)
 			*cell = before
-			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s checkpoint: %w", stage, err), cleanupErr))
+			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s checkpoint: %w", stage, err), terminalErr, cleanupErr))
 		}
 	}
 	return nil
+}
+
+func (r cellCreationRunner) beforeTerminal() error {
+	if r.BeforeTerminal == nil {
+		return nil
+	}
+	return r.BeforeTerminal()
 }
 
 func (r cellCreationRunner) runStage(ctx context.Context, cell domain.Cell, template domain.Template, stage domain.CreationStage, retry bool) error {
@@ -205,11 +223,38 @@ func (r cellCreationRunner) cleanupUncheckpointedStage(ctx context.Context, cell
 
 func (r cellCreationRunner) fail(ctx context.Context, cell *domain.Cell, stage domain.CreationStage, createErr error) error {
 	cell.FailCreation(stage, createErr)
-	saveErr := replaceCell(context.WithoutCancel(ctx), r.State, *cell)
+	saveErr := r.save(context.WithoutCancel(ctx), *cell)
 	if saveErr != nil {
 		return errors.Join(createErr, fmt.Errorf("save failed cell: %w", saveErr))
 	}
 	return createErr
+}
+
+func (r cellCreationRunner) save(ctx context.Context, cell domain.Cell) error {
+	if r.AttemptID != "" {
+		return replaceRetryCell(ctx, r.State, cell, r.AttemptID)
+	}
+	return replaceCell(ctx, r.State, cell)
+}
+
+func replaceRetryCell(ctx context.Context, state CellStatePort, target domain.Cell, attemptID string) error {
+	return state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		for index := range cells {
+			if cells[index].ID != target.ID {
+				continue
+			}
+			if cells[index].CreationStatus() != domain.CreationRetrying || cells[index].Creation.AttemptID != attemptID {
+				return nil, retryOwnershipLostError(target.Name)
+			}
+			if target.CreationStatus() == domain.CreationRetrying {
+				target.Creation.LeaseStartedAt = cells[index].Creation.LeaseStartedAt
+				target.Creation.LeaseHeartbeatAt = cells[index].Creation.LeaseHeartbeatAt
+			}
+			cells[index] = target
+			return cells, nil
+		}
+		return nil, fmt.Errorf("cell %q not found", target.ID)
+	})
 }
 
 func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) error {

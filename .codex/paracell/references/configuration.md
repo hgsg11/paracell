@@ -10,7 +10,7 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | `paracell init` | Create `paracell.yaml` | Fails when the file already exists |
 | `paracell fork <issue> --template <name> [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
-| `paracell retry <cell>` | Resume a failed cell by ID, Issue, or Name | Re-renders the latest template and skips completed creation stages |
+| `paracell retry <cell>` | Resume a failed cell by ID, Issue, or Name | Acquires a per-cell lease, re-renders the latest template, and skips completed creation stages |
 | `paracell view` | Open the cell/template TUI | Interactive |
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
 | `paracell pending` | Set the current cell to pending | Requires `PARACELL_CELL` |
@@ -142,12 +142,12 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session.
-- `.paracell/state.db` is Paracell-managed SQLite state. Cell JSON blobs store creation checkpoints and an optional `note` field; older blobs without either remain compatible.
+- `.paracell/state.db` is Paracell-managed SQLite state. Cell JSON blobs store creation status (`creating`, `failed`, `retrying`, or `ready`), stage checkpoints, failure details, retry attempt/lease timestamps, and an optional `note`; older blobs without these optional fields remain compatible.
 - `.paracell/cells/<cell>/source` is the cell worktree.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
 - CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use ID, issue, or name—not the note—to address a cell.
 
-Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps completed resources, including its Git branch and worktree. Retry uses the latest template for the failed and unstarted stages without replacing saved identifiers or completed resources. If a retried file already exists with different content in the worktree, Paracell refuses to overwrite it.
+Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps completed resources, including its Git branch and worktree. Retry uses the latest template for the failed and unstarted stages without replacing saved identifiers or completed resources. Only one retry can own a cell: a concurrent command fails immediately with `retry already in progress`, heartbeat refreshes the lease every 10 seconds, and a lease whose last heartbeat is more than two minutes old can be reclaimed. If a retried file already exists with different content in the worktree, Paracell refuses to overwrite it.
 
 ## Source-of-Truth Checks
 

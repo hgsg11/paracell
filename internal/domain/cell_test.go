@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *testing.T) {
@@ -195,5 +196,38 @@ func TestCellはCreation情報のない旧JSONをReadyとして扱う(t *testing
 	}
 	if cell.CreationStatus() != CreationReady || cell.Status() != Pending {
 		t.Fatalf("creation=%q status=%q", cell.CreationStatus(), cell.Status())
+	}
+}
+
+func TestCellはRetryLeaseをUTCのJSONでRoundTripできる(t *testing.T) {
+	started := time.Date(2026, 8, 10, 12, 34, 56, 0, time.FixedZone("JST", 9*60*60))
+	cell := Cell{ID: "cell-1", Issue: "76", Name: "76"}
+	cell.BeginCreation("retry safely")
+	cell.FailCreation(CreationStageContainers, errors.New("docker failed"))
+	cell.BeginRetry("attempt-1", started)
+
+	data, err := json.Marshal(cell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "+09:00") || !strings.Contains(string(data), "2026-08-10T03:34:56Z") {
+		t.Fatalf("lease timestamp is not UTC: %s", data)
+	}
+	var decoded Cell
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Creation.AttemptID != "attempt-1" || decoded.Creation.LeaseHeartbeatAt == nil || !decoded.RetryLeaseValid(started.Add(2*time.Minute), 2*time.Minute) {
+		t.Fatalf("decoded lease = %#v", decoded.Creation)
+	}
+}
+
+func TestCellはLease情報のない旧RetryingJSONをStaleとして扱う(t *testing.T) {
+	var cell Cell
+	if err := json.Unmarshal([]byte(`{"id":"legacy","name":"legacy","creation":{"status":"retrying","failedStage":"files"}}`), &cell); err != nil {
+		t.Fatal(err)
+	}
+	if cell.CreationStatus() != CreationRetrying || cell.RetryLeaseValid(time.Now(), 2*time.Minute) {
+		t.Fatalf("legacy retry state = %#v", cell.Creation)
 	}
 }

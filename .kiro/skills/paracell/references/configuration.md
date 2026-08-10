@@ -9,7 +9,7 @@ Use this reference when selecting a template, interpreting `paracell.yaml`, prep
 | `paracell` | Enter the project root tmux session | Run in the configured project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml` | Fails when the file already exists |
 | `paracell fork --name <name> --template <template> --command <instruction>` | Create and start a named cell | Requires a CLI version with `fork --name`; never fall back to a positional identifier |
-| `paracell retry <cell>` | Resume a failed creation | Resolve the exact cell first; completed stages are retained |
+| `paracell retry <cell>` | Resume a failed creation | Acquires a per-cell lease; concurrent retry fails immediately and completed stages are retained |
 | `paracell view` | Open the cell and template TUI | Interactive; launch only on explicit request |
 | `paracell ls` | List cells and their state | Use before and after dispatch and before destructive actions |
 | `paracell clean <cell> [--force]` | Remove managed resources for one cell | Confirm the exact cell, worktree state, and installed done guard first |
@@ -116,7 +116,7 @@ Variables are rendered before the session shell starts. Keep YAML quoting, Go-te
 
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies a cell within its managed session. Current source can also infer a cell from `.paracell/cells/<cell>/source` after session restoration, but root automation must not rely on that to run status commands.
-- `.paracell/state.db` is the managed SQLite state store. Do not edit it directly.
+- `.paracell/state.db` is the managed SQLite state store. Retry ownership uses an attempt ID, a 10-second heartbeat, and a lease reclaimable when the last heartbeat is more than two minutes old. Do not edit it directly.
 - `.paracell/cells/<cell>/source` is the managed cell worktree.
 - Root tmux sessions use `<project>-root`; cell sessions use `<project>-<cell>`.
 - Creation proceeds through source, files, containers, and session stages. Failed creation retains completed resources for `retry`.
