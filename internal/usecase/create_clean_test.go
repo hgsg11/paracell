@@ -225,6 +225,7 @@ func newRetryCellUseCase(ports *fakePorts) RetryCellUseCase {
 		ContainerFactory: ports,
 		SessionFactory:   ports,
 		Files:            ports,
+		IDs:              fixedIDGenerator{id: "attempt-1"},
 	}
 }
 

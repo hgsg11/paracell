@@ -91,7 +91,7 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 		"tmux bind-key -T paracell-paracell-myapp-123 MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-paracell-myapp-123 WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-paracell-myapp-123 C-t next-window",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -E paracell view",
 		"tmux attach-session -E -t paracell-myapp-123",
 	)
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -259,7 +259,7 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 		"tmux bind-key -T paracell-paracell-myapp-123 MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-paracell-myapp-123 WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-paracell-myapp-123 C-t next-window",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -E paracell view",
 		"tmux switch-client -E -t paracell-myapp-123",
 	)
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -330,7 +330,7 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 		"tmux bind-key -T paracell-myapp-root MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-myapp-root WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-myapp-root C-t next-window",
-		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -y 0 -E paracell view",
+		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -370,7 +370,7 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 		"tmux bind-key -T paracell-myapp-root MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-myapp-root WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-myapp-root C-t next-window",
-		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -d /project -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -410,7 +410,7 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 		"tmux bind-key -T paracell-myapp-root MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-myapp-root WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-myapp-root C-t next-window",
-		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -y 0 -E paracell view",
+		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -445,7 +445,7 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 		"tmux bind-key -T paracell-myapp-root MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-myapp-root WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-myapp-root C-t next-window",
-		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-myapp-root C-p display-popup -t myapp-root -w 65 -h 24 -d /project -E paracell view",
 		"tmux attach-session -E -t myapp-root",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
@@ -498,7 +498,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 		"tmux bind-key -T paracell-paracell-myapp-123 MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-paracell-myapp-123 WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-paracell-myapp-123 C-t next-window",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -d /project -E paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -546,7 +546,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 		"tmux bind-key -T paracell-paracell-myapp-123 MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-paracell-myapp-123 WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-paracell-myapp-123 C-t next-window",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -d /project -E paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -600,7 +600,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 		"tmux bind-key -T paracell-paracell-myapp-123 MouseDrag1Pane if-shell -F #{||:#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -M",
 		"tmux bind-key -T paracell-paracell-myapp-123 WheelUpPane if-shell -F #{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}} send-keys -M copy-mode -e",
 		"tmux bind-key -T paracell-paracell-myapp-123 C-t next-window",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -d /project -E paracell view",
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
@@ -631,9 +631,9 @@ func TestCreateSessionは複数IssueのPopupBindingをSessionごとに分離す�
 
 	wantCalls := []string{
 		"tmux set-option -t paracell-myapp-123 key-table paracell-paracell-myapp-123",
-		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-123 C-p display-popup -t paracell-myapp-123 -w 65 -h 24 -d /project -E paracell view",
 		"tmux set-option -t paracell-myapp-456 key-table paracell-paracell-myapp-456",
-		"tmux bind-key -T paracell-paracell-myapp-456 C-p display-popup -t paracell-myapp-456 -w 65 -h 24 -y 0 -d /project -E paracell view",
+		"tmux bind-key -T paracell-paracell-myapp-456 C-p display-popup -t paracell-myapp-456 -w 65 -h 24 -d /project -E paracell view",
 	}
 	for _, want := range wantCalls {
 		if !containsCall(runner.calls, want) {

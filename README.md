@@ -95,7 +95,7 @@ paracell ls
 paracell retry 123
 ```
 
-`retry` は ID、Issue、Name のいずれでも cell を指定できます。最新の `paracell.yaml` で失敗工程以降を再renderし、完了済み工程は再作成しません。files工程では、worktree内に同内容のファイルがあれば再利用し、内容が異なる既存ファイルはユーザー変更を守るため上書きせず失敗します。
+`retry` は ID、Issue、Name のいずれでも cell を指定できます。同じcellのretryは一度に1実行だけで、実行中に重ねて呼ぶと待機せず `retry already in progress` エラーになります。retryプロセスが異常終了した場合は、最終heartbeatから2分を超えると保存済みcheckpointから再取得できます。最新の `paracell.yaml` で失敗工程以降を再renderし、完了済み工程は再作成しません。files工程では、worktree内に同内容のファイルがあれば再利用し、内容が異なる既存ファイルはユーザー変更を守るため上書きせず失敗します。
 
 ```yaml
 project:
@@ -248,7 +248,7 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 
 これらの plugin や設定がない場合、paracell の session 作成・接続動作は従来どおりです。独自の保存・復元コマンドは追加していません。
 
-`C-p` の popup は幅65列、高さ24行の固定サイズで画面上端に表示され、tmux の `display-popup` 対応版を前提にしています。
+`C-p` の popup は幅65列、高さ24行の固定サイズで画面中央に表示され、tmux の `display-popup` 対応版を前提にしています。
 
 ## コマンド
 
@@ -269,7 +269,7 @@ paracell --version
 
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
 - `annotate`: ID、Issue、Name のいずれかで既存 cell を指定し、note を設定・上書きする
-- `retry`: failed cellをID、Issue、Nameで指定し、保存済みcheckpointから作成を再開する
+- `retry`: failed cellをID、Issue、Nameで指定し、cell単位の排他leaseを取得して保存済みcheckpointから作成を再開する
 - `view`: TUI で cell を操作する
 - `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
 - `clean`: cell の worktree / container / session を片付ける

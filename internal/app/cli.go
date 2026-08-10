@@ -99,6 +99,7 @@ var (
 			Files:            files.CopyAdapter{Root: root},
 			ContainerFactory: container,
 			SessionFactory:   session,
+			IDs:              id.RandomGenerator{},
 		}
 		return uc.Execute(ctx, usecase.RetryCellInput{Cell: cell})
 	}

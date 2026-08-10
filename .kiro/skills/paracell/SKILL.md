@@ -35,6 +35,7 @@ Do not open the interactive view, capture panes, monitor the worker, type follow
 ## Operate the Root Lifecycle Safely
 
 - Use `paracell ls` before and after a fork and to resolve an exact cell.
+- Use `paracell retry <cell>` only for a failed creation. A concurrent retry of the same cell fails immediately; do not loop or wait on `retry already in progress`. After an abnormal exit, the lease is reclaimable when its last heartbeat is more than two minutes old.
 - `paracell view` is interactive. Start it only when explicitly requested.
 - Before `paracell clean <cell>`, resolve the exact target with `paracell ls`, inspect its worktree status, preserve outstanding work, and confirm the installed source's done guard. If the target is ambiguous, stop and ask for confirmation.
 - Use only the exact root-session and `exit` syntax supported by the checked-out source or installed CLI.

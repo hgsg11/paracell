@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -30,6 +31,7 @@ type CreationStatus string
 const (
 	CreationCreating CreationStatus = "creating"
 	CreationFailed   CreationStatus = "failed"
+	CreationRetrying CreationStatus = "retrying"
 	CreationReady    CreationStatus = "ready"
 )
 
@@ -43,11 +45,14 @@ const (
 )
 
 type CellCreation struct {
-	Status          CreationStatus  `json:"status"`
-	Command         string          `json:"command,omitempty"`
-	CompletedStages []CreationStage `json:"completedStages,omitempty"`
-	FailedStage     CreationStage   `json:"failedStage,omitempty"`
-	LastError       string          `json:"lastError,omitempty"`
+	Status           CreationStatus  `json:"status"`
+	Command          string          `json:"command,omitempty"`
+	CompletedStages  []CreationStage `json:"completedStages,omitempty"`
+	FailedStage      CreationStage   `json:"failedStage,omitempty"`
+	LastError        string          `json:"lastError,omitempty"`
+	AttemptID        string          `json:"attemptId,omitempty"`
+	LeaseStartedAt   *time.Time      `json:"leaseStartedAt,omitempty"`
+	LeaseHeartbeatAt *time.Time      `json:"leaseHeartbeatAt,omitempty"`
 }
 
 type CellStatus string
@@ -144,6 +149,32 @@ func (c *Cell) ResumeCreation() {
 	c.Creation.LastError = ""
 }
 
+func (c *Cell) BeginRetry(attemptID string, now time.Time) {
+	now = now.UTC()
+	c.Creation.Status = CreationRetrying
+	c.Creation.AttemptID = attemptID
+	c.Creation.LeaseStartedAt = &now
+	c.Creation.LeaseHeartbeatAt = &now
+}
+
+func (c *Cell) HeartbeatRetry(now time.Time) {
+	now = now.UTC()
+	c.Creation.LeaseHeartbeatAt = &now
+}
+
+func (c Cell) RetryLeaseValid(now time.Time, timeout time.Duration) bool {
+	if c.CreationStatus() != CreationRetrying || c.Creation.AttemptID == "" || c.Creation.LeaseHeartbeatAt == nil {
+		return false
+	}
+	return !now.UTC().After(c.Creation.LeaseHeartbeatAt.Add(timeout))
+}
+
+func (c *Cell) clearRetryLease() {
+	c.Creation.AttemptID = ""
+	c.Creation.LeaseStartedAt = nil
+	c.Creation.LeaseHeartbeatAt = nil
+}
+
 func (c *Cell) CompleteCreationStage(stage CreationStage) {
 	if !c.CreationStageCompleted(stage) {
 		c.Creation.CompletedStages = append(c.Creation.CompletedStages, stage)
@@ -154,6 +185,7 @@ func (c *Cell) CompleteCreationStage(stage CreationStage) {
 
 func (c *Cell) FailCreation(stage CreationStage, err error) {
 	c.Creation.Status = CreationFailed
+	c.clearRetryLease()
 	c.Creation.FailedStage = stage
 	if err == nil {
 		c.Creation.LastError = ""
@@ -166,6 +198,7 @@ func (c *Cell) FinishCreation() {
 	c.Creation.Status = CreationReady
 	c.Creation.FailedStage = ""
 	c.Creation.LastError = ""
+	c.clearRetryLease()
 }
 
 func (c Cell) CreationStatus() CreationStatus {
