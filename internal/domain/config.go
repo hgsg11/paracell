@@ -12,7 +12,8 @@ type ProviderConfig struct {
 }
 
 type Config struct {
-	Project   ProjectConfig
-	Providers ProviderConfig
-	Templates map[string]Template
+	Project           ProjectConfig
+	Providers         ProviderConfig
+	Templates         map[string]Template
+	AbstractTemplates map[string]struct{}
 }

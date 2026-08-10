@@ -72,7 +72,7 @@ If a blocking contradiction exists:
 
 Evaluate every template in `paracell.yaml`; never select by name alone.
 
-1. Eliminate templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior.
+1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior.
 2. Prefer the template whose purpose and branch prefix most specifically match the task: for example, a bug repair generally favors `fix`, while new behavior generally favors `feat`.
 3. Prefer fewer unnecessary files, containers, services, and session windows.
 4. Break a remaining tie by the more specific semantic match, then by declaration order in `paracell.yaml`.

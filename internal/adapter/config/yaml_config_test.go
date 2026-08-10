@@ -976,3 +976,332 @@ templates:
 		t.Fatalf("repository.base = %q, want %q", got, "feature/111")
 	}
 }
+
+func TestYAMLConfigはTemplateを複数段継承して明示値で上書きする(t *testing.T) {
+	cfg := loadInheritanceConfig(t, `
+  base:
+    abstract: true
+    repository:
+      branchPrefix: base/
+      base: origin/main
+      branchMode: create
+    files: [.env, config/base.yaml]
+    containers:
+      network: isolated
+      services:
+        web:
+          sourceContainer: myapp-web
+          environment:
+            CELL_NAME: "{{.name}}"
+            PROJECT_NAME: "{{.project}}"
+    session:
+      windows:
+        - name: agent
+          command: 'codex "{{.Command}}" --issue {{.issue}} --name {{.name}}'
+  intermediate:
+    abstract: true
+    extends: base
+    repository:
+      base: origin/release
+  feat:
+    extends: intermediate
+    repository:
+      branchPrefix: feat/
+      branchMode: ""
+`, &domain.TemplateVars{Issue: "77", Name: "cell-77", Command: "implement"})
+
+	if _, ok := cfg.Templates["base"]; ok {
+		t.Fatal("abstract template baseが選択可能なtemplateに含まれた")
+	}
+	if _, ok := cfg.Templates["intermediate"]; ok {
+		t.Fatal("abstract template intermediateが選択可能なtemplateに含まれた")
+	}
+	if _, ok := cfg.AbstractTemplates["base"]; !ok {
+		t.Fatal("baseがabstract templateとして記録されていない")
+	}
+
+	feat := cfg.Templates["feat"]
+	if feat.Name != "feat" {
+		t.Fatalf("template.Name = %q, want feat", feat.Name)
+	}
+	if feat.Repository.BranchPrefix != "feat/" {
+		t.Fatalf("repository.branchPrefix = %q, want feat/", feat.Repository.BranchPrefix)
+	}
+	if feat.Repository.Base != "origin/release" {
+		t.Fatalf("repository.base = %q, want origin/release", feat.Repository.Base)
+	}
+	if feat.Repository.BranchMode != "" {
+		t.Fatalf("repository.branchMode = %q, want explicit empty", feat.Repository.BranchMode)
+	}
+	if !reflect.DeepEqual(feat.Files, []string{".env", "config/base.yaml"}) {
+		t.Fatalf("files = %#v, want inherited files", feat.Files)
+	}
+	if feat.Containers.Network != domain.ContainerNetworkIsolated {
+		t.Fatalf("containers.network = %q, want isolated", feat.Containers.Network)
+	}
+	wantEnvironment := map[string]string{"CELL_NAME": "cell-77", "PROJECT_NAME": "myapp"}
+	if got := feat.Containers.Services["web"].Environment; !reflect.DeepEqual(got, wantEnvironment) {
+		t.Fatalf("environment = %#v, want %#v", got, wantEnvironment)
+	}
+	wantCommand := "codex \"implement\" --issue 77 --name cell-77"
+	if got := feat.Session.Windows[0].Command; got != wantCommand {
+		t.Fatalf("session command = %q, want %q", got, wantCommand)
+	}
+}
+
+func TestYAMLConfigはSliceとMapを全体置換できる(t *testing.T) {
+	cfg := loadInheritanceConfig(t, `
+  base:
+    abstract: true
+    repository:
+      branchPrefix: base/
+      base: main
+    files: [.env, config/base.yaml]
+    containers:
+      services:
+        web:
+          sourceContainer: app-web
+    session:
+      windows:
+        - name: inherited
+          command: inherited
+  replaced:
+    extends: base
+    files: [config/feat.yaml]
+    containers:
+      services:
+        worker:
+          sourceContainer: app-worker
+    session:
+      windows:
+        - name: child
+          command: child
+  emptied:
+    extends: base
+    files: []
+    containers:
+      services: {}
+    session:
+      windows: []
+`, nil)
+
+	replaced := cfg.Templates["replaced"]
+	if !reflect.DeepEqual(replaced.Files, []string{"config/feat.yaml"}) {
+		t.Fatalf("replaced.files = %#v", replaced.Files)
+	}
+	if _, exists := replaced.Containers.Services["web"]; exists {
+		t.Fatal("親のservices entryがdeep mergeされた")
+	}
+	if got := replaced.Containers.Services["worker"].SourceContainer; got != "app-worker" {
+		t.Fatalf("worker.sourceContainer = %q, want app-worker", got)
+	}
+	if !reflect.DeepEqual(replaced.Session.Windows, []domain.SessionWindowTemplate{{Name: "child", Command: "child"}}) {
+		t.Fatalf("session.windows = %#v, want childだけ", replaced.Session.Windows)
+	}
+
+	emptied := cfg.Templates["emptied"]
+	if len(emptied.Files) != 0 {
+		t.Fatalf("emptied.files = %#v, want empty", emptied.Files)
+	}
+	if emptied.Containers.Services == nil || len(emptied.Containers.Services) != 0 {
+		t.Fatalf("emptied.services = %#v, want explicit empty map", emptied.Containers.Services)
+	}
+	if len(emptied.Session.Windows) != 0 {
+		t.Fatalf("emptied.windows = %#v, want empty", emptied.Session.Windows)
+	}
+}
+
+func TestYAMLConfigはTemplate継承の参照Errorを決定的に返す(t *testing.T) {
+	tests := []struct {
+		name      string
+		templates string
+		want      string
+	}{
+		{
+			name: "unknown parent",
+			templates: `
+  feat:
+    extends: base
+`,
+			want: `template "feat" extends unknown template "base"`,
+		},
+		{
+			name: "self reference",
+			templates: `
+  self:
+    extends: self
+`,
+			want: `template inheritance cycle: "self" -> "self"`,
+		},
+		{
+			name: "cycle",
+			templates: `
+  c:
+    extends: a
+  b:
+    extends: c
+  a:
+    extends: b
+`,
+			want: `template inheritance cycle: "a" -> "b" -> "c" -> "a"`,
+		},
+		{
+			name: "sorted errors",
+			templates: `
+  z:
+    extends: missing-z
+  a:
+    extends: missing-a
+`,
+			want: `template "a" extends unknown template "missing-a"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for range 10 {
+				_, err := loadInheritanceConfigError(t, tt.templates, nil)
+				if err == nil {
+					t.Fatal("継承errorが返らなかった")
+				}
+				if err.Error() != tt.want {
+					t.Fatalf("error = %q, want %q", err, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestYAMLConfigは継承解決後の具体TemplateだけをValidationする(t *testing.T) {
+	t.Run("abstractの値を子が修正できる", func(t *testing.T) {
+		cfg := loadInheritanceConfig(t, `
+  base:
+    abstract: true
+    repository:
+      branchMode: invalid-until-overridden
+  feat:
+    extends: base
+    repository:
+      branchPrefix: feat/
+      base: main
+      branchMode: create
+    containers:
+      services: {}
+    session:
+      windows: []
+`, nil)
+		if got := cfg.Templates["feat"].Repository.BranchMode; got != "create" {
+			t.Fatalf("branchMode = %q, want create", got)
+		}
+	})
+
+	t.Run("継承した不正値は子の名前で拒否する", func(t *testing.T) {
+		_, err := loadInheritanceConfigError(t, `
+  base:
+    abstract: true
+    repository:
+      branchPrefix: feat/
+      base: main
+      branchMode: overwrite
+  feat:
+    extends: base
+`, nil)
+		want := `unsupported repository.branchMode "overwrite" for template "feat"`
+		if err == nil || err.Error() != want {
+			t.Fatalf("error = %v, want %q", err, want)
+		}
+	})
+
+	tests := []struct {
+		name      string
+		inherited string
+		wantError string
+	}{
+		{
+			name: "network",
+			inherited: `
+    containers:
+      network: invalid
+`,
+			wantError: `unsupported containers.network "invalid"`,
+		},
+		{
+			name: "service",
+			inherited: `
+    containers:
+      services:
+        z-service:
+          volumeMode: invalid-z
+        a-service:
+          volumeMode: invalid-a
+`,
+			wantError: `unsupported volumeMode "invalid-a" for service "a-service"`,
+		},
+		{
+			name: "database",
+			inherited: `
+    containers:
+      services:
+        db:
+          volumeMode: copy
+          database:
+            system: postgres
+`,
+			wantError: `unsupported databaseSystem "postgres" for service "db"`,
+		},
+		{
+			name: "path",
+			inherited: `
+    containers:
+      services:
+        db:
+          volumeMode: copy
+          database:
+            system: mysql
+            initFiles: [../outside.sql]
+`,
+			wantError: `initFiles path "../outside.sql" for service "db" must stay within project root`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run("継承値/"+tt.name, func(t *testing.T) {
+			templates := `
+  base:
+    abstract: true
+` + tt.inherited + `  feat:
+    extends: base
+`
+			for range 10 {
+				_, err := loadInheritanceConfigError(t, templates, nil)
+				if err == nil || err.Error() != tt.wantError {
+					t.Fatalf("error = %v, want %q", err, tt.wantError)
+				}
+			}
+		})
+	}
+}
+
+func loadInheritanceConfig(t *testing.T, templates string, vars *domain.TemplateVars) domain.Config {
+	t.Helper()
+	cfg, err := loadInheritanceConfigError(t, templates, vars)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	return cfg
+}
+
+func loadInheritanceConfigError(t *testing.T, templates string, vars *domain.TemplateVars) (domain.Config, error) {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "paracell.yaml")
+	content := `project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:` + templates
+	if err := os.WriteFile(configPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
+	}
+	return (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), vars)
+}

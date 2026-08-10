@@ -36,6 +36,9 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	}
 	template, ok := cfg.Templates[input.Template]
 	if !ok {
+		if _, abstract := cfg.AbstractTemplates[input.Template]; abstract {
+			return domain.Cell{}, fmt.Errorf("template %q is abstract and cannot be selected", input.Template)
+		}
 		return domain.Cell{}, fmt.Errorf("template %q not found", input.Template)
 	}
 	existing, err := u.State.LoadCells(ctx)

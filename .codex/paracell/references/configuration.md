@@ -29,9 +29,9 @@ providers:
   session: tmux
   notifications: tmux
 templates:
-  feat:
+  base:
+    abstract: true
     repository:
-      branchPrefix: feat/
       base: main
       branchMode: create
     files:
@@ -43,6 +43,10 @@ templates:
       windows:
         - name: agent
           command: 'codex "{{.Command}}"'
+  feat:
+    extends: base
+    repository:
+      branchPrefix: feat/
 ```
 
 `providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions and notifications, and `docker` for containers.
@@ -50,6 +54,8 @@ templates:
 ## Template Selection Fields
 
 - Template key: conveys intended task type but does not override field-level compatibility.
+- `extends`: names one parent template. A parent may itself extend one parent; multiple inheritance is not supported.
+- `abstract: true`: marks a reusable template that is excluded from both `fork --template` and the TUI template list.
 - `repository.branchPrefix`: prefixes the issue or task identifier to form the branch name.
 - `repository.base`: accepts an explicit branch or `current`.
 - `repository.branchMode`:
@@ -62,6 +68,44 @@ templates:
 - `session.windows`: declares tmux windows and startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
 
 Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
+
+## Template Inheritance
+
+Inheritance is resolved before template variables are rendered and before concrete-template validation:
+
+1. An omitted scalar or struct field inherits the resolved parent value.
+2. A scalar explicitly supplied by the child replaces the parent value, including an empty string.
+3. Structs such as `repository`, `containers`, and `session` are resolved field by field.
+4. A supplied slice or map replaces the entire parent collection. Values are never appended or deep-merged.
+5. `[]` and `{}` explicitly replace an inherited collection with an empty collection.
+6. Object/pointer fields replace the complete object unless the field belongs to a structure explicitly resolved field by field above.
+
+For example, this child keeps `repository.base` but replaces both inherited collections rather than combining them:
+
+```yaml
+templates:
+  base:
+    abstract: true
+    repository:
+      base: origin/main
+      branchMode: create
+    files: [.env, config/base.yaml]
+    containers:
+      services:
+        web:
+          sourceContainer: app-web
+  feat:
+    extends: base
+    repository:
+      branchPrefix: feat/
+    files: [config/feat.yaml]
+    containers:
+      services: {}
+```
+
+Here `feat.files` contains only `config/feat.yaml`, and `feat.containers.services` is empty. An abstract template may be partial because only the fully resolved concrete template is validated. Variables inherited in environment values and session commands are rendered with the selected child's runtime values.
+
+Loading fails deterministically when a parent does not exist or inheritance is cyclic. Errors identify the child and missing parent (`template "feat" extends unknown template "base"`) or include the complete cycle (`template inheritance cycle: "a" -> "b" -> "a"`).
 
 ## Issue-Backed Dispatch
 
