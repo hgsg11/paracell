@@ -674,6 +674,23 @@ func newFakePorts() *fakePorts {
 	}
 }
 
+func TestForkCellはAbstractTemplateを選択できない(t *testing.T) {
+	ports := newFakePorts()
+	ports.config.AbstractTemplates = map[string]struct{}{"base": {}}
+	uc := newForkCellUseCase(ports)
+
+	_, err := uc.Execute(context.Background(), ForkCellInput{Issue: "77", Template: "base"})
+	if err == nil {
+		t.Fatal("abstract templateを選択できた")
+	}
+	if got, want := err.Error(), `template "base" is abstract and cannot be selected`; got != want {
+		t.Fatalf("error = %q, want %q", got, want)
+	}
+	if len(ports.calls) != 0 {
+		t.Fatalf("abstract template拒否前に副作用が発生した: %#v", ports.calls)
+	}
+}
+
 func (f *fakePorts) Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error) {
 	_ = ctx
 	if f.configErr != nil {

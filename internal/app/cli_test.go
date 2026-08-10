@@ -466,10 +466,14 @@ providers:
   source: git
   session: tmux
 templates:
+  base:
+    abstract: true
+    repository:
+      base: main
   default:
+    extends: base
     repository:
       branchPrefix: feat/
-      base: main
     containers:
       services: {}
     session:
@@ -571,10 +575,14 @@ providers:
   source: git
   session: tmux
 templates:
+  base:
+    abstract: true
+    repository:
+      base: main
   default:
+    extends: base
     repository:
       branchPrefix: feat/
-      base: main
     containers:
       services: {}
     session:

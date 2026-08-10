@@ -89,31 +89,38 @@ providers:
   session: tmux
   notifications: tmux
 templates:
+  base:
+    abstract: true
+    repository:
+      base: main
+      branchMode: create
+    session:
+      windows:
+        - name: agent
+          command: 'codex "{{.Command}}"'
   feat:
+    extends: base
     repository:
       branchPrefix: feat/
-      base: main
-    session:
-      windows: []
   update:
+    extends: base
     repository:
       branchPrefix: update/
-      base: main
-    session:
-      windows: []
   fix:
+    extends: base
     repository:
       branchPrefix: fix/
-      base: main
-    session:
-      windows: []
   review:
+    extends: base
     repository:
       branchPrefix: review/
-      base: main
-    session:
-      windows: []
 ```
+
+template は `extends` で一つの親を継承できます。親自身も別のtemplateを継承できます。共通設定だけを持つtemplateには `abstract: true` を付けます。abstract templateは継承元には使えますが、`fork --template` とTUIの選択肢には表示されません。
+
+継承では、子で未指定のscalarとstruct fieldは親の値を維持し、子で指定した値は空文字を含めて上書きします。`files`、`session.windows`、`containers.services`のようなslice/mapは、子で指定するとcollection全体を置換します。親子の要素はappend/deep mergeされません。`[]`または`{}`を指定すると明示的に空へ置換できます。
+
+存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
 
 ## Isolated container gateway
 
@@ -251,6 +258,8 @@ paracell --version
 
 ## 設定メモ
 
+- `extends`: 一つの親templateを指定する。複数段継承は可能だが多重継承は不可
+- `abstract: true`: 共通設定用templateとして宣言し、CLI/TUIの選択肢から除外する
 - `repository.base: current`: 現在の branch から cell branch を作る
 - `repository.base`: cell branch の作成元を指定する。`main` や `feature/111` など任意の branch を指定できる
 - `repository.branchMode: create`: cell branch を新規作成する。既存 branch があれば失敗する
