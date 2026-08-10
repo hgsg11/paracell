@@ -79,6 +79,13 @@ paracell fork 123 --template feat
 paracell
 ```
 
+cell の用途を短く示したい場合は、fork 時または作成後に note を設定できます。
+
+```sh
+paracell fork 123 --template feat --note "PostgreSQL案"
+paracell annotate 123 --note "API実装中"
+```
+
 `paracell init` は `paracell.yaml` を作ります。template を編集して、作りたい cell の形を決めます。
 
 `fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残り、完了済み工程と branch/worktree は保持されます。原因を修正してから同じ cell を再開してください。
@@ -183,8 +190,8 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 ## TUI
 
 ```text
-  NAME  TEMPLATE  STATUS   DONE
-> 123   feat      ready    [ ]
+  CELL              TEMPLATE  STATUS   DONE
+> 123 | API実装中   feat      ready    [ ]
   456   fix       pending  [x]
 
   go root
@@ -217,7 +224,7 @@ paracell の root / cell tmux session ではマウス操作が有効です。ド
 
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
 
-paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が `<issue>` です。window 表示は、root session が `root:<window>`、cell session が `<issue>:<window>` です。右側は tmux の既存表示を保ちながら時刻と日付を追加します。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。
+paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が note（未設定なら `<issue>`）です。window 表示も note（未設定なら `<issue>`）を label に使います。右側は tmux の既存表示を保ちながら時刻と日付を追加します。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。note を更新すると、起動中の session へ即時反映されます。
 
 ### PC 再起動後に tmux session を復元する
 
@@ -247,7 +254,8 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 
 ```text
 paracell init
-paracell fork <issue> --template <template> [--command <command>]
+paracell fork <issue> --template <template> [--command <command>] [--note <note>]
+paracell annotate <cell> --note <note>
 paracell retry <cell>
 paracell view
 paracell ls
@@ -259,13 +267,16 @@ paracell version
 paracell --version
 ```
 
-- `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令を指定できる
+- `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
+- `annotate`: ID、Issue、Name のいずれかで既存 cell を指定し、note を設定・上書きする
 - `retry`: failed cellをID、Issue、Nameで指定し、保存済みcheckpointから作成を再開する
 - `view`: TUI で cell を操作する
 - `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
 - `clean`: cell の worktree / container / session を片付ける
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
+
+note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls` と tmux は note を cell 名より優先し、TUI は `<cell名> | <note>` と併記します。note は表示専用であり、cell の指定には引き続き ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
 
 ## 設定メモ
 

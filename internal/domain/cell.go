@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"unicode"
 )
 
 type Cell struct {
 	ID         string
 	Issue      string
 	Name       string
+	Note       string
 	Template   string
 	Base       string
 	Branch     string
@@ -59,6 +62,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		ID         string       `json:"id"`
 		Issue      string       `json:"issue"`
 		Name       string       `json:"name"`
+		Note       string       `json:"note,omitempty"`
 		Template   string       `json:"template"`
 		Base       string       `json:"base"`
 		Branch     string       `json:"branch"`
@@ -74,6 +78,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		ID:         c.ID,
 		Issue:      c.Issue,
 		Name:       c.Name,
+		Note:       c.Note,
 		Template:   c.Template,
 		Base:       c.Base,
 		Branch:     c.Branch,
@@ -92,6 +97,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 		ID         string       `json:"id"`
 		Issue      string       `json:"issue"`
 		Name       string       `json:"name"`
+		Note       string       `json:"note,omitempty"`
 		Template   string       `json:"template"`
 		Base       string       `json:"base"`
 		Branch     string       `json:"branch"`
@@ -110,6 +116,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.ID = decoded.ID
 	c.Issue = decoded.Issue
 	c.Name = decoded.Name
+	c.Note = decoded.Note
 	c.Template = decoded.Template
 	c.Base = decoded.Base
 	c.Branch = decoded.Branch
@@ -175,6 +182,38 @@ func (c Cell) CreationStageCompleted(stage CreationStage) bool {
 		}
 	}
 	return false
+}
+
+func NormalizeCellNote(note string) (string, error) {
+	normalized := strings.Join(strings.FieldsFunc(note, unicode.IsSpace), " ")
+	length := len([]rune(normalized))
+	if length == 0 || length > 20 {
+		return "", fmt.Errorf("cell note must be between 1 and 20 characters after whitespace normalization")
+	}
+	return normalized, nil
+}
+
+func (c *Cell) SetNote(note string) error {
+	normalized, err := NormalizeCellNote(note)
+	if err != nil {
+		return err
+	}
+	c.Note = normalized
+	return nil
+}
+
+func (c Cell) DisplayLabel() string {
+	if c.Note != "" {
+		return c.Note
+	}
+	return c.Name
+}
+
+func (c Cell) TUIDisplayLabel() string {
+	if c.Note != "" {
+		return c.Name + " | " + c.Note
+	}
+	return c.Name
 }
 
 type Source struct {

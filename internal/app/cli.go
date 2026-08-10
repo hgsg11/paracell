@@ -77,7 +77,7 @@ var (
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.Session.Name), nil
 	}
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
 			State:            state,
@@ -88,7 +88,7 @@ var (
 			SessionFactory:   session,
 			IDs:              id.RandomGenerator{},
 		}
-		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command})
+		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command, Note: note})
 	}
 	runRetry = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell string, root string) (domain.Cell, error) {
 		uc := usecase.RetryCellUseCase{
@@ -120,21 +120,27 @@ type CommandKind string
 const AppName = "paracell"
 
 const (
-	CommandInit    CommandKind = "init"
-	CommandFork    CommandKind = "fork"
-	CommandRetry   CommandKind = "retry"
-	CommandClean   CommandKind = "clean"
-	CommandList    CommandKind = "ls"
-	CommandPending CommandKind = "pending"
-	CommandReady   CommandKind = "ready"
-	CommandRoot    CommandKind = "root"
-	CommandExit    CommandKind = "exit"
-	CommandView    CommandKind = "view"
-	CommandVersion CommandKind = "version"
-	CommandHelp    CommandKind = "help"
+	CommandInit     CommandKind = "init"
+	CommandFork     CommandKind = "fork"
+	CommandAnnotate CommandKind = "annotate"
+	CommandRetry    CommandKind = "retry"
+	CommandClean    CommandKind = "clean"
+	CommandList     CommandKind = "ls"
+	CommandPending  CommandKind = "pending"
+	CommandReady    CommandKind = "ready"
+	CommandRoot     CommandKind = "root"
+	CommandExit     CommandKind = "exit"
+	CommandView     CommandKind = "view"
+	CommandVersion  CommandKind = "version"
+	CommandHelp     CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|retry|ls|view|clean|pending|ready|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|annotate|retry|ls|view|clean|pending|ready|exit|version|help]\n"
+
+const (
+	forkUsage     = "usage: paracell fork <issue> --template <template> [--command <command>] [--note <note>]"
+	annotateUsage = "usage: paracell annotate <cell> --note <note>"
+)
 
 var (
 	Version   = "dev"
@@ -147,6 +153,7 @@ type Command struct {
 	Issue    string
 	Template string
 	Command  string
+	Note     *string
 	Cell     string
 	Force    bool
 }
@@ -202,17 +209,13 @@ func ParseCommand(args []string) (Command, error) {
 		}
 		return Command{Kind: CommandVersion}, nil
 	case "fork":
-		if (len(args) != 4 && len(args) != 6) || args[2] != "--template" || args[1] == "" || args[3] == "" {
-			return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--command <command>]")
+		return parseForkCommand(args)
+	case "annotate":
+		if len(args) != 4 || args[1] == "" || args[2] != "--note" {
+			return Command{}, errors.New(annotateUsage)
 		}
-		cmd := Command{Kind: CommandFork, Issue: args[1], Template: args[3]}
-		if len(args) == 6 {
-			if args[4] != "--command" {
-				return Command{}, errors.New("usage: paracell fork <issue> --template <template> [--command <command>]")
-			}
-			cmd.Command = args[5]
-		}
-		return cmd, nil
+		note := args[3]
+		return Command{Kind: CommandAnnotate, Cell: args[1], Note: &note}, nil
 	case "retry":
 		if len(args) != 2 || args[1] == "" {
 			return Command{}, errors.New("usage: paracell retry <cell>")
@@ -226,6 +229,39 @@ func ParseCommand(args []string) (Command, error) {
 	default:
 		return Command{}, fmt.Errorf("unsupported command %q", args[0])
 	}
+}
+
+func parseForkCommand(args []string) (Command, error) {
+	if len(args) < 4 || args[1] == "" || (len(args)-2)%2 != 0 {
+		return Command{}, errors.New(forkUsage)
+	}
+	cmd := Command{Kind: CommandFork, Issue: args[1]}
+	seen := map[string]bool{}
+	for i := 2; i < len(args); i += 2 {
+		option, value := args[i], args[i+1]
+		if seen[option] {
+			return Command{}, errors.New(forkUsage)
+		}
+		seen[option] = true
+		switch option {
+		case "--template":
+			if value == "" {
+				return Command{}, errors.New(forkUsage)
+			}
+			cmd.Template = value
+		case "--command":
+			cmd.Command = value
+		case "--note":
+			note := value
+			cmd.Note = &note
+		default:
+			return Command{}, errors.New(forkUsage)
+		}
+	}
+	if cmd.Template == "" {
+		return Command{}, errors.New(forkUsage)
+	}
+	return cmd, nil
 }
 
 func Run(ctx context.Context, args []string, workdir string) (runErr error) {
@@ -272,6 +308,18 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return err
 		}
 		return writeCLIOutput(logger, output.FormatCellList(cells))
+	case CommandAnnotate:
+		loaded, err := configAdapter.Load(ctx, nil)
+		if err != nil {
+			return err
+		}
+		session, err := (provider.Factory{Runner: quietRunner, Root: workdir}).Session(loaded.Providers)
+		if err != nil {
+			return err
+		}
+		uc := usecase.AnnotateCellUseCase{State: stateAdapter, Session: session}
+		_, err = uc.Execute(ctx, usecase.AnnotateCellInput{Cell: cmd.Cell, Note: *cmd.Note})
+		return err
 	case CommandPending:
 		cellName, err := currentCell(invocationWorkdir)
 		if err != nil {
@@ -328,7 +376,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return runMarkDone(ctx, stateAdapter, cell)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
-				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, stateAdapter, issue, template, "", workdir)
+				cell, err := runFork(ctx, configAdapter, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, provider.Factory{Runner: viewRunner, Root: workdir}, stateAdapter, issue, template, "", nil, workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})
@@ -347,7 +395,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 			IDs:              id.RandomGenerator{},
 		}
-		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command})
+		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command, Note: cmd.Note})
 		return err
 	case CommandRetry:
 		_, err = runRetry(ctx, configAdapter, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, provider.Factory{Runner: runner, Root: workdir}, stateAdapter, cmd.Cell, workdir)

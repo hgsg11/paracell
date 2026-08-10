@@ -38,7 +38,8 @@ func (s *prepareSession) PrepareSession(_ context.Context, cell domain.Cell) err
 	s.prepared = cell
 	return nil
 }
-func (*prepareSession) EnterSession(context.Context, domain.Cell) error { return nil }
+func (*prepareSession) UpdateStatusLabel(context.Context, domain.Cell) error { return nil }
+func (*prepareSession) EnterSession(context.Context, domain.Cell) error      { return nil }
 func (*prepareSession) EnterRootSession(context.Context, domain.ProjectConfig) error {
 	return nil
 }
@@ -112,6 +113,61 @@ func TestRetryコマンドを解析できる(t *testing.T) {
 func TestRetryコマンドはCell指定を必須にする(t *testing.T) {
 	if _, err := ParseCommand([]string{"retry"}); err == nil || err.Error() != "usage: paracell retry <cell>" {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestForkコマンドはOptionsの任意順序とNoteを解析できる(t *testing.T) {
+	options := [][]string{
+		{"--template", "webapp", "--command", "make test", "--note", "PostgreSQL案"},
+		{"--template", "webapp", "--note", "PostgreSQL案", "--command", "make test"},
+		{"--command", "make test", "--template", "webapp", "--note", "PostgreSQL案"},
+		{"--command", "make test", "--note", "PostgreSQL案", "--template", "webapp"},
+		{"--note", "PostgreSQL案", "--template", "webapp", "--command", "make test"},
+		{"--note", "PostgreSQL案", "--command", "make test", "--template", "webapp"},
+	}
+	for _, optionArgs := range options {
+		args := append([]string{"fork", "123"}, optionArgs...)
+		cmd, err := ParseCommand(args)
+		if err != nil {
+			t.Fatalf("args %#v: %v", args, err)
+		}
+		if cmd.Template != "webapp" || cmd.Command != "make test" || cmd.Note == nil || *cmd.Note != "PostgreSQL案" {
+			t.Fatalf("args %#v parsed as %#v", args, cmd)
+		}
+	}
+}
+
+func TestForkコマンドは重複不足未知OptionをUsageErrorにする(t *testing.T) {
+	tests := [][]string{
+		{"fork", "123", "--template", "webapp", "--note", "a", "--note", "b"},
+		{"fork", "123", "--template", "webapp", "--note"},
+		{"fork", "123", "--template", "webapp", "--label", "x"},
+	}
+	for _, args := range tests {
+		_, err := ParseCommand(args)
+		if err == nil || !strings.Contains(err.Error(), forkUsage) {
+			t.Fatalf("args %#v error = %v", args, err)
+		}
+	}
+}
+
+func TestAnnotateコマンドを解析して不正Optionを拒否する(t *testing.T) {
+	cmd, err := ParseCommand([]string{"annotate", "123", "--note", "API実装中"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Kind != CommandAnnotate || cmd.Cell != "123" || cmd.Note == nil || *cmd.Note != "API実装中" {
+		t.Fatalf("command = %#v", cmd)
+	}
+	for _, args := range [][]string{
+		{"annotate", "123", "--note"},
+		{"annotate", "123", "--label", "x"},
+		{"annotate", "123", "--note", "x", "--note", "y"},
+	} {
+		_, err := ParseCommand(args)
+		if err == nil || !strings.Contains(err.Error(), annotateUsage) {
+			t.Fatalf("args %#v error = %v", args, err)
+		}
 	}
 }
 
@@ -274,7 +330,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|retry|ls|view|clean|pending|ready|exit|version|help]\n"
+	want := "usage: paracell [init|fork|annotate|retry|ls|view|clean|pending|ready|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -378,7 +434,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
+		{ID: "cell-1", Name: "123", Note: "PostgreSQL案", Template: "default"},
 		{ID: "cell-2", Name: "456", Template: "webapp"},
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -391,9 +447,39 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\nPostgreSQL案\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
+	}
+}
+
+func TestRunはAnnotateでStateを更新しTmuxSessionなしを成功扱いにする(t *testing.T) {
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+	config := []byte("project:\n  name: myapp\nproviders:\n  source: git\n  session: tmux\ntemplates: {}\n")
+	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	if err := store.SaveCells(context.Background(), []domain.Cell{{ID: "cell-1", Issue: "123", Name: "123", Session: domain.Session{Name: "myapp-123"}}}); err != nil {
+		t.Fatal(err)
+	}
+	binDir := t.TempDir()
+	tmuxPath := filepath.Join(binDir, "tmux")
+	if err := os.WriteFile(tmuxPath, []byte("#!/bin/sh\necho \"can't find session\" >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if err := Run(context.Background(), []string{"annotate", "123", "--note", "  API\t実装\n中  "}, dir); err != nil {
+		t.Fatalf("Run annotate returned error: %v", err)
+	}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cells) != 1 || cells[0].Note != "API 実装 中" {
+		t.Fatalf("cells = %#v", cells)
 	}
 }
 
@@ -408,7 +494,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -439,7 +525,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -464,7 +550,7 @@ func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootの
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -481,7 +567,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -741,13 +827,14 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
 		_ = state
+		_ = note
 		_ = root
 		called = true
 		if issue != "123" {
@@ -814,13 +901,14 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = state
 		_ = issue
 		_ = template
 		_ = command
+		_ = note
 		_ = root
 		sourceFactory, ok := source.(provider.Factory)
 		if !ok {

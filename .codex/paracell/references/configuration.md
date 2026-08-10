@@ -8,7 +8,8 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml` | Fails when the file already exists |
-| `paracell fork <issue> --template <name> [--command <text>]` | Create and start a cell | For Skill dispatch, `<issue>` is the numeric GitHub issue number |
+| `paracell fork <issue> --template <name> [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
+| `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
 | `paracell retry <cell>` | Resume a failed cell by ID, Issue, or Name | Re-renders the latest template and skips completed creation stages |
 | `paracell view` | Open the cell/template TUI | Interactive |
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
@@ -114,6 +115,7 @@ The Paracell Skill stores the complete work package in a GitHub issue before dis
 - Create a new issue body with `gh issue create --body-file <path>`; do not pass a long body as a shell argument.
 - Pass the numeric issue number as the positional `fork` argument.
 - Keep `--command` short: tell the worker to read the issue and treat it as the single source of truth.
+- Use `--note` only for a short human-facing description; it is not a dispatch identifier or search key.
 - If issue creation succeeds but `fork` fails, retain the issue and run `paracell retry <cell>` after fixing the cause. A normal `fork` with the same Issue or Name remains a duplicate.
 - A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
 
@@ -140,9 +142,10 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session.
-- `.paracell/state.db` is Paracell-managed SQLite state. It stores creation status (`creating`, `failed`, or `ready`), stage checkpoints, the failed stage, and the latest error in addition to the existing work status and done flag.
+- `.paracell/state.db` is Paracell-managed SQLite state. Cell JSON blobs store creation checkpoints and an optional `note` field; older blobs without either remain compatible.
 - `.paracell/cells/<cell>/source` is the cell worktree.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
+- CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use ID, issue, or name—not the note—to address a cell.
 
 Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps completed resources, including its Git branch and worktree. Retry uses the latest template for the failed and unstarted stages without replacing saved identifiers or completed resources. If a retried file already exists with different content in the worktree, Paracell refuses to overwrite it.
 
