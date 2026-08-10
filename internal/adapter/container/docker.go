@@ -138,17 +138,17 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 	isolated := shouldCreateIsolatedNetwork(cell.Containers.NetworkMode)
 	networkCreated := false
 	createdContainers := make([]string, 0, len(cell.Containers.Services))
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), network, createdContainers, isolated, networkCreated))
+	}()
 	if isolated && network != "" {
 		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
 			return err
 		}
 		networkCreated = true
-		defer func() {
-			if returnErr == nil {
-				return
-			}
-			returnErr = errors.Join(returnErr, a.rollbackIsolatedCell(ctx, network, createdContainers, networkCreated))
-		}()
 		if err := a.ensureGateway(ctx, network); err != nil {
 			return err
 		}
@@ -245,19 +245,21 @@ func mergeEnvironment(source []string, overrides map[string]string) []string {
 	return merged
 }
 
-func (a DockerCLIAdapter) rollbackIsolatedCell(ctx context.Context, network string, containers []string, networkCreated bool) error {
+func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network string, containers []string, isolated bool, networkCreated bool) error {
 	var rollbackErr error
 	for i := len(containers) - 1; i >= 0; i-- {
 		if err := a.Runner.Run(ctx, "docker", "rm", "-f", containers[i]); err != nil && !isMissingDockerResourceError(err) {
 			rollbackErr = errors.Join(rollbackErr, err)
 		}
 	}
-	if err := a.disconnectGateway(ctx, network); err != nil {
-		rollbackErr = errors.Join(rollbackErr, err)
-	}
-	if networkCreated {
-		if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
+	if isolated {
+		if err := a.disconnectGateway(ctx, network); err != nil {
 			rollbackErr = errors.Join(rollbackErr, err)
+		}
+		if networkCreated {
+			if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
+				rollbackErr = errors.Join(rollbackErr, err)
+			}
 		}
 	}
 	return rollbackErr

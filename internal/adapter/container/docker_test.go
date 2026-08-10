@@ -295,6 +295,37 @@ func TestCreateContainersはSharedNetworkで元ネットワークを使う(t *te
 	}
 }
 
+func TestCreateContainersはShared工程の途中失敗時に作成済みContainerだけを削除する(t *testing.T) {
+	inspectErr := errors.New("inspect web failed")
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"myapp-db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			"",
+		},
+		outputErrors: []error{nil, inspectErr},
+	}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{Name: "123", Containers: domain.Containers{
+		NetworkMode: "shared",
+		Services: map[string]domain.CellContainer{
+			"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"},
+			"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+		},
+	}}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"db": {SourceContainer: "myapp-db"}, "web": {SourceContainer: "myapp-web"},
+	}}}
+
+	err := adapter.CreateContainers(context.Background(), cell, template)
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("error = %v", err)
+	}
+	wantTail := "docker rm -f paracell-myapp-123-db"
+	if len(runner.runCalls) == 0 || runner.runCalls[len(runner.runCalls)-1] != wantTail {
+		t.Fatalf("partial container was not removed: %#v", runner.runCalls)
+	}
+}
+
 func TestCreateContainersはSharedNetworkで元コンテナの全Networkを使う(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{

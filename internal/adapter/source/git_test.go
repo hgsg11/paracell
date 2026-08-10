@@ -3,11 +3,12 @@ package source
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
-	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 func TestCreateSourceはBaseCurrentなら現在BranchからWorktreeを作る(t *testing.T) {
@@ -198,65 +199,82 @@ func TestCreateSourceは失敗時に部分作成されたBranchを明示する(t
 	}
 }
 
-func TestRollbackSourceは作成したBranchだけをWorktreeの後に削除する(t *testing.T) {
-	tests := []struct {
-		name          string
-		branchCreated bool
-		wantCalls     []string
-	}{
-		{
-			name:          "新規branch",
-			branchCreated: true,
-			wantCalls: []string{
-				"git worktree remove --force .paracell/cells/123/source",
-				"git branch -D feat/123",
-			},
-		},
-		{
-			name:          "既存branchへattach",
-			branchCreated: false,
-			wantCalls: []string{
-				"git worktree remove --force .paracell/cells/123/source",
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{}
-			adapter := GitSourceAdapter{Runner: runner}
-			cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-			if err := adapter.RollbackSource(context.Background(), cell, usecase.SourceCreation{BranchCreated: tt.branchCreated}); err != nil {
-				t.Fatalf("RollbackSourceでエラーが返った: %v", err)
-			}
-			if !reflect.DeepEqual(runner.runCalls, tt.wantCalls) {
-				t.Fatalf("run calls = %#v, want %#v", runner.runCalls, tt.wantCalls)
-			}
-		})
-	}
-}
-
-func TestRollbackSourceはWorktree削除失敗後もBranchを削除してErrorを結合する(t *testing.T) {
-	worktreeErr := errors.New("worktree remove failed")
-	branchErr := errors.New("branch delete failed")
-	runner := &fakeRunner{runErrors: map[string]error{
-		"git worktree remove --force .paracell/cells/123/source": worktreeErr,
-		"git branch -D feat/123":                                 branchErr,
-	}}
-	adapter := GitSourceAdapter{Runner: runner}
+func TestResumeSourceは部分作成されたBranchを削除せずWorktreeへAttachする(t *testing.T) {
+	runner := &fakeRunner{}
+	adapter := GitSourceAdapter{Runner: runner, Root: t.TempDir()}
 	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
 
-	err := adapter.RollbackSource(context.Background(), cell, usecase.SourceCreation{BranchCreated: true})
-
-	if !errors.Is(err, worktreeErr) || !errors.Is(err, branchErr) {
-		t.Fatalf("error = %v, want both cleanup errors", err)
+	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
+		t.Fatalf("ResumeSource error: %v", err)
 	}
 	want := []string{
-		"git worktree remove --force .paracell/cells/123/source",
-		"git branch -D feat/123",
+		"git show-ref --verify --quiet refs/heads/feat/123",
+		"git worktree add .paracell/cells/123/source feat/123",
 	}
 	if !reflect.DeepEqual(runner.runCalls, want) {
 		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestResumeSourceは既存WorktreeとBranchをそのまま使う(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, ".git"), []byte("gitdir: elsewhere"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{outputs: map[string]string{
+		"git -C .paracell/cells/123/source branch --show-current": "feat/123\n",
+	}}
+	adapter := GitSourceAdapter{Runner: runner, Root: root}
+	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
+
+	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
+		t.Fatalf("ResumeSource error: %v", err)
+	}
+	if len(runner.runCalls) != 0 {
+		t.Fatalf("existing worktree was changed: %#v", runner.runCalls)
+	}
+}
+
+func TestResumeSourceは空の部分WorktreeDirectoryを整理してBranchへAttachする(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{}
+	adapter := GitSourceAdapter{Runner: runner, Root: root}
+	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
+
+	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
+		t.Fatalf("ResumeSource error: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("empty partial directory remains: %v", err)
+	}
+}
+
+func TestResumeSourceは内容のある部分WorktreeDirectoryを削除しない(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".paracell", "cells", "123", "source")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(path, "user.txt")
+	if err := os.WriteFile(marker, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	adapter := GitSourceAdapter{Runner: &fakeRunner{}, Root: root}
+	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
+
+	if err := adapter.ResumeSource(context.Background(), cell); err == nil {
+		t.Fatal("non-empty partial worktree was accepted")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("partial worktree data was removed: %v", err)
 	}
 }
 
@@ -281,6 +299,7 @@ type fakeRunner struct {
 	runCalls          []string
 	runErrors         map[string]error
 	runErrorSequences map[string][]error
+	outputs           map[string]string
 }
 
 func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
@@ -312,9 +331,7 @@ func (e exitCodeError) ExitCode() int {
 
 func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
 	_ = ctx
-	_ = name
-	_ = args
-	return "", nil
+	return r.outputs[name+" "+joinArgs(args)], nil
 }
 
 func joinArgs(args []string) string {

@@ -1,6 +1,7 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -15,6 +16,14 @@ type CopyAdapter struct {
 }
 
 func (a CopyAdapter) CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
+	return a.copyFiles(ctx, cell, template, true)
+}
+
+func (a CopyAdapter) ResumeFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
+	return a.copyFiles(ctx, cell, template, false)
+}
+
+func (a CopyAdapter) copyFiles(ctx context.Context, cell domain.Cell, template domain.Template, overwrite bool) error {
 	_ = ctx
 	for _, file := range template.Files {
 		if filepath.IsAbs(file) {
@@ -31,6 +40,18 @@ func (a CopyAdapter) CopyFiles(ctx context.Context, cell domain.Cell, template d
 			return err
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		existing, err := os.ReadFile(target)
+		if err == nil {
+			if bytes.Equal(existing, data) {
+				continue
+			}
+			if !overwrite {
+				return fmt.Errorf("refusing to overwrite existing file %q during retry", target)
+			}
+		}
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		if err := os.WriteFile(target, data, 0o644); err != nil {

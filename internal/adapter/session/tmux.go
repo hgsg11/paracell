@@ -22,17 +22,19 @@ const (
 	paracellDefaultStatusRight = "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}" + paracellClockFormat
 )
 
-func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error {
+func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) (returnErr error) {
 	if len(cell.Session.Windows) == 0 {
 		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-c", cell.Source.Path); err != nil {
 			return err
 		}
+		defer a.cleanupFailedCreation(ctx, cell, &returnErr)
 		return a.configureCellSession(ctx, cell)
 	}
 	first := cell.Session.Windows[0]
 	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", cell.Source.Path); err != nil {
 		return err
 	}
+	defer a.cleanupFailedCreation(ctx, cell, &returnErr)
 	if err := a.runWindowCommand(ctx, cell, first); err != nil {
 		return err
 	}
@@ -45,6 +47,15 @@ func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) error 
 		}
 	}
 	return a.configureCellSession(ctx, cell)
+}
+
+func (a TmuxAdapter) cleanupFailedCreation(ctx context.Context, cell domain.Cell, returnErr *error) {
+	if *returnErr == nil {
+		return
+	}
+	if err := a.CleanSession(context.WithoutCancel(ctx), cell); err != nil && !errors.Is(err, domain.ErrNotFound) {
+		*returnErr = errors.Join(*returnErr, fmt.Errorf("clean partial tmux session: %w", err))
+	}
 }
 
 func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, window domain.SessionWindow) error {

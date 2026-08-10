@@ -22,7 +22,7 @@ AI agent を並行実行すると、同じファイル、同じcontainer名、�
 | Terminal | 専用tmux session、window、agentの初期コマンド |
 | Runtime | container、volume、環境変数、Docker network |
 | Endpoint | cell名を含む `.localhost` URL |
-| State | `pending` / `ready` / `done` と実行ログ |
+| State | 作成状態 `creating` / `failed` / `ready`、作業状態 `pending` / `ready`、`done` と実行ログ |
 
 templateへCodexなどのagent起動コマンドを設定すれば、cell作成と同時にagentへ作業を渡せます。agentのhookから `paracell pending` / `paracell ready` を呼び、人間はTUIから複数cellの状態を確認できます。
 
@@ -80,6 +80,15 @@ paracell
 ```
 
 `paracell init` は `paracell.yaml` を作ります。template を編集して、作りたい cell の形を決めます。
+
+`fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残り、完了済み工程と branch/worktree は保持されます。原因を修正してから同じ cell を再開してください。
+
+```sh
+paracell ls
+paracell retry 123
+```
+
+`retry` は ID、Issue、Name のいずれでも cell を指定できます。最新の `paracell.yaml` で失敗工程以降を再renderし、完了済み工程は再作成しません。files工程では、worktree内に同内容のファイルがあれば再利用し、内容が異なる既存ファイルはユーザー変更を守るため上書きせず失敗します。
 
 ```yaml
 project:
@@ -232,6 +241,7 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 ```text
 paracell init
 paracell fork <issue> --template <template> [--command <command>]
+paracell retry <cell>
 paracell view
 paracell ls
 paracell clean <cell> [--force]
@@ -243,8 +253,9 @@ paracell --version
 ```
 
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令を指定できる
+- `retry`: failed cellをID、Issue、Nameで指定し、保存済みcheckpointから作成を再開する
 - `view`: TUI で cell を操作する
-- `ls`: cell 一覧を出す
+- `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
 - `clean`: cell の worktree / container / session を片付ける
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る

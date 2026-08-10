@@ -1,4 +1,4 @@
 interface:
   display_name: "Paracell Code Change Dispatcher"
-  short_description: "Dispatch configured development changes"
-  default_prompt: "Use $paracell for this system-changing development task when the target project contains paracell.yaml, then create an issue-backed work package and dispatch it to the best matching template."
+  short_description: "Dispatch or retry configured development changes"
+  default_prompt: "Use $paracell to create an issue-backed work package, then dispatch it with the best template or retry its existing failed cell."

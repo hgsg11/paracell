@@ -17,8 +17,34 @@ type Cell struct {
 	Source     Source
 	Containers Containers
 	Session    Session
+	Creation   CellCreation
 	status     CellStatus
 	done       bool
+}
+
+type CreationStatus string
+
+const (
+	CreationCreating CreationStatus = "creating"
+	CreationFailed   CreationStatus = "failed"
+	CreationReady    CreationStatus = "ready"
+)
+
+type CreationStage string
+
+const (
+	CreationStageSource     CreationStage = "source"
+	CreationStageFiles      CreationStage = "files"
+	CreationStageContainers CreationStage = "containers"
+	CreationStageSession    CreationStage = "session"
+)
+
+type CellCreation struct {
+	Status          CreationStatus  `json:"status"`
+	Command         string          `json:"command,omitempty"`
+	CompletedStages []CreationStage `json:"completedStages,omitempty"`
+	FailedStage     CreationStage   `json:"failedStage,omitempty"`
+	LastError       string          `json:"lastError,omitempty"`
 }
 
 type CellStatus string
@@ -30,18 +56,19 @@ const (
 
 func (c Cell) MarshalJSON() ([]byte, error) {
 	type cellJSON struct {
-		ID         string     `json:"id"`
-		Issue      string     `json:"issue"`
-		Name       string     `json:"name"`
-		Template   string     `json:"template"`
-		Base       string     `json:"base"`
-		Branch     string     `json:"branch"`
-		BranchMode string     `json:"branchMode,omitempty"`
-		Source     Source     `json:"source"`
-		Containers Containers `json:"containers"`
-		Session    Session    `json:"session"`
-		Status     CellStatus `json:"status"`
-		Done       bool       `json:"done"`
+		ID         string       `json:"id"`
+		Issue      string       `json:"issue"`
+		Name       string       `json:"name"`
+		Template   string       `json:"template"`
+		Base       string       `json:"base"`
+		Branch     string       `json:"branch"`
+		BranchMode string       `json:"branchMode,omitempty"`
+		Source     Source       `json:"source"`
+		Containers Containers   `json:"containers"`
+		Session    Session      `json:"session"`
+		Creation   CellCreation `json:"creation,omitempty"`
+		Status     CellStatus   `json:"status"`
+		Done       bool         `json:"done"`
 	}
 	return json.Marshal(cellJSON{
 		ID:         c.ID,
@@ -54,6 +81,7 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 		Source:     c.Source,
 		Containers: c.Containers,
 		Session:    c.Session,
+		Creation:   c.Creation,
 		Status:     c.Status(),
 		Done:       c.done,
 	})
@@ -61,18 +89,19 @@ func (c Cell) MarshalJSON() ([]byte, error) {
 
 func (c *Cell) UnmarshalJSON(data []byte) error {
 	type cellJSON struct {
-		ID         string     `json:"id"`
-		Issue      string     `json:"issue"`
-		Name       string     `json:"name"`
-		Template   string     `json:"template"`
-		Base       string     `json:"base"`
-		Branch     string     `json:"branch"`
-		BranchMode string     `json:"branchMode,omitempty"`
-		Source     Source     `json:"source"`
-		Containers Containers `json:"containers"`
-		Session    Session    `json:"session"`
-		Status     CellStatus `json:"status"`
-		Done       bool       `json:"done"`
+		ID         string       `json:"id"`
+		Issue      string       `json:"issue"`
+		Name       string       `json:"name"`
+		Template   string       `json:"template"`
+		Base       string       `json:"base"`
+		Branch     string       `json:"branch"`
+		BranchMode string       `json:"branchMode,omitempty"`
+		Source     Source       `json:"source"`
+		Containers Containers   `json:"containers"`
+		Session    Session      `json:"session"`
+		Creation   CellCreation `json:"creation,omitempty"`
+		Status     CellStatus   `json:"status"`
+		Done       bool         `json:"done"`
 	}
 	var decoded cellJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
@@ -88,6 +117,7 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	c.Source = decoded.Source
 	c.Containers = decoded.Containers
 	c.Session = decoded.Session
+	c.Creation = decoded.Creation
 	if decoded.Status == "" {
 		c.status = Ready
 	} else {
@@ -95,6 +125,56 @@ func (c *Cell) UnmarshalJSON(data []byte) error {
 	}
 	c.done = decoded.Done
 	return nil
+}
+
+func (c *Cell) BeginCreation(command string) {
+	c.Creation = CellCreation{Status: CreationCreating, Command: command}
+}
+
+func (c *Cell) ResumeCreation() {
+	c.Creation.Status = CreationCreating
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+}
+
+func (c *Cell) CompleteCreationStage(stage CreationStage) {
+	if !c.CreationStageCompleted(stage) {
+		c.Creation.CompletedStages = append(c.Creation.CompletedStages, stage)
+	}
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+}
+
+func (c *Cell) FailCreation(stage CreationStage, err error) {
+	c.Creation.Status = CreationFailed
+	c.Creation.FailedStage = stage
+	if err == nil {
+		c.Creation.LastError = ""
+		return
+	}
+	c.Creation.LastError = err.Error()
+}
+
+func (c *Cell) FinishCreation() {
+	c.Creation.Status = CreationReady
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+}
+
+func (c Cell) CreationStatus() CreationStatus {
+	if c.Creation.Status == "" {
+		return CreationReady
+	}
+	return c.Creation.Status
+}
+
+func (c Cell) CreationStageCompleted(stage CreationStage) bool {
+	for _, completed := range c.Creation.CompletedStages {
+		if completed == stage {
+			return true
+		}
+	}
+	return false
 }
 
 type Source struct {

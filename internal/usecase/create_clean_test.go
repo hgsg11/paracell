@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -41,9 +40,13 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 		"factory:source:git",
 		"factory:container:docker",
 		"factory:session:tmux",
+		"state:save:1",
 		"source:fork:123",
+		"state:save:1",
 		"files:copy:123:.env,apps/web/.env.local",
+		"state:save:1",
 		"containers:fork:123",
+		"state:save:1",
 		"session:fork:123:nvim 123; codex review the API",
 		"state:save:1",
 	}
@@ -52,65 +55,45 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 	}
 }
 
-func TestForkCellは失敗した作成段階を含め到達済みResourceを逆順でRollbackする(t *testing.T) {
+func TestForkCellは各工程のCheckpointを保存して失敗したCellと完了工程を保持する(t *testing.T) {
 	originalErr := errors.New("creation failed")
 	tests := []struct {
-		name      string
-		configure func(*fakePorts)
-		wantCalls []string
+		name          string
+		configure     func(*fakePorts)
+		wantStage     domain.CreationStage
+		wantCompleted []domain.CreationStage
 	}{
 		{
 			name: "source作成",
 			configure: func(ports *fakePorts) {
 				ports.createSourceErr = originalErr
 			},
-			wantCalls: []string{
-				"factory:source:git", "factory:container:docker", "factory:session:tmux",
-				"source:fork:123", "source:rollback:123",
-			},
+			wantStage: domain.CreationStageSource,
 		},
 		{
 			name: "fileコピー",
 			configure: func(ports *fakePorts) {
 				ports.copyFilesErr = originalErr
 			},
-			wantCalls: []string{
-				"factory:source:git", "factory:container:docker", "factory:session:tmux",
-				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "source:rollback:123",
-			},
+			wantStage:     domain.CreationStageFiles,
+			wantCompleted: []domain.CreationStage{domain.CreationStageSource},
 		},
 		{
 			name: "container作成",
 			configure: func(ports *fakePorts) {
 				ports.createContainersErr = originalErr
 			},
-			wantCalls: []string{
-				"factory:source:git", "factory:container:docker", "factory:session:tmux",
-				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
-				"containers:clean:123", "source:rollback:123",
-			},
+			wantStage:     domain.CreationStageContainers,
+			wantCompleted: []domain.CreationStage{domain.CreationStageSource, domain.CreationStageFiles},
 		},
 		{
 			name: "session作成",
 			configure: func(ports *fakePorts) {
 				ports.createSessionErr = originalErr
 			},
-			wantCalls: []string{
-				"factory:source:git", "factory:container:docker", "factory:session:tmux",
-				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
-				"session:fork:123:nvim 123; codex ", "session:clean:123", "containers:clean:123", "source:rollback:123",
-			},
-		},
-		{
-			name: "State保存",
-			configure: func(ports *fakePorts) {
-				ports.updateCellsErr = originalErr
-			},
-			wantCalls: []string{
-				"factory:source:git", "factory:container:docker", "factory:session:tmux",
-				"source:fork:123", "files:copy:123:.env,apps/web/.env.local", "containers:fork:123",
-				"session:fork:123:nvim 123; codex ", "state:save:1",
-				"session:clean:123", "containers:clean:123", "source:rollback:123",
+			wantStage: domain.CreationStageSession,
+			wantCompleted: []domain.CreationStage{
+				domain.CreationStageSource, domain.CreationStageFiles, domain.CreationStageContainers,
 			},
 		},
 	}
@@ -126,83 +109,71 @@ func TestForkCellは失敗した作成段階を含め到達済みResourceを逆�
 			if !errors.Is(err, originalErr) {
 				t.Fatalf("error = %v, want original error", err)
 			}
-			if !reflect.DeepEqual(ports.calls, tt.wantCalls) {
-				t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, tt.wantCalls)
+			if len(ports.cells) != 1 {
+				t.Fatalf("失敗後のcells = %#v, want one failed cell", ports.cells)
 			}
-			if len(ports.cells) != 0 {
-				t.Fatalf("失敗後のcells = %#v, want empty", ports.cells)
+			failed := ports.cells[0]
+			if failed.CreationStatus() != domain.CreationFailed || failed.Creation.FailedStage != tt.wantStage || failed.Creation.LastError != originalErr.Error() {
+				t.Fatalf("creation = %#v", failed.Creation)
+			}
+			if !reflect.DeepEqual(failed.Creation.CompletedStages, tt.wantCompleted) {
+				t.Fatalf("completed stages = %#v, want %#v", failed.Creation.CompletedStages, tt.wantCompleted)
+			}
+			for _, call := range ports.calls {
+				if strings.Contains(call, "clean") || strings.Contains(call, "rollback") {
+					t.Fatalf("完了済みresourceをcleanupした: %#v", ports.calls)
+				}
 			}
 		})
 	}
 }
 
-func TestForkCellはRollback失敗を結合して残りのCleanupを継続する(t *testing.T) {
+func TestForkCellは初回State登録失敗時にResourceもFailedCellも作らない(t *testing.T) {
 	originalErr := errors.New("state write failed")
-	sessionErr := errors.New("tmux cleanup failed")
-	containerErr := errors.New("docker cleanup failed")
-	sourceErr := &typedCleanupError{message: "git cleanup failed"}
 	ports := newFakePorts()
 	ports.updateCellsErr = originalErr
-	ports.cleanSessionErr = sessionErr
-	ports.cleanContainersErr = containerErr
-	ports.rollbackSourceErr = sourceErr
 
 	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
 
-	for _, want := range []error{originalErr, sessionErr, containerErr, sourceErr} {
-		if !errors.Is(err, want) {
-			t.Errorf("error = %v, want errors.Is(_, %v)", err, want)
+	if !errors.Is(err, originalErr) || len(ports.cells) != 0 {
+		t.Fatalf("error = %v, cells = %#v", err, ports.cells)
+	}
+	for _, call := range ports.calls {
+		if strings.Contains(call, ":fork:") {
+			t.Fatalf("resource was created: %#v", ports.calls)
 		}
 	}
-	var typedErr *typedCleanupError
-	if !errors.As(err, &typedErr) || typedErr != sourceErr {
-		t.Fatalf("error = %v, want errors.As(_, *typedCleanupError)", err)
-	}
-	wantTail := []string{"session:clean:123", "containers:clean:123", "source:rollback:123"}
-	if got := ports.calls[len(ports.calls)-len(wantTail):]; !reflect.DeepEqual(got, wantTail) {
-		t.Fatalf("cleanup calls = %#v, want %#v", got, wantTail)
-	}
 }
 
-type typedCleanupError struct {
-	message string
-}
-
-func (e *typedCleanupError) Error() string {
-	return e.message
-}
-
-func TestForkCellはCanceledContextから切り離してRollbackする(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
+func TestForkCellは元の工程Errorを保持してFailed保存Errorを結合する(t *testing.T) {
+	createErr := errors.New("copy failed")
+	saveErr := errors.New("failed state unavailable")
 	ports := newFakePorts()
-	ports.createSourceErr = context.Canceled
-
-	_, err := newForkCellUseCase(ports).Execute(ctx, ForkCellInput{Issue: "123", Template: "webapp"})
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v, want context.Canceled", err)
-	}
-	if len(ports.cleanupContextErrors) != 1 || ports.cleanupContextErrors[0] != nil {
-		t.Fatalf("rollback context errors = %#v, want [nil]", ports.cleanupContextErrors)
-	}
-}
-
-func TestForkCellはRollbackのNotFoundを無視する(t *testing.T) {
-	originalErr := errors.New("state write failed")
-	ports := newFakePorts()
-	ports.updateCellsErr = originalErr
-	ports.cleanSessionErr = domain.ErrNotFound
-	ports.cleanContainersErr = fmt.Errorf("container missing: %w", domain.ErrNotFound)
-	ports.rollbackSourceErr = errors.Join(domain.ErrNotFound, errors.New("source cleanup failed"))
+	ports.copyFilesErr = createErr
+	ports.updateCellsErrors = []error{nil, nil, saveErr}
 
 	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
-
-	if !errors.Is(err, originalErr) || !strings.Contains(err.Error(), "source cleanup failed") {
-		t.Fatalf("error = %v, want original and non-not-found cleanup error", err)
+	if !errors.Is(err, createErr) || !errors.Is(err, saveErr) {
+		t.Fatalf("error = %v, want both errors", err)
 	}
-	if strings.Contains(err.Error(), "container missing") {
-		t.Fatalf("not found error was not ignored: %v", err)
+}
+
+func TestForkCellはCheckpoint保存失敗でもSourceを保持してFailedとして再開可能にする(t *testing.T) {
+	saveErr := errors.New("checkpoint unavailable")
+	ports := newFakePorts()
+	ports.updateCellsErrors = []error{nil, saveErr, nil}
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+	if !errors.Is(err, saveErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(ports.cells) != 1 || ports.cells[0].Creation.FailedStage != domain.CreationStageSource {
+		t.Fatalf("cells = %#v", ports.cells)
+	}
+	for _, call := range ports.calls {
+		if strings.Contains(call, "source:clean") || strings.Contains(call, "rollback") {
+			t.Fatalf("source was removed: %#v", ports.calls)
+		}
 	}
 }
 
@@ -216,6 +187,132 @@ func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 		SessionFactory:   ports,
 		Files:            ports,
 		IDs:              fixedIDGenerator{id: "cell-1"},
+	}
+}
+
+func newRetryCellUseCase(ports *fakePorts) RetryCellUseCase {
+	return RetryCellUseCase{
+		Config:           ports,
+		State:            ports,
+		CellFactory:      ports,
+		SourceFactory:    ports,
+		ContainerFactory: ports,
+		SessionFactory:   ports,
+		Files:            ports,
+	}
+}
+
+func TestRetryCellはIDIssueNameで失敗工程から最新Templateを使って再開する(t *testing.T) {
+	for _, identifier := range []string{"cell-1", "123", "name"} {
+		t.Run(identifier, func(t *testing.T) {
+			ports := newFakePorts()
+			ports.createContainersErr = errors.New("docker failed")
+			_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{
+				Issue: "123", Template: "webapp", Command: "original command",
+			})
+			if err == nil {
+				t.Fatal("fork succeeded")
+			}
+			original := ports.cells[0]
+			if identifier == "name" {
+				identifier = original.Name
+			}
+			ports.createContainersErr = nil
+			updated := ports.config.Templates["webapp"]
+			updated.Session.Windows[0].Command = "latest {{.name}} {{.Command}}"
+			updated.Containers.Services["web"] = domain.ContainerServiceTemplate{
+				SourceContainer: "myapp-web-v2",
+				Environment:     map[string]string{"RETRY": "true"},
+			}
+			ports.config.Templates["webapp"] = updated
+			ports.calls = nil
+
+			cell, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: identifier})
+			if err != nil {
+				t.Fatalf("RetryCell error: %v", err)
+			}
+			if cell.CreationStatus() != domain.CreationReady || cell.Creation.FailedStage != "" || cell.Creation.LastError != "" {
+				t.Fatalf("creation = %#v", cell.Creation)
+			}
+			if cell.ID != original.ID || cell.Branch != original.Branch || cell.Source.Path != original.Source.Path || cell.Containers.Services["web"].ContainerName != original.Containers.Services["web"].ContainerName {
+				t.Fatalf("identifiers changed: before=%#v after=%#v", original, cell)
+			}
+			if got := cell.Session.Windows[0].Command; got != "latest 123 original command" {
+				t.Fatalf("latest rendered command = %q", got)
+			}
+			for _, forbidden := range []string{"source:resume", "files:copy"} {
+				for _, call := range ports.calls {
+					if strings.Contains(call, forbidden) {
+						t.Fatalf("completed stage reran: %#v", ports.calls)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestRetryCellは再失敗情報を更新してさらにRetryできる(t *testing.T) {
+	ports := newFakePorts()
+	ports.createSessionErr = errors.New("first tmux failure")
+	_, _ = newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+
+	ports.createSessionErr = errors.New("second tmux failure")
+	_, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: "123"})
+	if err == nil || ports.cells[0].Creation.LastError != "second tmux failure" || ports.cells[0].Creation.FailedStage != domain.CreationStageSession {
+		t.Fatalf("retry failure: err=%v creation=%#v", err, ports.cells[0].Creation)
+	}
+
+	ports.createSessionErr = nil
+	if _, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: "123"}); err != nil {
+		t.Fatalf("second retry failed: %v", err)
+	}
+	if ports.cells[0].CreationStatus() != domain.CreationReady {
+		t.Fatalf("creation = %#v", ports.cells[0].Creation)
+	}
+}
+
+func TestRetryCellはSource失敗からResume用Adapter処理で全工程を進める(t *testing.T) {
+	ports := newFakePorts()
+	ports.createSourceErr = errors.New("worktree failed")
+	_, _ = newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+	ports.createSourceErr = nil
+	ports.calls = nil
+
+	if _, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: "123"}); err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	wantStages := []string{"source:resume:123", "files:resume:123:.env,apps/web/.env.local", "containers:fork:123", "session:fork:123"}
+	for _, want := range wantStages {
+		found := false
+		for _, call := range ports.calls {
+			if strings.HasPrefix(call, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing %q in %#v", want, ports.calls)
+		}
+	}
+}
+
+func TestRetryCellは存在しないCellとFailed以外を拒否する(t *testing.T) {
+	ports := newFakePorts()
+	ports.cells = []domain.Cell{{ID: "ready", Issue: "123", Name: "123"}}
+	for _, identifier := range []string{"missing", "123"} {
+		if _, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: identifier}); err == nil {
+			t.Fatalf("retry %q succeeded", identifier)
+		}
+	}
+}
+
+func TestResolveCellはIDIssueNameのいずれでも解決する(t *testing.T) {
+	want := domain.Cell{ID: "cell-id", Issue: "73", Name: "fix-73"}
+	for _, identifier := range []string{want.ID, want.Issue, want.Name} {
+		got, ok := resolveCell([]domain.Cell{want}, identifier)
+		if !ok || !reflect.DeepEqual(got, want) {
+			t.Fatalf("resolve %q = %#v, %t", identifier, got, ok)
+		}
 	}
 }
 
@@ -244,6 +341,22 @@ func TestForkCellは同じIssueがある場合に失敗する(t *testing.T) {
 	}
 }
 
+func TestForkCellはFailedCellの重複を上書きせずRetryを案内する(t *testing.T) {
+	ports := newFakePorts()
+	failed := domain.Cell{ID: "existing", Issue: "123", Name: "123"}
+	failed.BeginCreation("command")
+	failed.FailCreation(domain.CreationStageFiles, errors.New("copy failed"))
+	ports.cells = []domain.Cell{failed}
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+	if err == nil || !strings.Contains(err.Error(), "paracell retry 123") {
+		t.Fatalf("error = %v", err)
+	}
+	if !reflect.DeepEqual(ports.cells, []domain.Cell{failed}) {
+		t.Fatalf("failed cell changed: %#v", ports.cells)
+	}
+}
+
 func TestForkCellはEnvironmentTemplateError時にResourceを作成しない(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
@@ -265,6 +378,35 @@ func TestForkCellはEnvironmentTemplateError時にResourceを作成しない(t *
 	}
 	if len(ports.calls) != 0 {
 		t.Fatalf("template validation後にresourceが作成された: %#v", ports.calls)
+	}
+}
+
+func TestForkCellはProvider解決失敗時にResourceもFailedCellも作らない(t *testing.T) {
+	for _, configure := range []func(*fakePorts){
+		func(ports *fakePorts) { ports.sourceFactoryErr = errors.New("source provider failed") },
+		func(ports *fakePorts) { ports.containerFactoryErr = errors.New("container provider failed") },
+		func(ports *fakePorts) { ports.sessionFactoryErr = errors.New("session provider failed") },
+	} {
+		ports := newFakePorts()
+		configure(ports)
+		_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+		if err == nil || len(ports.cells) != 0 {
+			t.Fatalf("error=%v cells=%#v", err, ports.cells)
+		}
+		for _, call := range ports.calls {
+			if strings.Contains(call, ":fork:") {
+				t.Fatalf("resource was created: %#v", ports.calls)
+			}
+		}
+	}
+}
+
+func TestForkCellはCell生成失敗時にResourceもFailedCellも作らない(t *testing.T) {
+	ports := newFakePorts()
+	ports.newCellErr = errors.New("cell generation failed")
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+	if !errors.Is(err, ports.newCellErr) || len(ports.cells) != 0 || len(ports.calls) != 0 {
+		t.Fatalf("error=%v cells=%#v calls=%#v", err, ports.cells, ports.calls)
 	}
 }
 
@@ -626,21 +768,25 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 }
 
 type fakePorts struct {
-	config               domain.Config
-	configErr            error
-	cells                []domain.Cell
-	calls                []string
-	createSourceErr      error
-	copyFilesErr         error
-	createContainersErr  error
-	createSessionErr     error
-	updateCellsErr       error
-	sourceCreation       SourceCreation
-	rollbackSourceErr    error
-	cleanSourceErr       error
-	cleanContainersErr   error
-	cleanSessionErr      error
-	cleanupContextErrors []error
+	config              domain.Config
+	configErr           error
+	newCellErr          error
+	sourceFactoryErr    error
+	containerFactoryErr error
+	sessionFactoryErr   error
+	cells               []domain.Cell
+	calls               []string
+	createSourceErr     error
+	resumeSourceErr     error
+	copyFilesErr        error
+	createContainersErr error
+	createSessionErr    error
+	updateCellsErr      error
+	updateCellsErrors   []error
+	sourceCreation      SourceCreation
+	cleanSourceErr      error
+	cleanContainersErr  error
+	cleanSessionErr     error
 }
 
 func newFakePorts() *fakePorts {
@@ -716,6 +862,13 @@ func (f *fakePorts) UpdateCells(ctx context.Context, update func([]domain.Cell) 
 		return err
 	}
 	f.calls = append(f.calls, "state:save:"+string(rune('0'+len(cells))))
+	if len(f.updateCellsErrors) > 0 {
+		err := f.updateCellsErrors[0]
+		f.updateCellsErrors = f.updateCellsErrors[1:]
+		if err != nil {
+			return err
+		}
+	}
 	if f.updateCellsErr != nil {
 		return f.updateCellsErr
 	}
@@ -725,20 +878,23 @@ func (f *fakePorts) UpdateCells(ctx context.Context, update func([]domain.Cell) 
 
 func (f *fakePorts) Source(provider domain.ProviderConfig) (SourcePort, error) {
 	f.calls = append(f.calls, "factory:source:"+provider.Source)
-	return f, nil
+	return f, f.sourceFactoryErr
 }
 
 func (f *fakePorts) Container(provider domain.ProviderConfig) (ContainerPort, error) {
 	f.calls = append(f.calls, "factory:container:"+provider.Container)
-	return f, nil
+	return f, f.containerFactoryErr
 }
 
 func (f *fakePorts) Session(provider domain.ProviderConfig) (SessionPort, error) {
 	f.calls = append(f.calls, "factory:session:"+provider.Session)
-	return f, nil
+	return f, f.sessionFactoryErr
 }
 
 func (f *fakePorts) NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error) {
+	if f.newCellErr != nil {
+		return domain.Cell{}, f.newCellErr
+	}
 	cell := domain.Cell{
 		ID:       id,
 		Issue:    issue,
@@ -776,10 +932,9 @@ func (f *fakePorts) CreateSource(ctx context.Context, cell domain.Cell) (SourceC
 	return f.sourceCreation, f.createSourceErr
 }
 
-func (f *fakePorts) RollbackSource(ctx context.Context, cell domain.Cell, creation SourceCreation) error {
-	f.calls = append(f.calls, "source:rollback:"+cell.Name)
-	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
-	return f.rollbackSourceErr
+func (f *fakePorts) ResumeSource(ctx context.Context, cell domain.Cell) error {
+	f.calls = append(f.calls, "source:resume:"+cell.Name)
+	return f.resumeSourceErr
 }
 
 func (f *fakePorts) CleanSource(ctx context.Context, cell domain.Cell) error {
@@ -792,6 +947,11 @@ func (f *fakePorts) CopyFiles(ctx context.Context, cell domain.Cell, template do
 	return f.copyFilesErr
 }
 
+func (f *fakePorts) ResumeFiles(ctx context.Context, cell domain.Cell, template domain.Template) error {
+	f.calls = append(f.calls, "files:resume:"+cell.Name+":"+joinStrings(template.Files))
+	return f.copyFilesErr
+}
+
 func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
 	f.calls = append(f.calls, "containers:fork:"+cell.Name)
 	return f.createContainersErr
@@ -799,7 +959,6 @@ func (f *fakePorts) CreateContainers(ctx context.Context, cell domain.Cell, temp
 
 func (f *fakePorts) CleanContainers(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "containers:clean:"+cell.Name)
-	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
 	return f.cleanContainersErr
 }
 
@@ -814,7 +973,6 @@ func (f *fakePorts) CreateSession(ctx context.Context, cell domain.Cell) error {
 
 func (f *fakePorts) CleanSession(ctx context.Context, cell domain.Cell) error {
 	f.calls = append(f.calls, "session:clean:"+cell.Name)
-	f.cleanupContextErrors = append(f.cleanupContextErrors, ctx.Err())
 	return f.cleanSessionErr
 }
 

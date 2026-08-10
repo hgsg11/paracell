@@ -152,6 +152,29 @@ func TestConfigureSessionは時刻表示を重複追加しない(t *testing.T) {
 	}
 }
 
+func TestCreateSessionは途中失敗時に部分Sessionを削除して再試行可能にする(t *testing.T) {
+	createErr := errors.New("new window failed")
+	runner := &fakeRunner{errors: map[string]error{
+		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source": createErr,
+	}}
+	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{
+		Name:   "123",
+		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Session: domain.Session{Name: "paracell-myapp-123", Windows: []domain.SessionWindow{
+			{Name: "editor"}, {Name: "server"},
+		}},
+	}
+
+	err := adapter.CreateSession(context.Background(), cell)
+	if !errors.Is(err, createErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if !containsCall(runner.calls, "tmux kill-session -t paracell-myapp-123") {
+		t.Fatalf("partial session was not removed: %#v", runner.calls)
+	}
+}
+
 func TestEnterSessionはResurrectで復元された全Windowを再設定する(t *testing.T) {
 	t.Setenv("TMUX", "")
 	const target = "paracell-myapp-123"
