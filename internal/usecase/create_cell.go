@@ -12,6 +12,7 @@ type ForkCellInput struct {
 	Issue    string
 	Template string
 	Command  string
+	Note     *string
 }
 
 type ForkCellUseCase struct {
@@ -26,6 +27,14 @@ type ForkCellUseCase struct {
 }
 
 func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.Cell, error) {
+	var note string
+	if input.Note != nil {
+		var err error
+		note, err = domain.NormalizeCellNote(*input.Note)
+		if err != nil {
+			return domain.Cell{}, err
+		}
+	}
 	cfg, err := u.Config.Load(ctx, &domain.TemplateVars{
 		Issue:   input.Issue,
 		Name:    input.Issue,
@@ -49,6 +58,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
+	cell.Note = note
 	if err := ensureForkUnique(existing, input.Issue, cell.Name); err != nil {
 		return domain.Cell{}, err
 	}

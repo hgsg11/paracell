@@ -55,6 +55,32 @@ func TestForkCellはCellを作成して外部リソースを順番に作る(t *t
 	}
 }
 
+func TestForkCellはNoteを外部Resource作成前に正規化検証する(t *testing.T) {
+	valid := "  PostgreSQL\t案\n"
+	ports := newFakePorts()
+	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp", Note: &valid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cell.Note != "PostgreSQL 案" || len(ports.cells) != 1 || ports.cells[0].Note != "PostgreSQL 案" {
+		t.Fatalf("cell = %#v, stored = %#v", cell, ports.cells)
+	}
+	if cell.Branch != "feat/123" || cell.Source.Path != ".paracell/cells/123/source" || cell.Session.Name != "myapp-123" || cell.Containers.Network != "paracell-myapp-123" {
+		t.Fatalf("note changed managed resource identifiers: %#v", cell)
+	}
+
+	for _, invalid := range []string{"", strings.Repeat("案", 21)} {
+		ports := newFakePorts()
+		_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp", Note: &invalid})
+		if err == nil {
+			t.Fatalf("note %q returned no error", invalid)
+		}
+		if len(ports.calls) != 0 || len(ports.cells) != 0 {
+			t.Fatalf("invalid note created resources or state: calls=%#v cells=%#v", ports.calls, ports.cells)
+		}
+	}
+}
+
 func TestForkCellは各工程のCheckpointを保存して失敗したCellと完了工程を保持する(t *testing.T) {
 	originalErr := errors.New("creation failed")
 	tests := []struct {
@@ -207,8 +233,9 @@ func TestRetryCellはIDIssueNameで失敗工程から最新Templateを使って�
 		t.Run(identifier, func(t *testing.T) {
 			ports := newFakePorts()
 			ports.createContainersErr = errors.New("docker failed")
+			note := "PostgreSQL案"
 			_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{
-				Issue: "123", Template: "webapp", Command: "original command",
+				Issue: "123", Template: "webapp", Command: "original command", Note: &note,
 			})
 			if err == nil {
 				t.Fatal("fork succeeded")
@@ -236,6 +263,9 @@ func TestRetryCellはIDIssueNameで失敗工程から最新Templateを使って�
 			}
 			if cell.ID != original.ID || cell.Branch != original.Branch || cell.Source.Path != original.Source.Path || cell.Containers.Services["web"].ContainerName != original.Containers.Services["web"].ContainerName {
 				t.Fatalf("identifiers changed: before=%#v after=%#v", original, cell)
+			}
+			if cell.Note != note {
+				t.Fatalf("note = %q, want %q", cell.Note, note)
 			}
 			if got := cell.Session.Windows[0].Command; got != "latest 123 original command" {
 				t.Fatalf("latest rendered command = %q", got)
@@ -768,25 +798,26 @@ func TestCreateCellはRepositoryBaseをCellへ保持する(t *testing.T) {
 }
 
 type fakePorts struct {
-	config              domain.Config
-	configErr           error
-	newCellErr          error
-	sourceFactoryErr    error
-	containerFactoryErr error
-	sessionFactoryErr   error
-	cells               []domain.Cell
-	calls               []string
-	createSourceErr     error
-	resumeSourceErr     error
-	copyFilesErr        error
-	createContainersErr error
-	createSessionErr    error
-	updateCellsErr      error
-	updateCellsErrors   []error
-	sourceCreation      SourceCreation
-	cleanSourceErr      error
-	cleanContainersErr  error
-	cleanSessionErr     error
+	config               domain.Config
+	configErr            error
+	newCellErr           error
+	sourceFactoryErr     error
+	containerFactoryErr  error
+	sessionFactoryErr    error
+	cells                []domain.Cell
+	calls                []string
+	createSourceErr      error
+	resumeSourceErr      error
+	copyFilesErr         error
+	createContainersErr  error
+	createSessionErr     error
+	updateCellsErr       error
+	updateCellsErrors    []error
+	sourceCreation       SourceCreation
+	cleanSourceErr       error
+	cleanContainersErr   error
+	cleanSessionErr      error
+	updateStatusLabelErr error
 }
 
 func newFakePorts() *fakePorts {
@@ -1002,6 +1033,12 @@ func (f *fakePorts) PrepareSession(ctx context.Context, cell domain.Cell) error 
 	_ = ctx
 	_ = cell
 	return nil
+}
+
+func (f *fakePorts) UpdateStatusLabel(ctx context.Context, cell domain.Cell) error {
+	_ = ctx
+	f.calls = append(f.calls, "session:label:"+cell.DisplayLabel())
+	return f.updateStatusLabelErr
 }
 
 func (f *fakePorts) EnterRootSession(ctx context.Context, project domain.ProjectConfig) error {

@@ -124,6 +124,7 @@ func refreshRetryCell(stored domain.Cell, rendered domain.Cell) domain.Cell {
 	refreshed.ID = stored.ID
 	refreshed.Issue = stored.Issue
 	refreshed.Name = stored.Name
+	refreshed.Note = stored.Note
 	refreshed.Template = stored.Template
 	refreshed.Branch = stored.Branch
 	refreshed.Source.Path = stored.Source.Path

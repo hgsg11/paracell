@@ -79,7 +79,18 @@ func (a TmuxAdapter) configureCellSession(ctx context.Context, cell domain.Cell)
 	if len(windowTargets) == 0 {
 		windowTargets = append(windowTargets, cell.Session.Name)
 	}
-	return a.configureSession(ctx, cell.Session.Name, cellProjectName(cell), cell.Name, windowTargets)
+	return a.configureSession(ctx, cell.Session.Name, cellProjectName(cell), cell.DisplayLabel(), windowTargets)
+}
+
+func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, cell domain.Cell) error {
+	err := a.Runner.Run(ctx, "tmux", "set-option", "-t", cell.Session.Name, "@paracell-status-label", cell.DisplayLabel())
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "can't find session") {
+		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
+	}
+	return err
 }
 
 func (a TmuxAdapter) configureSession(ctx context.Context, target string, project string, label string, windowTargets []string) error {

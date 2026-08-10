@@ -151,6 +151,22 @@ func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *
 	}
 }
 
+func TestModelViewはCell名とNoteを併記してStatusを維持する(t *testing.T) {
+	cell := domain.Cell{ID: "cell-1", Name: "123", Note: "API実装中", Template: "default"}
+	if err := cell.SetStatus(domain.Pending); err != nil {
+		t.Fatal(err)
+	}
+	model := NewModel([]domain.Cell{cell})
+
+	got := model.View()
+	if !strings.Contains(got, "123 | API実装中") {
+		t.Fatalf("name and note missing: %q", got)
+	}
+	if !strings.Contains(got, "[ ]  ..") {
+		t.Fatalf("pending status missing: %q", got)
+	}
+}
+
 func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		{ID: "cell-1", Name: "123", Template: "very-long-template-name"},

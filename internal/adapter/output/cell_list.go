@@ -9,7 +9,7 @@ import (
 
 func FormatCellList(cells []domain.Cell) string {
 	var b strings.Builder
-	b.WriteString("NAME\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
+	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
 		failedStage := "-"
 		lastError := "-"
@@ -18,7 +18,7 @@ func FormatCellList(cells []domain.Cell) string {
 			lastError = singleLine(cell.Creation.LastError, 120)
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
-			cell.Name, cell.Template, cell.CreationStatus(), cell.Status(), cell.IsDone(), failedStage, lastError)
+			cell.DisplayLabel(), cell.Template, cell.CreationStatus(), cell.Status(), cell.IsDone(), failedStage, lastError)
 	}
 	return b.String()
 }

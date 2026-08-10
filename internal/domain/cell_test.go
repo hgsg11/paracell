@@ -4,8 +4,70 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "空白正規化", input: "  API\t実装\n  中  ", want: "API 実装 中"},
+		{name: "1文字", input: "案", want: "案"},
+		{name: "20文字", input: strings.Repeat("案", 20), want: strings.Repeat("案", 20)},
+		{name: "空文字", input: " \t\n ", wantErr: true},
+		{name: "21文字", input: strings.Repeat("案", 21), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeCellNote(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NormalizeCellNote() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("NormalizeCellNote() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCellNoteの表示規則を共通化する(t *testing.T) {
+	withoutNote := Cell{Name: "123"}
+	withNote := Cell{Name: "123", Note: "API実装中"}
+	if got := withoutNote.DisplayLabel(); got != "123" {
+		t.Fatalf("DisplayLabel() = %q, want 123", got)
+	}
+	if got := withNote.DisplayLabel(); got != "API実装中" {
+		t.Fatalf("DisplayLabel() = %q, want API実装中", got)
+	}
+	if got := withNote.TUIDisplayLabel(); got != "123 | API実装中" {
+		t.Fatalf("TUIDisplayLabel() = %q, want %q", got, "123 | API実装中")
+	}
+}
+
+func TestCellNoteはJSONをRoundTripし旧JSONでは空になる(t *testing.T) {
+	original := Cell{ID: "cell-1", Issue: "123", Name: "123", Note: "API実装中"}
+	data, err := json.Marshal(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Cell
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Note != original.Note {
+		t.Fatalf("Note = %q, want %q", decoded.Note, original.Note)
+	}
+	if err := json.Unmarshal([]byte(`{"id":"legacy","issue":"1","name":"legacy"}`), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Note != "" || decoded.DisplayLabel() != "legacy" {
+		t.Fatalf("legacy cell = %#v, want empty note and name fallback", decoded)
+	}
+}
 
 func Test同じIssueのCellは重複として扱う(t *testing.T) {
 	checker := CellUniquenessChecker{}

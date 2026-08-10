@@ -31,7 +31,7 @@ func TestSQLiteStateが存在しない場合は空のCell一覧を返す(t *test
 
 func TestSQLiteStateはCellを保存して読み戻せる(t *testing.T) {
 	store := SQLiteCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.db")}
-	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Note: "API実装中", Template: "webapp"}
 	if err := cell.MarkDone(); err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestSQLiteStateはCellを保存して読み戻せる(t *testing.T) {
 
 func TestSQLiteStateは未設定StatusをReadyとして読み戻せる(t *testing.T) {
 	store := SQLiteCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.db")}
-	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Note: "API実装中", Template: "webapp"}
 
 	if err := store.SaveCells(context.Background(), []domain.Cell{cell}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -69,7 +69,7 @@ func TestSQLiteStateは未設定StatusをReadyとして読み戻せる(t *testin
 
 func TestSQLiteStateは作成Checkpointと失敗情報を保存して読み戻せる(t *testing.T) {
 	store := SQLiteCellStateAdapter{Path: filepath.Join(t.TempDir(), ".paracell", "state.db")}
-	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Template: "webapp"}
+	cell := domain.Cell{ID: "cell-1", Issue: "123", Name: "123", Note: "API実装中", Template: "webapp"}
 	if err := cell.SetStatus(domain.Ready); err != nil {
 		t.Fatal(err)
 	}

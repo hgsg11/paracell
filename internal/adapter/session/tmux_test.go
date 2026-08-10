@@ -99,6 +99,37 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	}
 }
 
+func TestUpdateStatusLabelはNoteを優先しSessionなしを識別する(t *testing.T) {
+	cell := domain.Cell{Name: "123", Note: "API実装中", Session: domain.Session{Name: "paracell-myapp-123"}}
+	runner := &fakeRunner{}
+	adapter := TmuxAdapter{Runner: runner}
+	if err := adapter.UpdateStatusLabel(context.Background(), cell); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中"}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+
+	missingCall := "tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中"
+	runner = &fakeRunner{errors: map[string]error{missingCall: errors.New("can't find session: paracell-myapp-123")}}
+	err := (TmuxAdapter{Runner: runner}).UpdateStatusLabel(context.Background(), cell)
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPrepareSessionはNoteをStatusLabelへ反映する(t *testing.T) {
+	runner := &fakeRunner{}
+	cell := domain.Cell{Name: "123", Note: "API実装中", Session: domain.Session{Name: "paracell-myapp-123"}}
+	if err := (TmuxAdapter{Runner: runner}).PrepareSession(context.Background(), cell); err != nil {
+		t.Fatal(err)
+	}
+	if !containsCall(runner.calls, "tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中") {
+		t.Fatalf("calls = %#v", runner.calls)
+	}
+}
+
 func TestEnterSessionはResurrect後のSession環境を再設定する(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
