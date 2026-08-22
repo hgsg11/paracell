@@ -1094,8 +1094,8 @@ func TestModelはIssue入力後にEnterでForkHandlerを呼ぶ(t *testing.T) {
 	if started.ForkTemplate != "" {
 		t.Fatalf("fork開始直後のForkTemplate = %q, want empty", started.ForkTemplate)
 	}
-	if !started.ForkInProgress {
-		t.Fatal("fork開始直後のForkInProgress = false, want true")
+	if started.ForksInProgress != 1 {
+		t.Fatalf("fork開始直後のForksInProgress = %d, want 1", started.ForksInProgress)
 	}
 
 	updated, _ := started.Update(cmd())
@@ -1103,26 +1103,99 @@ func TestModelはIssue入力後にEnterでForkHandlerを呼ぶ(t *testing.T) {
 	if got.IssueInputActive {
 		t.Fatal("IssueInputActive = true, want false")
 	}
-	if got.ForkInProgress {
-		t.Fatal("fork完了後のForkInProgress = true, want false")
+	if got.ForksInProgress != 0 {
+		t.Fatalf("fork完了後のForksInProgress = %d, want 0", got.ForksInProgress)
 	}
 }
 
-func TestModelはCell作成中に別のIssue入力を開始しない(t *testing.T) {
+func TestModelはCell作成中にも別のIssue入力を開始できる(t *testing.T) {
 	model := NewModel(nil, []string{"default"})
 	model.Focus = FocusTemplates
-	model.ForkInProgress = true
+	model.ForksInProgress = 1
 
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	if cmd != nil {
-		t.Fatal("cell作成中のyでコマンドが返った")
-	}
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	got := next.(Model)
-	if got.AwaitingFork || got.IssueInputActive {
-		t.Fatal("cell作成中にIssue入力待機へ入った")
+	if !got.IssueInputActive {
+		t.Fatal("cell作成中のyyでIssue入力モードへ入らなかった")
 	}
-	if got.Error != "cell creation is already in progress" {
-		t.Fatalf("error = %q", got.Error)
+	if got.ForksInProgress != 1 {
+		t.Fatalf("ForksInProgress = %d, want 1", got.ForksInProgress)
+	}
+}
+
+func TestModelは複数Forkを順不同に完了して実行中件数を追跡する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.Fork = func(issue string, template string) tea.Cmd {
+		return func() tea.Msg {
+			return forkResultMsg{cell: domain.Cell{ID: "cell-" + issue, Name: issue, Template: template}}
+		}
+	}
+	reloadCalls := 0
+	model.Reload = func() ([]domain.Cell, error) {
+		reloadCalls++
+		return []domain.Cell{{ID: fmt.Sprintf("reloaded-%d", reloadCalls)}}, nil
+	}
+
+	model.IssueInputActive = true
+	model.AwaitingFork = true
+	model.ForkTemplate = "default"
+	model.IssueInput = "first"
+	next, firstCmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	started := next.(Model)
+
+	next, _ = started.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")})
+	next, secondCmd := next.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	started = next.(Model)
+
+	if firstCmd == nil || secondCmd == nil {
+		t.Fatal("2件のforkコマンドが返らなかった")
+	}
+	if started.ForksInProgress != 2 {
+		t.Fatalf("2件開始後のForksInProgress = %d, want 2", started.ForksInProgress)
+	}
+
+	next, _ = started.Update(secondCmd())
+	afterSecond := next.(Model)
+	if afterSecond.ForksInProgress != 1 {
+		t.Fatalf("片方完了後のForksInProgress = %d, want 1", afterSecond.ForksInProgress)
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("片方完了後のreload回数 = %d, want 1", reloadCalls)
+	}
+
+	next, _ = afterSecond.Update(firstCmd())
+	completed := next.(Model)
+	if completed.ForksInProgress != 0 {
+		t.Fatalf("全件完了後のForksInProgress = %d, want 0", completed.ForksInProgress)
+	}
+	if reloadCalls != 2 {
+		t.Fatalf("全件完了後のreload回数 = %d, want 2", reloadCalls)
+	}
+}
+
+func TestModelはFork完了時に次のIssue入力を維持する(t *testing.T) {
+	model := NewModel(nil, []string{"default"})
+	model.Focus = FocusTemplates
+	model.ForksInProgress = 1
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("next")})
+	next, _ = next.(Model).Update(forkResultMsg{cell: domain.Cell{ID: "cell-1"}})
+	got := next.(Model)
+
+	if !got.IssueInputActive || !got.AwaitingFork {
+		t.Fatal("fork完了時に次のIssue入力状態が解除された")
+	}
+	if got.IssueInput != "next" || got.ForkTemplate != "default" {
+		t.Fatalf("fork完了後の入力 = (%q, %q), want (%q, %q)", got.IssueInput, got.ForkTemplate, "next", "default")
+	}
+	if got.ForksInProgress != 0 {
+		t.Fatalf("ForksInProgress = %d, want 0", got.ForksInProgress)
 	}
 }
 
@@ -1135,6 +1208,11 @@ func TestModelはFork失敗後もIssue入力を閉じたまま作成中状態を
 	model.Fork = func(string, string) tea.Cmd {
 		return func() tea.Msg { return forkResultMsg{err: errors.New("fork failed")} }
 	}
+	reloadCalls := 0
+	model.Reload = func() ([]domain.Cell, error) {
+		reloadCalls++
+		return nil, nil
+	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -1142,14 +1220,40 @@ func TestModelはFork失敗後もIssue入力を閉じたまま作成中状態を
 	}
 	updated, _ := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if got.ForkInProgress {
-		t.Fatal("fork失敗後のForkInProgress = true, want false")
+	if got.ForksInProgress != 0 {
+		t.Fatalf("fork失敗後のForksInProgress = %d, want 0", got.ForksInProgress)
 	}
 	if got.IssueInputActive || got.AwaitingFork || got.IssueInput != "" {
 		t.Fatal("fork失敗後にIssue入力状態が残った")
 	}
 	if got.Error != "fork failed" {
 		t.Fatalf("error = %q", got.Error)
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("fork失敗後のreload回数 = %d, want 1", reloadCalls)
+	}
+}
+
+func TestModelはFork失敗時に他の実行中Forkを維持する(t *testing.T) {
+	model := NewModel(nil)
+	model.ForksInProgress = 2
+	reloadCalls := 0
+	model.Reload = func() ([]domain.Cell, error) {
+		reloadCalls++
+		return nil, nil
+	}
+
+	next, _ := model.Update(forkResultMsg{err: errors.New("fork failed")})
+	got := next.(Model)
+
+	if got.ForksInProgress != 1 {
+		t.Fatalf("失敗後のForksInProgress = %d, want 1", got.ForksInProgress)
+	}
+	if got.Error != "fork failed" {
+		t.Fatalf("error = %q, want %q", got.Error, "fork failed")
+	}
+	if reloadCalls != 1 {
+		t.Fatalf("fork失敗後のreload回数 = %d, want 1", reloadCalls)
 	}
 }
 
