@@ -133,10 +133,12 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 - Each `containers.services.<role>` may specify `sourceContainer` and `volumeMode`.
 - `volumeMode` accepts `copy` or `readonly` for ordinary services.
-- Database configuration is supported only for the `db` role and requires `volumeMode: copy`.
-- Database `system` currently supports `mysql`.
-- Database `copyMode` accepts `schema` or `data`; `data` is reserved and not implemented in the current behavior.
-- Database `initFiles` must be project-root-relative and remain within the project root.
+- Database configuration is supported only for the `db` role. `database.mode` accepts `copy` or `shared`; omission defaults to `copy` for backward compatibility.
+- `database.mode: copy` requires `volumeMode: copy`, `database.system: mysql`, and `database.copyMode: schema`. It creates a cell-specific database container and volume, then copies every non-system schema. `copyMode: data` is rejected while loading configuration because data copy is not implemented.
+- `database.mode: shared` requires `containers.network: isolated` and cannot be combined with `volumeMode`, `copyMode`, or `initFiles`. It does not copy a container, volume, or schema.
+- Shared database mode attaches the source database container to each cell network with every usable alias from its existing network attachments. It adds neither a fixed `db` alias nor a service-role alias and fails when the source has no usable aliases.
+- Rollback, retry preparation, and `clean` disconnect a shared source database only from the affected cell network; its original and other cell network attachments remain intact.
+- Database `initFiles` in copy mode must be project-root-relative and remain within the project root.
 
 ## Runtime State
 

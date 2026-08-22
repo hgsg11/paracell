@@ -183,6 +183,16 @@ func (c *Cell) CompleteCreationStage(stage CreationStage) {
 	c.Creation.LastError = ""
 }
 
+func (c *Cell) ResetCreationStage(stage CreationStage) {
+	completed := c.Creation.CompletedStages[:0]
+	for _, current := range c.Creation.CompletedStages {
+		if current != stage {
+			completed = append(completed, current)
+		}
+	}
+	c.Creation.CompletedStages = completed
+}
+
 func (c *Cell) FailCreation(stage CreationStage, err error) {
 	c.Creation.Status = CreationFailed
 	c.clearRetryLease()

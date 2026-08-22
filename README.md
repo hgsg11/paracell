@@ -181,6 +181,8 @@ http://p<containerPort>.<service-role>.<cell>.<project>.localhost
 
 source network aliasは、copied containerから`http://backend`のようにcontainer間通信するため、isolated networkへ引き続きコピーされます。さらにcopied containerにはservice role自身もnetwork aliasとして必ず追加されます。これらの内部通信用aliasと、外部公開するcanonical URLは別のものです。
 
+database serviceに`database.mode: shared`を指定すると、database containerだけは複製せず、source database containerをcell専用networkへ接続します。source databaseが既存networkで持つaliasをすべてコピーし、固定の`db` aliasやservice role aliasは追加しません。利用可能なaliasがない場合はcell作成を中止します。同じsource databaseを複数cellへ接続でき、rollback、retry、`paracell clean`は対象cellのnetwork接続だけを切断します。
+
 Paracellが作成するDocker resource名は、networkが`paracell-<project>-<cell>`、copied containerが`paracell-<project>-<cell>-<service-role>`です。ユーザーが起動したsource containerの名前は変更せず、このmanaged resource命名の対象にもなりません。project名自体が`paracell`なら`paracell-paracell-...`となりますが、先頭の`paracell`は管理namespace、2つ目はproject名であり、重複を省略しません。既存cellのresourceやURLは自動renameされず、修正版でcellを再作成した時点からこの規則が適用されます。
 
 `paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
@@ -293,9 +295,11 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `containers.services.<service>.environment`: service ごとの環境変数を設定する。source container の環境変数をコピーした後、同名の変数をこの設定で上書きする
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
-- database service の `volumeMode` は `copy` のみ対応する
+- `database.mode: copy`: cell専用database containerとvolumeを作り、schemaをコピーする。省略時も後方互換のため`copy`
+- `database.mode: shared`: `containers.network: isolated`でsource database containerを既存alias付きで共有する。`volumeMode`、`copyMode`、`initFiles`との併用は不可
+- copy modeは`volumeMode: copy`、`database.system: mysql`、`database.copyMode: schema`の組み合わせだけをサポートする
 - `database.copyMode: schema`: system database を除く全 DB の schema を cell に用意する
-- `database.copyMode: data`: 予約済み。まだ未実装
+- `database.copyMode: data`: 設定読み込み時に未実装エラーとして拒否する
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
@@ -312,6 +316,10 @@ containers:
         PARACELL_CELL: "{{.name}}"
         PARACELL_PROJECT: "{{.project}}"
         OPTIONAL_VALUE: ""
+    db:
+      sourceContainer: myapp-db
+      database:
+        mode: shared
 ```
 
 ## ファイル

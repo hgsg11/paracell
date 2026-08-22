@@ -549,11 +549,123 @@ templates:
 	if service.Database.System != "mysql" {
 		t.Fatalf("database.system = %q, want %q", service.Database.System, "mysql")
 	}
+	if service.Database.Mode != domain.DatabaseModeCopy {
+		t.Fatalf("database.mode = %q, want %q", service.Database.Mode, domain.DatabaseModeCopy)
+	}
 	if service.Database.CopyMode != "schema" {
 		t.Fatalf("database.copyMode = %q, want %q", service.Database.CopyMode, "schema")
 	}
 	if len(service.Database.InitFiles) != 1 || service.Database.InitFiles[0] != "docker/mysql/init/001-users.sql" {
 		t.Fatalf("database.initFiles = %#v, want [docker/mysql/init/001-users.sql]", service.Database.InitFiles)
+	}
+}
+
+func TestYAMLConfigはSharedDB設定を読み込む(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      network: isolated
+      services:
+        db:
+          sourceContainer: myapp-db
+          database:
+            mode: shared
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("設定読み込みでエラーが返った: %v", err)
+	}
+	if got := cfg.Templates["default"].Containers.Services["db"].Database.Mode; got != domain.DatabaseModeShared {
+		t.Fatalf("database.mode = %q, want %q", got, domain.DatabaseModeShared)
+	}
+}
+
+func TestYAMLConfigはDataCopyを設定読み込み時に拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      network: isolated
+      services:
+        db:
+          sourceContainer: myapp-db
+          volumeMode: copy
+          database:
+            mode: copy
+            system: mysql
+            copyMode: data
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil || err.Error() != `copyMode "data" is not implemented for service "db"` {
+		t.Fatalf("error = %v, want data copy validation error", err)
+	}
+}
+
+func TestYAMLConfigはSharedDBとVolumeCopyの併用を拒否する(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "paracell.yaml")
+	content := []byte(`project:
+  name: myapp
+providers:
+  source: git
+  container: docker
+  session: tmux
+templates:
+  default:
+    repository:
+      branchPrefix: feat/
+      base: main
+    containers:
+      network: isolated
+      services:
+        db:
+          sourceContainer: myapp-db
+          volumeMode: copy
+          database:
+            mode: shared
+    session:
+      windows: []
+`)
+	if err := os.WriteFile(configPath, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
+	if err == nil || err.Error() != `database mode "shared" for service "db" does not support volumeMode` {
+		t.Fatalf("error = %v, want shared volumeMode validation error", err)
 	}
 }
 

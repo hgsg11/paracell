@@ -28,6 +28,7 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 		var database *domain.DatabaseConfig
 		if service.Database != nil {
 			database = &domain.DatabaseConfig{
+				Mode:      service.Database.Mode,
 				System:    service.Database.System,
 				CopyMode:  service.Database.CopyMode,
 				InitFiles: append([]string(nil), service.Database.InitFiles...),

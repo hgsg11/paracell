@@ -136,7 +136,8 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 		before := cloneCell(*cell)
 		if err := r.runStage(ctx, *cell, template, stage, retry); err != nil {
 			*cell = before
-			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal()))
+			rollbackErr := r.rollbackSharedDatabaseContainers(context.WithoutCancel(ctx), cell, stage)
+			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal(), rollbackErr))
 		}
 		cell.CompleteCreationStage(stage)
 		if stage == domain.CreationStageSession {
@@ -154,10 +155,29 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 			terminalErr := r.beforeTerminal()
 			cleanupErr := r.cleanupUncheckpointedStage(context.WithoutCancel(ctx), before, stage)
 			*cell = before
-			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s checkpoint: %w", stage, err), terminalErr, cleanupErr))
+			rollbackErr := r.rollbackSharedDatabaseContainers(context.WithoutCancel(ctx), cell, stage)
+			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s checkpoint: %w", stage, err), terminalErr, cleanupErr, rollbackErr))
 		}
 	}
 	return nil
+}
+
+func (r cellCreationRunner) rollbackSharedDatabaseContainers(ctx context.Context, cell *domain.Cell, failedStage domain.CreationStage) error {
+	if failedStage != domain.CreationStageSession || !cell.CreationStageCompleted(domain.CreationStageContainers) || !cellUsesSharedDatabase(*cell) {
+		return nil
+	}
+	err := ignoreNotFound(r.Containers.CleanContainers(ctx, *cell))
+	cell.ResetCreationStage(domain.CreationStageContainers)
+	return err
+}
+
+func cellUsesSharedDatabase(cell domain.Cell) bool {
+	for _, service := range cell.Containers.Services {
+		if service.Database != nil && service.Database.Mode == domain.DatabaseModeShared {
+			return true
+		}
+	}
+	return false
 }
 
 func (r cellCreationRunner) beforeTerminal() error {

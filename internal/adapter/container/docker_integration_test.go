@@ -268,6 +268,100 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+func TestDockerIntegrationは同一MySQLを2Cellで共有して個別Cleanできる(t *testing.T) {
+	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
+		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Docker is not available: %v", err)
+	}
+	for _, image := range []string{"mysql:8.0", gatewayImage} {
+		if err := exec.Command("docker", "image", "inspect", image).Run(); err != nil {
+			t.Skipf("%s image is required: %v", image, err)
+		}
+	}
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	prefix := "paracell-integration-shared-db-" + suffix
+	sourceNetwork := prefix + "-source"
+	databaseContainer := prefix + "-mysql"
+	applicationSource := prefix + "-app-source"
+	adapter := DockerCLIAdapter{Runner: system.CaptureRunner{}}
+	cells := make([]domain.Cell, 0, 2)
+	for _, name := range []string{"a", "b"} {
+		network := prefix + "-cell-" + name
+		cells = append(cells, domain.Cell{Name: name, Containers: domain.Containers{
+			Network: network, NetworkMode: "isolated",
+			Services: map[string]domain.CellContainer{
+				"db": {
+					ContainerName: network + "-db", SourceContainer: databaseContainer,
+					Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared},
+				},
+				"app": {ContainerName: network + "-app", SourceContainer: applicationSource},
+			},
+		}})
+	}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"db":  {SourceContainer: databaseContainer, Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
+		"app": {SourceContainer: applicationSource},
+	}}}
+
+	t.Cleanup(func() {
+		for _, cell := range cells {
+			_ = adapter.CleanContainers(context.Background(), cell)
+		}
+		_ = exec.Command("docker", "rm", "-f", applicationSource, databaseContainer).Run()
+		_ = exec.Command("docker", "network", "rm", sourceNetwork).Run()
+	})
+
+	runDockerIntegrationCommand(t, "network", "create", sourceNetwork)
+	runDockerIntegrationCommand(t,
+		"run", "-d", "--name", databaseContainer,
+		"--network", sourceNetwork, "--network-alias", "primary-db",
+		"-e", "MYSQL_ROOT_PASSWORD=rootsecret", "-e", "MYSQL_DATABASE=myapp",
+		"-e", "MYSQL_USER=app", "-e", "MYSQL_PASSWORD=secret",
+		"mysql:8.0",
+	)
+	waitForIntegrationMySQL(t, databaseContainer)
+	runDockerIntegrationCommand(t,
+		"run", "-d", "--name", applicationSource,
+		"--network", sourceNetwork, "--network-alias", "source-app",
+		"--entrypoint", "sh", "mysql:8.0", "-c", "sleep 300",
+	)
+
+	for _, cell := range cells {
+		if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+			t.Fatalf("CreateContainers for cell %q failed: %v", cell.Name, err)
+		}
+		app := cell.Containers.Services["app"].ContainerName
+		output := dockerIntegrationOutput(t, "exec", app, "mysql", "-h", "primary-db", "-uapp", "-psecret", "myapp", "-Nse", "SELECT 1")
+		if output != "1" {
+			t.Fatalf("shared database query from cell %q = %q, want 1", cell.Name, output)
+		}
+		networksJSON := dockerIntegrationOutput(t, "inspect", "-f", "{{json .NetworkSettings.Networks}}", databaseContainer)
+		var attached map[string]dockerNetwork
+		if err := json.Unmarshal([]byte(networksJSON), &attached); err != nil {
+			t.Fatalf("decode shared database aliases for cell %q: %v", cell.Name, err)
+		}
+		aliases := attached[cell.Containers.Network].Aliases
+		if !containsString(aliases, "primary-db") || containsString(aliases, "db") {
+			t.Fatalf("shared database aliases for cell %q = %#v, want primary-db without fixed db", cell.Name, aliases)
+		}
+	}
+
+	if err := adapter.CleanContainers(context.Background(), cells[0]); err != nil {
+		t.Fatalf("clean first cell: %v", err)
+	}
+	networks := dockerIntegrationOutput(t, "inspect", "-f", "{{json .NetworkSettings.Networks}}", databaseContainer)
+	if strings.Contains(networks, cells[0].Containers.Network) || !strings.Contains(networks, cells[1].Containers.Network) || !strings.Contains(networks, sourceNetwork) {
+		t.Fatalf("database networks after first clean = %s", networks)
+	}
+	appB := cells[1].Containers.Services["app"].ContainerName
+	if output := dockerIntegrationOutput(t, "exec", appB, "mysql", "-h", "primary-db", "-uapp", "-psecret", "myapp", "-Nse", "SELECT 1"); output != "1" {
+		t.Fatalf("second cell lost shared database after first clean: %q", output)
+	}
+}
+
 func TestCreateContainersは同一Network上でHostPort競合せずに起動できる(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
 		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
