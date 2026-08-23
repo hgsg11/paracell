@@ -38,7 +38,6 @@ templates:
     files:
       - .env
     containers:
-      network: isolated
       services: {}
     session:
       windows:
@@ -64,7 +63,6 @@ templates:
   - `reuse`: reuse an existing branch or create it when absent.
   - `require`: require an existing branch.
 - `files`: project-root-relative local inputs copied into the cell source.
-- `containers.network`: accepts `isolated` or `shared`.
 - `containers.services`: declares container copies required by the cell.
 - `session.windows`: declares tmux windows and startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
 
@@ -131,11 +129,13 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 ## Container Details
 
+- Every cell with container services gets its own Docker network. Copied containers join only that network, preserving usable aliases from their source container, and the shared gateway joins the network for HTTP routes.
+- Published TCP container ports follow the source container's bindings and use Docker-assigned random host ports. Every copied service, including a copied database, uses the same publication and HTTP gateway-label rules. Unpublished source ports remain unpublished.
 - Each `containers.services.<role>` may specify `sourceContainer` and `volumeMode`.
 - `volumeMode` accepts `copy` or `readonly` for ordinary services.
 - Database configuration is supported only for the `db` role. `database.mode` accepts `copy` or `shared`; omission defaults to `copy` for backward compatibility.
 - `database.mode: copy` requires `volumeMode: copy`, `database.system: mysql`, and `database.copyMode: schema`. It creates a cell-specific database container and volume, then copies every non-system schema. `copyMode: data` is rejected while loading configuration because data copy is not implemented.
-- `database.mode: shared` requires `containers.network: isolated` and cannot be combined with `volumeMode`, `copyMode`, or `initFiles`. It does not copy a container, volume, or schema.
+- `database.mode: shared` cannot be combined with `volumeMode`, `copyMode`, or `initFiles`. It does not copy a container, volume, or schema.
 - Shared database mode attaches the source database container to each cell network with every usable alias from its existing network attachments. It adds neither a fixed `db` alias nor a service-role alias and fails when the source has no usable aliases.
 - Rollback, retry preparation, and `clean` disconnect a shared source database only from the affected cell network; its original and other cell network attachments remain intact.
 - Database `initFiles` in copy mode must be project-root-relative and remain within the project root.

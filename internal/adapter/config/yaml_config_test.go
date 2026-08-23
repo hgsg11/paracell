@@ -31,7 +31,6 @@ templates:
       - .env
       - apps/web/.env.local
     containers:
-      network: isolated
       services:
         web:
           sourceContainer: myapp-web
@@ -91,9 +90,6 @@ templates:
 	if got := template.Containers.Services["db"].Environment; got != nil {
 		t.Fatalf("db environment = %#v, want nil", got)
 	}
-	if template.Containers.Network != "isolated" {
-		t.Fatalf("containers.network = %q, want %q", template.Containers.Network, "isolated")
-	}
 	if len(template.Files) != 2 || template.Files[0] != ".env" || template.Files[1] != "apps/web/.env.local" {
 		t.Fatalf("files = %#v, want .env and apps/web/.env.local", template.Files)
 	}
@@ -124,7 +120,6 @@ func TestYAML設定を保存できる(t *testing.T) {
 				},
 				Files: []string{".env"},
 				Containers: domain.ContainerTemplate{
-					Network: "shared",
 					Services: map[string]domain.ContainerServiceTemplate{
 						"web": {
 							SourceContainer: "myapp-web",
@@ -159,7 +154,6 @@ templates:
         files:
             - .env
         containers:
-            network: shared
             services:
                 web:
                     sourceContainer: myapp-web
@@ -575,7 +569,6 @@ templates:
       branchPrefix: feat/
       base: main
     containers:
-      network: isolated
       services:
         db:
           sourceContainer: myapp-db
@@ -612,7 +605,6 @@ templates:
       branchPrefix: feat/
       base: main
     containers:
-      network: isolated
       services:
         db:
           sourceContainer: myapp-db
@@ -649,7 +641,6 @@ templates:
       branchPrefix: feat/
       base: main
     containers:
-      network: isolated
       services:
         db:
           sourceContainer: myapp-db
@@ -991,39 +982,6 @@ templates:
 	}
 }
 
-func TestYAMLConfigは未対応ContainerNetworkを拒否する(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "paracell.yaml")
-	content := []byte(`project:
-  name: myapp
-providers:
-  source: git
-  container: docker
-  session: tmux
-templates:
-  default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      network: isolate
-      services: {}
-    session:
-      windows: []
-`)
-	if err := os.WriteFile(configPath, content, 0o644); err != nil {
-		t.Fatalf("テスト用設定ファイルを書けなかった: %v", err)
-	}
-
-	_, err := (YAMLConfigAdapter{Path: configPath}).Load(context.Background(), nil)
-	if err == nil {
-		t.Fatal("未対応containers.networkなのにエラーが返らなかった")
-	}
-	if err.Error() != `unsupported containers.network "isolate"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported containers.network "isolate"`)
-	}
-}
-
 func TestYAMLConfigは不正なRepositoryBranchModeを拒否する(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1099,7 +1057,6 @@ func TestYAMLConfigはTemplateを複数段継承して明示値で上書きす�
       branchMode: create
     files: [.env, config/base.yaml]
     containers:
-      network: isolated
       services:
         web:
           sourceContainer: myapp-web
@@ -1147,9 +1104,6 @@ func TestYAMLConfigはTemplateを複数段継承して明示値で上書きす�
 	}
 	if !reflect.DeepEqual(feat.Files, []string{".env", "config/base.yaml"}) {
 		t.Fatalf("files = %#v, want inherited files", feat.Files)
-	}
-	if feat.Containers.Network != domain.ContainerNetworkIsolated {
-		t.Fatalf("containers.network = %q, want isolated", feat.Containers.Network)
 	}
 	wantEnvironment := map[string]string{"CELL_NAME": "cell-77", "PROJECT_NAME": "myapp"}
 	if got := feat.Containers.Services["web"].Environment; !reflect.DeepEqual(got, wantEnvironment) {
@@ -1329,14 +1283,6 @@ func TestYAMLConfigは継承解決後の具体TemplateだけをValidationする(
 		inherited string
 		wantError string
 	}{
-		{
-			name: "network",
-			inherited: `
-    containers:
-      network: invalid
-`,
-			wantError: `unsupported containers.network "invalid"`,
-		},
 		{
 			name: "service",
 			inherited: `

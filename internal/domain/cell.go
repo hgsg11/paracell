@@ -264,9 +264,8 @@ type Source struct {
 }
 
 type Containers struct {
-	Network     string
-	NetworkMode string
-	Services    map[string]CellContainer
+	Network  string
+	Services map[string]CellContainer
 }
 
 type CellContainer struct {

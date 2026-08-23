@@ -190,7 +190,7 @@ func TestEnsureGatewayは同名の非管理Containerを変更しない(t *testin
 	}
 }
 
-func TestCreateContainersはIsolatedContainerへGatewayRouteを登録する(t *testing.T) {
+func TestCreateContainersはCellContainerへGatewayRouteを登録する(t *testing.T) {
 	empty := ""
 	runner := &fakeRunner{
 		gatewayInspectOutput: &empty,
@@ -233,7 +233,7 @@ func TestCreateContainersはIsolatedContainerへGatewayRouteを登録する(t *t
 	}
 }
 
-func TestCreateContainersはAliasやPortがなくてもIsolatedGatewayを接続する(t *testing.T) {
+func TestCreateContainersはAliasやPortがなくてもGatewayをCellNetworkへ接続する(t *testing.T) {
 	empty := ""
 	runner := &fakeRunner{
 		gatewayInspectOutput: &empty,
@@ -273,9 +273,8 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 	cell := domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			Network:     "paracell-myapp-123",
-			NetworkMode: "isolated",
-			Services:    map[string]domain.CellContainer{},
+			Network:  "paracell-myapp-123",
+			Services: map[string]domain.CellContainer{},
 		},
 	}
 
@@ -331,8 +330,7 @@ func gatewayTestCell() domain.Cell {
 	return domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			Network:     "paracell-myapp-123",
-			NetworkMode: "isolated",
+			Network: "paracell-myapp-123",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web"},
 			},

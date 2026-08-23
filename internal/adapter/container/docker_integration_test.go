@@ -51,8 +51,7 @@ func TestDockerIntegrationは同じSourceComposeから作った2CellのFrontendB
 		cells = append(cells, domain.Cell{
 			Name: issue,
 			Containers: domain.Containers{
-				Network:     network,
-				NetworkMode: "isolated",
+				Network: network,
 				Services: map[string]domain.CellContainer{
 					"frontend": {ContainerName: network + "-frontend", SourceContainer: sourceContainers["frontend"]},
 					"backend":  {ContainerName: network + "-backend", SourceContainer: sourceContainers["backend"]},
@@ -194,7 +193,7 @@ func verifyGatewayDashboard(t *testing.T, gatewayEndpoint string) {
 	}
 }
 
-func TestDockerIntegrationはIsolatedNetworkへAliasをコピーする(t *testing.T) {
+func TestDockerIntegrationはCell専用NetworkへAliasをコピーする(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
 		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
 	}
@@ -226,7 +225,6 @@ func TestDockerIntegrationはIsolatedNetworkへAliasをコピーする(t *testin
 	cell := domain.Cell{
 		Name: "integration",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: targetContainer, SourceContainer: sourceContainer},
 			},
@@ -291,7 +289,7 @@ func TestDockerIntegrationは同一MySQLを2Cellで共有して個別Cleanでき
 	for _, name := range []string{"a", "b"} {
 		network := prefix + "-cell-" + name
 		cells = append(cells, domain.Cell{Name: name, Containers: domain.Containers{
-			Network: network, NetworkMode: "isolated",
+			Network: network,
 			Services: map[string]domain.CellContainer{
 				"db": {
 					ContainerName: network + "-db", SourceContainer: databaseContainer,
@@ -362,7 +360,7 @@ func TestDockerIntegrationは同一MySQLを2Cellで共有して個別Cleanでき
 	}
 }
 
-func TestCreateContainersは同一Network上でHostPort競合せずに起動できる(t *testing.T) {
+func TestCreateContainersは別CellNetworkで同一ContainerPortを競合せず公開できる(t *testing.T) {
 	if os.Getenv("PARACELL_RUN_DOCKER_TESTS") != "1" {
 		t.Skip("set PARACELL_RUN_DOCKER_TESTS=1 to run Docker integration tests")
 	}
@@ -375,33 +373,38 @@ func TestCreateContainersは同一Network上でHostPort競合せずに起動で�
 
 	ctx := context.Background()
 	runner := system.OSCommandRunner{}
-	network := "paracell-port-conflict-test-net"
+	sourceNetwork := "paracell-port-conflict-test-source-net"
+	cellNetworkA := "paracell-port-conflict-test-a-net"
+	cellNetworkB := "paracell-port-conflict-test-b-net"
 	sourceContainer := "paracell-port-conflict-source"
-	copyA := "paracell-port-conflict-copy-a"
-	copyB := "paracell-port-conflict-copy-b"
+	copyA := cellNetworkA + "-web"
+	copyB := cellNetworkB + "-web"
 
 	cleanup := []string{copyA, copyB, sourceContainer}
 	for _, name := range cleanup {
 		defer exec.Command("docker", "rm", "-f", name).Run()
 	}
-	defer exec.Command("docker", "network", "rm", network).Run()
+	defer exec.Command("docker", "network", "rm", sourceNetwork).Run()
+	defer exec.Command("docker", "network", "rm", cellNetworkA).Run()
+	defer exec.Command("docker", "network", "rm", cellNetworkB).Run()
 
 	_ = exec.Command("docker", "rm", "-f", sourceContainer).Run()
 	_ = exec.Command("docker", "rm", "-f", copyA).Run()
 	_ = exec.Command("docker", "rm", "-f", copyB).Run()
-	_ = exec.Command("docker", "network", "rm", network).Run()
+	_ = exec.Command("docker", "network", "rm", sourceNetwork).Run()
+	_ = exec.Command("docker", "network", "rm", cellNetworkA).Run()
+	_ = exec.Command("docker", "network", "rm", cellNetworkB).Run()
 
-	if err := runner.Run(ctx, "docker", "network", "create", network); err != nil {
+	if err := runner.Run(ctx, "docker", "network", "create", sourceNetwork); err != nil {
 		t.Fatalf("network create failed: %v", err)
 	}
-	if err := runner.Run(ctx, "docker", "run", "-d", "--name", sourceContainer, "--network", network, "-p", "80", "nginx:alpine"); err != nil {
+	if err := runner.Run(ctx, "docker", "run", "-d", "--name", sourceContainer, "--network", sourceNetwork, "-p", "80", "nginx:alpine"); err != nil {
 		t.Fatalf("source container run failed: %v", err)
 	}
 
 	adapter := DockerCLIAdapter{Runner: runner}
 	template := domain.Template{
 		Containers: domain.ContainerTemplate{
-			Network: "shared",
 			Services: map[string]domain.ContainerServiceTemplate{
 				"web": {SourceContainer: sourceContainer},
 			},
@@ -411,8 +414,7 @@ func TestCreateContainersは同一Network上でHostPort競合せずに起動で�
 	cellA := domain.Cell{
 		Name: "copy-a",
 		Containers: domain.Containers{
-			NetworkMode: "shared",
-			Network:     "shared",
+			Network: cellNetworkA,
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: copyA, SourceContainer: sourceContainer},
 			},
@@ -421,8 +423,7 @@ func TestCreateContainersは同一Network上でHostPort競合せずに起動で�
 	cellB := domain.Cell{
 		Name: "copy-b",
 		Containers: domain.Containers{
-			NetworkMode: "shared",
-			Network:     "shared",
+			Network: cellNetworkB,
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: copyB, SourceContainer: sourceContainer},
 			},
@@ -451,16 +452,16 @@ func TestCreateContainersは同一Network上でHostPort競合せずに起動で�
 		t.Fatalf("published ports must differ to avoid host conflict: copyA=%q copyB=%q", portA, portB)
 	}
 
-	networkA, err := runner.Output(ctx, "docker", "inspect", "-f", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}", copyA)
+	actualNetworkA, err := runner.Output(ctx, "docker", "inspect", "-f", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}", copyA)
 	if err != nil {
 		t.Fatalf("inspect copyA network failed: %v", err)
 	}
-	networkB, err := runner.Output(ctx, "docker", "inspect", "-f", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}", copyB)
+	actualNetworkB, err := runner.Output(ctx, "docker", "inspect", "-f", "{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}", copyB)
 	if err != nil {
 		t.Fatalf("inspect copyB network failed: %v", err)
 	}
-	if strings.TrimSpace(networkA) != network || strings.TrimSpace(networkB) != network {
-		t.Fatalf("containers must share network %q: copyA=%q copyB=%q", network, networkA, networkB)
+	if strings.TrimSpace(actualNetworkA) != cellNetworkA || strings.TrimSpace(actualNetworkB) != cellNetworkB {
+		t.Fatalf("containers must use separate cell networks: copyA=%q copyB=%q", actualNetworkA, actualNetworkB)
 	}
 }
 
@@ -507,7 +508,6 @@ func TestDockerIntegrationは実MySQLのSchemaを専用Volumeへコピーする(
 	cell := domain.Cell{
 		Name: "integration",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"db": {
 					ContainerName:   targetContainer,

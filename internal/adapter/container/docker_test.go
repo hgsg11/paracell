@@ -68,7 +68,7 @@ func TestDockerRun引数を組み立てられる(t *testing.T) {
 	}
 }
 
-func TestCreateContainersはIsolatedの複数ContainerをCell単位でグループ化する(t *testing.T) {
+func TestCreateContainersは複数ContainerをCell専用Networkでグループ化する(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
 			`{"Config":{"Image":"myapp-db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
@@ -79,8 +79,7 @@ func TestCreateContainersはIsolatedの複数ContainerをCell単位でグルー�
 	cell := domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
-			Network:     "paracell-myapp-123",
+			Network: "paracell-myapp-123",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
 				"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"},
@@ -139,7 +138,6 @@ func TestCreateContainersはSourceContainerの設定を復元して作成する(
 			Path: "/project/.paracell/cells/123/source",
 		},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
 			},
@@ -180,7 +178,6 @@ func TestCreateContainersはSourceEnvironmentをService設定で上書きする(
 	cell := domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
 			},
@@ -223,7 +220,7 @@ func TestMergeEnvironmentは設定がなければSourceを保持する(t *testin
 	}
 }
 
-func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピーする(t *testing.T) {
+func TestCreateContainersはCell専用Networkに元ContainerのAliasをコピーする(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
 			`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{"Aliases":["myapp-web-1"]},"shared":{"Aliases":["frontend",""]}}}}`,
@@ -233,7 +230,6 @@ func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピー�
 	cell := domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web-1"},
 			},
@@ -263,8 +259,7 @@ func TestCreateContainersはSharedDatabaseを既存AliasだけでCellNetworkへ�
 	}}
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{Name: "123", Containers: domain.Containers{
-		NetworkMode: "isolated",
-		Network:     "paracell-myapp-123",
+		Network: "paracell-myapp-123",
 		Services: map[string]domain.CellContainer{
 			"db": {
 				ContainerName:   "paracell-myapp-123-db",
@@ -304,8 +299,7 @@ func TestCreateContainersはAliasなしSharedDatabaseを拒否してRollbackす�
 	}}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{Name: "123", Containers: domain.Containers{
-		NetworkMode: "isolated",
-		Network:     "paracell-myapp-123",
+		Network: "paracell-myapp-123",
 		Services: map[string]domain.CellContainer{
 			"db": {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
 		},
@@ -339,7 +333,7 @@ func TestCreateContainersはSharedDatabase接続後の失敗をRollbackする(t 
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{Name: "123", Containers: domain.Containers{
-		NetworkMode: "isolated", Network: "paracell-myapp-123",
+		Network: "paracell-myapp-123",
 		Services: map[string]domain.CellContainer{
 			"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
 			"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
@@ -363,117 +357,6 @@ func TestCreateContainersはSharedDatabase接続後の失敗をRollbackする(t 
 	}
 }
 
-func TestCreateContainersはSharedNetworkで元ネットワークを使う(t *testing.T) {
-	runner := &fakeRunner{
-		outputs: []string{
-			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev"]},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
-		},
-	}
-	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
-	cell := domain.Cell{
-		Name:   "123",
-		Source: domain.Source{Path: "/project/.paracell/cells/123/source"},
-		Containers: domain.Containers{
-			NetworkMode: "shared",
-			Network:     "shared",
-			Services: map[string]domain.CellContainer{
-				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
-			},
-		},
-	}
-	template := domain.Template{
-		Containers: domain.ContainerTemplate{
-			Network: "shared",
-			Services: map[string]domain.ContainerServiceTemplate{
-				"web": {SourceContainer: "myapp-web"},
-			},
-		},
-	}
-
-	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
-		t.Fatalf("CreateContainersでエラーが返った: %v", err)
-	}
-
-	wantRunCalls := []string{
-		"docker run -d --name paracell-myapp-123-web --network myapp_default -e APP_ENV=dev myapp-web:latest",
-	}
-	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
-	}
-}
-
-func TestCreateContainersはShared工程の途中失敗時に作成済みContainerだけを削除する(t *testing.T) {
-	inspectErr := errors.New("inspect web failed")
-	runner := &fakeRunner{
-		outputs: []string{
-			`{"Config":{"Image":"myapp-db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
-			"",
-		},
-		outputErrors: []error{nil, inspectErr},
-	}
-	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
-	cell := domain.Cell{Name: "123", Containers: domain.Containers{
-		NetworkMode: "shared",
-		Services: map[string]domain.CellContainer{
-			"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"},
-			"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
-		},
-	}}
-	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"db": {SourceContainer: "myapp-db"}, "web": {SourceContainer: "myapp-web"},
-	}}}
-
-	err := adapter.CreateContainers(context.Background(), cell, template)
-	if !errors.Is(err, inspectErr) {
-		t.Fatalf("error = %v", err)
-	}
-	wantTail := "docker rm -f paracell-myapp-123-db"
-	if len(runner.runCalls) == 0 || runner.runCalls[len(runner.runCalls)-1] != wantTail {
-		t.Fatalf("partial container was not removed: %#v", runner.runCalls)
-	}
-}
-
-func TestCreateContainersはSharedNetworkで元コンテナの全Networkを使う(t *testing.T) {
-	runner := &fakeRunner{
-		outputs: []string{
-			`{"Config":{"Image":"myapp-web:latest","Env":["APP_ENV=dev"]},"Mounts":[],"NetworkSettings":{"Networks":{"bridge":{},"myapp_default":{},"shared_front":{}}}}`,
-		},
-	}
-	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
-	cell := domain.Cell{
-		Name:   "123",
-		Source: domain.Source{Path: "/project/.paracell/cells/123/source"},
-		Containers: domain.Containers{
-			NetworkMode: "shared",
-			Network:     "shared",
-			Services: map[string]domain.CellContainer{
-				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
-			},
-		},
-	}
-	template := domain.Template{
-		Containers: domain.ContainerTemplate{
-			Network: "shared",
-			Services: map[string]domain.ContainerServiceTemplate{
-				"web": {SourceContainer: "myapp-web"},
-			},
-		},
-	}
-
-	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
-		t.Fatalf("CreateContainersでエラーが返った: %v", err)
-	}
-
-	wantRunCalls := []string{
-		"docker run -d --name paracell-myapp-123-web --network bridge -e APP_ENV=dev myapp-web:latest",
-		"docker network connect myapp_default paracell-myapp-123-web",
-		"docker network connect shared_front paracell-myapp-123-web",
-	}
-	if !reflect.DeepEqual(runner.runCalls, wantRunCalls) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, wantRunCalls)
-	}
-}
-
 func TestCreateContainersは元Containerの内部Portだけをコピーする(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
@@ -485,7 +368,6 @@ func TestCreateContainersは元Containerの内部Portだけをコピーする(t 
 		Name:   "123",
 		Source: domain.Source{Path: "/project/.paracell/cells/123/source"},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
 			},
@@ -517,7 +399,7 @@ func TestCreateContainersは元Containerの内部Portだけをコピーする(t 
 func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
-			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret","MYSQL_ROOT_PASSWORD=rootsecret"]},"Mounts":[{"Type":"volume","Name":"myapp_db","Source":"/var/lib/docker/volumes/myapp_db/_data","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
+			`{"Config":{"Image":"mysql:8","Env":["MYSQL_DATABASE=myapp","MYSQL_USER=app","MYSQL_PASSWORD=secret","MYSQL_ROOT_PASSWORD=rootsecret"]},"HostConfig":{"PortBindings":{"3306/tcp":[{"HostIp":"","HostPort":"13306"}]}},"Mounts":[{"Type":"volume","Name":"myapp_db","Source":"/var/lib/docker/volumes/myapp_db/_data","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"myapp_default":{}}}}`,
 			"analytics\nmyapp\n",
 			"CREATE TABLE users (id bigint primary key);",
 		},
@@ -529,7 +411,6 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 			Path: "/project/.paracell/cells/123/source",
 		},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"db": {
 					ContainerName:   "paracell-myapp-123-db",
@@ -572,8 +453,22 @@ func TestCreateContainersはMySQLSchemaCopyを実行する(t *testing.T) {
 	if got := runner.runCalls[1]; got != "docker volume create paracell-myapp-123-db-var-lib-mysql" {
 		t.Fatalf("volume create call = %q", got)
 	}
-	if got := runner.runCalls[2]; got != "docker run -d --name paracell-myapp-123-db --network paracell-myapp-123 --network-alias db --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=db -e MYSQL_DATABASE=myapp -e MYSQL_USER=app -e MYSQL_PASSWORD=secret -e MYSQL_ROOT_PASSWORD=rootsecret -v paracell-myapp-123-db-var-lib-mysql:/var/lib/mysql:rw mysql:8" {
-		t.Fatalf("first run call = %q", got)
+	databaseRun := runner.runCalls[2]
+	for _, want := range []string{
+		"--network paracell-myapp-123",
+		"--network-alias db",
+		"--label traefik.docker.network=paracell-myapp-123",
+		"--label traefik.enable=true",
+		"--label traefik.http.routers.paracell-myapp-123-db-p3306.rule=Host(`db.123.myapp.localhost`)",
+		"--label traefik.http.services.paracell-myapp-123-db-p3306.loadbalancer.server.port=3306",
+		"-p 3306",
+	} {
+		if !strings.Contains(databaseRun, want) {
+			t.Fatalf("database run call = %q, want fragment %q", databaseRun, want)
+		}
+	}
+	if strings.Contains(databaseRun, "13306:3306") {
+		t.Fatalf("database run call = %q, must use a random host port", databaseRun)
 	}
 	if got := runner.runCalls[3]; got != "docker exec paracell-myapp-123-db mysqladmin ping -h 127.0.0.1 -u root -prootsecret --silent" {
 		t.Fatalf("wait run call = %q", got)
@@ -598,7 +493,6 @@ func TestCreateContainersはDataCopyを未実装エラーにする(t *testing.T)
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"db": {
 					ContainerName:   "paracell-myapp-123-db",
@@ -688,7 +582,6 @@ func TestCreateContainersはVolumeModeCopyでNamedVolumeを複製する(t *testi
 	cell := domain.Cell{
 		Name: "123",
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {
 					ContainerName:   "paracell-myapp-123-web",
@@ -740,7 +633,6 @@ func TestCreateContainersはVolumeModeCopyで相対PathのCellSourceをMountす�
 		Name:   "123",
 		Source: domain.Source{Path: ".paracell/cells/123/source"},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {
 					ContainerName:   "paracell-myapp-123-web",
@@ -781,7 +673,6 @@ func TestCreateContainersはComposeが解決したSourcePathからCellSourceをM
 		Name:   "123",
 		Source: domain.Source{Path: ".paracell/cells/123/source"},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {
 					ContainerName:   "paracell-myapp-123-web",
@@ -836,7 +727,6 @@ func TestCreateContainersはComposeがProjectRoot配下をBindする場合にCel
 		Name:   "123",
 		Source: domain.Source{Path: ".paracell/cells/123/source"},
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
 			Services: map[string]domain.CellContainer{
 				"web": {
 					ContainerName:   "paracell-myapp-123-web",
@@ -876,8 +766,7 @@ func TestCleanContainersはコンテナ削除後にセルネットワークを�
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
-			Network:     "paracell-myapp-123",
+			Network: "paracell-myapp-123",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web"},
 				"db":  {ContainerName: "paracell-myapp-123-db"},
@@ -904,8 +793,7 @@ func TestCleanContainersはSharedDatabaseを対象CellNetworkからだけ切断�
 	runner := &fakeRunner{}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{Containers: domain.Containers{
-		NetworkMode: "isolated",
-		Network:     "paracell-myapp-123",
+		Network: "paracell-myapp-123",
 		Services: map[string]domain.CellContainer{
 			"db": {
 				ContainerName:   "paracell-myapp-123-db",
@@ -941,8 +829,7 @@ func TestCleanContainersは見つからないContainerとNetworkを無視する(
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{
 		Containers: domain.Containers{
-			NetworkMode: "isolated",
-			Network:     "paracell-myapp-123",
+			Network: "paracell-myapp-123",
 			Services: map[string]domain.CellContainer{
 				"web": {ContainerName: "paracell-myapp-123-web"},
 			},
@@ -966,8 +853,7 @@ func TestCleanContainersは削除失敗を結合して残りのResourceも削除
 	}}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := domain.Cell{Containers: domain.Containers{
-		NetworkMode: "isolated",
-		Network:     "paracell-myapp-123",
+		Network: "paracell-myapp-123",
 		Services: map[string]domain.CellContainer{
 			"web": {ContainerName: "paracell-myapp-123-web"},
 			"db":  {ContainerName: "paracell-myapp-123-db"},
