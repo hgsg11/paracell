@@ -138,11 +138,12 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 	isolated := shouldCreateIsolatedNetwork(cell.Containers.NetworkMode)
 	networkCreated := false
 	createdContainers := make([]string, 0, len(cell.Containers.Services))
+	sharedContainers := make([]string, 0, 1)
 	defer func() {
 		if returnErr == nil {
 			return
 		}
-		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), network, createdContainers, isolated, networkCreated))
+		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), network, createdContainers, sharedContainers, isolated, networkCreated))
 	}()
 	if isolated && network != "" {
 		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
@@ -162,6 +163,19 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return err
+		}
+		if isolated && isSharedDatabase(service) {
+			aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+			if len(aliases) == 0 {
+				return fmt.Errorf("source database container %q for service %q has no usable network aliases", source, role)
+			}
+			if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
+				if err := a.connectSharedDatabase(ctx, network, source, aliases); err != nil {
+					return err
+				}
+			}
+			sharedContainers = append(sharedContainers, source)
+			continue
 		}
 		mounts, err := a.prepareMounts(ctx, cell, service, inspection)
 		if err != nil {
@@ -245,7 +259,30 @@ func mergeEnvironment(source []string, overrides map[string]string) []string {
 	return merged
 }
 
-func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network string, containers []string, isolated bool, networkCreated bool) error {
+func isSharedDatabase(service domain.CellContainer) bool {
+	return service.Database != nil && service.Database.Mode == domain.DatabaseModeShared
+}
+
+func (a DockerCLIAdapter) connectSharedDatabase(ctx context.Context, network string, source string, aliases []string) error {
+	args := []string{"network", "connect"}
+	for _, alias := range aliases {
+		args = append(args, "--alias", alias)
+	}
+	args = append(args, network, source)
+	if err := a.Runner.Run(ctx, "docker", args...); err != nil {
+		return fmt.Errorf("connect shared database container %q to network %q: %w", source, network, err)
+	}
+	return nil
+}
+
+func (a DockerCLIAdapter) disconnectSharedDatabase(ctx context.Context, network string, source string) error {
+	if err := a.Runner.Run(ctx, "docker", "network", "disconnect", network, source); err != nil && !isMissingDockerNetworkConnectionError(err) {
+		return fmt.Errorf("disconnect shared database container %q from network %q: %w", source, network, err)
+	}
+	return nil
+}
+
+func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network string, containers []string, sharedContainers []string, isolated bool, networkCreated bool) error {
 	var rollbackErr error
 	for i := len(containers) - 1; i >= 0; i-- {
 		if err := a.Runner.Run(ctx, "docker", "rm", "-f", containers[i]); err != nil && !isMissingDockerResourceError(err) {
@@ -253,6 +290,11 @@ func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network st
 		}
 	}
 	if isolated {
+		for i := len(sharedContainers) - 1; i >= 0; i-- {
+			if err := a.disconnectSharedDatabase(ctx, network, sharedContainers[i]); err != nil {
+				rollbackErr = errors.Join(rollbackErr, err)
+			}
+		}
 		if err := a.disconnectGateway(ctx, network); err != nil {
 			rollbackErr = errors.Join(rollbackErr, err)
 		}
@@ -499,6 +541,9 @@ func (a DockerCLIAdapter) copyDatabase(ctx context.Context, role string, source 
 	if service.Database == nil {
 		return nil
 	}
+	if service.Database.Mode != domain.DatabaseModeCopy && service.Database.Mode != "" {
+		return nil
+	}
 	switch service.Database.CopyMode {
 	case "":
 		return nil
@@ -733,12 +778,24 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 	var cleanupErr error
 	for _, role := range sortedServiceRoles(cell.Containers.Services) {
 		service := cell.Containers.Services[role]
+		if isSharedDatabase(service) {
+			continue
+		}
 		if err := a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName); err != nil && !isMissingDockerResourceError(err) {
 			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
 	if cell.Containers.NetworkMode == string(domain.ContainerNetworkIsolated) || cell.Containers.NetworkMode == "" {
 		if network := cellNetworkName(cell); network != "" {
+			for _, role := range sortedServiceRoles(cell.Containers.Services) {
+				service := cell.Containers.Services[role]
+				if !isSharedDatabase(service) {
+					continue
+				}
+				if err := a.disconnectSharedDatabase(ctx, network, service.SourceContainer); err != nil {
+					cleanupErr = errors.Join(cleanupErr, err)
+				}
+			}
 			if err := a.disconnectGateway(ctx, network); err != nil {
 				cleanupErr = errors.Join(cleanupErr, err)
 			}
@@ -753,6 +810,14 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 func isMissingDockerResourceError(err error) bool {
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "no such container") || strings.Contains(message, "not found")
+}
+
+func isMissingDockerNetworkConnectionError(err error) bool {
+	if isMissingDockerResourceError(err) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "is not connected to network") || strings.Contains(message, "not connected")
 }
 
 type containerInspection struct {

@@ -154,6 +154,59 @@ func TestForkCellは各工程のCheckpointを保存して失敗したCellと完�
 	}
 }
 
+func TestForkCellはSharedDatabase接続後のSession失敗をRollbackしてRetryする(t *testing.T) {
+	ports := newFakePorts()
+	tpl := ports.config.Templates["webapp"]
+	tpl.Containers.Network = domain.ContainerNetworkIsolated
+	tpl.Containers.Services["db"] = domain.ContainerServiceTemplate{
+		SourceContainer: "myapp-db",
+		Database:        &domain.DatabaseConfig{Mode: domain.DatabaseModeShared},
+	}
+	ports.config.Templates["webapp"] = tpl
+	ports.createSessionErr = errors.New("tmux failed")
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "123", Template: "webapp"})
+	if err == nil {
+		t.Fatal("session failure was not returned")
+	}
+	failed := ports.cells[0]
+	if failed.CreationStageCompleted(domain.CreationStageContainers) {
+		t.Fatalf("container checkpoint remained after shared database rollback: %#v", failed.Creation.CompletedStages)
+	}
+	if !containsCall(ports.calls, "containers:clean:123") {
+		t.Fatalf("shared database containers were not rolled back: %#v", ports.calls)
+	}
+
+	ports.createSessionErr = nil
+	ports.calls = nil
+	cell, err := newRetryCellUseCase(ports).Execute(context.Background(), RetryCellInput{Cell: "123"})
+	if err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if cell.CreationStatus() != domain.CreationReady {
+		t.Fatalf("creation status = %q, want ready", cell.CreationStatus())
+	}
+	wantOrder := []string{"containers:clean:123", "containers:fork:123", "session:fork:123:nvim 123; codex "}
+	position := 0
+	for _, call := range ports.calls {
+		if position < len(wantOrder) && call == wantOrder[position] {
+			position++
+		}
+	}
+	if position != len(wantOrder) {
+		t.Fatalf("retry did not recreate containers before session: calls=%#v", ports.calls)
+	}
+}
+
+func containsCall(calls []string, want string) bool {
+	for _, call := range calls {
+		if call == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestForkCellは初回State登録失敗時にResourceもFailedCellも作らない(t *testing.T) {
 	originalErr := errors.New("state write failed")
 	ports := newFakePorts()
@@ -671,6 +724,7 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 					SourceContainer: "myapp-db",
 					VolumeMode:      "copy",
 					Database: &domain.DatabaseConfig{
+						Mode:      domain.DatabaseModeCopy,
 						System:    "mysql",
 						CopyMode:  "schema",
 						InitFiles: []string{"docker/mysql/init/001-users.sql"},
@@ -708,6 +762,9 @@ func TestCreateCellはDBCopy設定をCellへ保持する(t *testing.T) {
 	}
 	if service.Database.System != "mysql" {
 		t.Fatalf("Database.System = %q, want %q", service.Database.System, "mysql")
+	}
+	if service.Database.Mode != domain.DatabaseModeCopy {
+		t.Fatalf("Database.Mode = %q, want %q", service.Database.Mode, domain.DatabaseModeCopy)
 	}
 	if service.Database.CopyMode != "schema" {
 		t.Fatalf("Database.CopyMode = %q, want %q", service.Database.CopyMode, "schema")
@@ -955,8 +1012,9 @@ func (f *fakePorts) NewCell(id string, issue string, template domain.Template, p
 			Path: ".paracell/cells/" + issue + "/source",
 		},
 		Containers: domain.Containers{
-			Network:  "paracell-" + project + "-" + issue,
-			Services: map[string]domain.CellContainer{},
+			Network:     "paracell-" + project + "-" + issue,
+			NetworkMode: string(template.Containers.Network),
+			Services:    map[string]domain.CellContainer{},
 		},
 		Session: domain.Session{
 			Name: project + "-" + issue,

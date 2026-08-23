@@ -93,10 +93,16 @@ type ContainerServiceTemplate struct {
 }
 
 type DatabaseConfig struct {
+	Mode      string   `yaml:"mode,omitempty" json:"mode,omitempty"`
 	System    string   `yaml:"system,omitempty" json:"system,omitempty"`
 	CopyMode  string   `yaml:"copyMode,omitempty" json:"copyMode,omitempty"`
 	InitFiles []string `yaml:"initFiles,omitempty" json:"initFiles,omitempty"`
 }
+
+const (
+	DatabaseModeCopy   = "copy"
+	DatabaseModeShared = "shared"
+)
 
 type SessionTemplate struct {
 	Windows []SessionWindowTemplate `yaml:"windows" json:"windows"`

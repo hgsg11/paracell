@@ -112,6 +112,7 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 		if err := validateRepositoryBranchMode(name, rendered.Repository); err != nil {
 			return domain.Config{}, err
 		}
+		rendered.Containers = normalizeDatabaseModes(rendered.Containers)
 		if err := validateContainerTemplate(rendered.Containers); err != nil {
 			return domain.Config{}, err
 		}
@@ -347,10 +348,24 @@ func validateContainerTemplate(containers domain.ContainerTemplate) error {
 	default:
 		return fmt.Errorf("unsupported containers.network %q", containers.Network)
 	}
-	return validateContainerServices(containers.Services)
+	return validateContainerServices(containers.Network, containers.Services)
 }
 
-func validateContainerServices(services map[string]domain.ContainerServiceTemplate) error {
+func normalizeDatabaseModes(containers domain.ContainerTemplate) domain.ContainerTemplate {
+	containers.Services = cloneServices(containers.Services)
+	for role, service := range containers.Services {
+		if service.Database == nil || service.Database.Mode != "" {
+			continue
+		}
+		database := *service.Database
+		database.Mode = domain.DatabaseModeCopy
+		service.Database = &database
+		containers.Services[role] = service
+	}
+	return containers
+}
+
+func validateContainerServices(network domain.ContainerNetwork, services map[string]domain.ContainerServiceTemplate) error {
 	for _, role := range sortedMapKeys(services) {
 		service := services[role]
 		switch service.VolumeMode {
@@ -367,19 +382,6 @@ func validateContainerServices(services map[string]domain.ContainerServiceTempla
 		if role != "db" {
 			return fmt.Errorf("database config is only supported for service %q", "db")
 		}
-		if service.VolumeMode != "copy" {
-			return fmt.Errorf("database service %q requires volumeMode %q", role, "copy")
-		}
-		switch service.Database.System {
-		case "mysql":
-		default:
-			return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
-		}
-		switch service.Database.CopyMode {
-		case "", "schema", "data":
-		default:
-			return fmt.Errorf("unsupported copyMode %q for service %q", service.Database.CopyMode, role)
-		}
 		for _, file := range service.Database.InitFiles {
 			if filepath.IsAbs(file) {
 				return fmt.Errorf("initFiles path %q for service %q must be relative", file, role)
@@ -388,6 +390,41 @@ func validateContainerServices(services map[string]domain.ContainerServiceTempla
 			if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 				return fmt.Errorf("initFiles path %q for service %q must stay within project root", file, role)
 			}
+		}
+		switch service.Database.Mode {
+		case domain.DatabaseModeShared:
+			if network != domain.ContainerNetworkIsolated {
+				return fmt.Errorf("database mode %q for service %q requires containers.network %q", service.Database.Mode, role, domain.ContainerNetworkIsolated)
+			}
+			if service.VolumeMode != "" {
+				return fmt.Errorf("database mode %q for service %q does not support volumeMode", service.Database.Mode, role)
+			}
+			if service.Database.CopyMode != "" {
+				return fmt.Errorf("database mode %q for service %q does not support copyMode", service.Database.Mode, role)
+			}
+			if len(service.Database.InitFiles) != 0 {
+				return fmt.Errorf("database mode %q for service %q does not support initFiles", service.Database.Mode, role)
+			}
+			if service.Database.System != "" && service.Database.System != "mysql" {
+				return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
+			}
+			continue
+		case domain.DatabaseModeCopy:
+		default:
+			return fmt.Errorf("unsupported database mode %q for service %q", service.Database.Mode, role)
+		}
+		if service.VolumeMode != "copy" {
+			return fmt.Errorf("database service %q in mode %q requires volumeMode %q", role, service.Database.Mode, "copy")
+		}
+		if service.Database.System != "mysql" {
+			return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
+		}
+		switch service.Database.CopyMode {
+		case "schema":
+		case "data":
+			return fmt.Errorf("copyMode %q is not implemented for service %q", service.Database.CopyMode, role)
+		default:
+			return fmt.Errorf("unsupported copyMode %q for service %q", service.Database.CopyMode, role)
 		}
 	}
 	return nil

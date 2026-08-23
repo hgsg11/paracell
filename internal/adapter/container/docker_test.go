@@ -256,6 +256,113 @@ func TestCreateContainersはIsolatedNetworkに元ContainerのAliasをコピー�
 	}
 }
 
+func TestCreateContainersはSharedDatabaseを既存AliasだけでCellNetworkへ接続する(t *testing.T) {
+	runner := &fakeRunner{outputs: []string{
+		`{"Config":{"Image":"mysql:8"},"Mounts":[{"Type":"volume","Name":"myapp_db","Destination":"/var/lib/mysql","RW":true}],"NetworkSettings":{"Networks":{"backend":{"Aliases":["mysql","myapp-db-1",""]}}}}`,
+		`{"Config":{"Image":"myapp-web:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"backend":{"Aliases":["web"]}}}}`,
+	}}
+	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
+	cell := domain.Cell{Name: "123", Containers: domain.Containers{
+		NetworkMode: "isolated",
+		Network:     "paracell-myapp-123",
+		Services: map[string]domain.CellContainer{
+			"db": {
+				ContainerName:   "paracell-myapp-123-db",
+				SourceContainer: "myapp-db-1",
+				Database:        &domain.DatabaseConfig{Mode: domain.DatabaseModeShared},
+			},
+			"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+		},
+	}}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"db":  {SourceContainer: "myapp-db-1", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
+		"web": {SourceContainer: "myapp-web"},
+	}}}
+
+	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+		t.Fatalf("CreateContainersでエラーが返った: %v", err)
+	}
+
+	want := []string{
+		"docker network create paracell-myapp-123",
+		"docker network connect --alias myapp-db-1 --alias mysql paracell-myapp-123 myapp-db-1",
+		"docker run -d --name paracell-myapp-123-web --network paracell-myapp-123 --network-alias web --label com.docker.compose.project=paracell-myapp-123 --label com.docker.compose.service=web myapp-web:latest",
+	}
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+	for _, call := range runner.runCalls {
+		if strings.Contains(call, "--alias db") {
+			t.Fatalf("fixed db alias was added: %q", call)
+		}
+	}
+}
+
+func TestCreateContainersはAliasなしSharedDatabaseを拒否してRollbackする(t *testing.T) {
+	runner := &fakeRunner{outputs: []string{
+		`{"Config":{"Image":"mysql:8"},"Mounts":[],"NetworkSettings":{"Networks":{"backend":{"Aliases":[]}}}}`,
+	}}
+	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{Name: "123", Containers: domain.Containers{
+		NetworkMode: "isolated",
+		Network:     "paracell-myapp-123",
+		Services: map[string]domain.CellContainer{
+			"db": {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
+		},
+	}}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"db": {SourceContainer: "myapp-db", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
+	}}}
+
+	err := adapter.CreateContainers(context.Background(), cell, template)
+	if err == nil || err.Error() != `source database container "myapp-db" for service "db" has no usable network aliases` {
+		t.Fatalf("error = %v", err)
+	}
+	want := []string{
+		"docker network create paracell-myapp-123",
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
+		"docker network rm paracell-myapp-123",
+	}
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestCreateContainersはSharedDatabase接続後の失敗をRollbackする(t *testing.T) {
+	inspectErr := errors.New("inspect web failed")
+	runner := &fakeRunner{
+		outputs: []string{
+			`{"Config":{"Image":"mysql:8"},"Mounts":[],"NetworkSettings":{"Networks":{"backend":{"Aliases":["mysql"]}}}}`,
+			"",
+		},
+		outputErrors: []error{nil, inspectErr},
+	}
+	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{Name: "123", Containers: domain.Containers{
+		NetworkMode: "isolated", Network: "paracell-myapp-123",
+		Services: map[string]domain.CellContainer{
+			"db":  {ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db", Database: &domain.DatabaseConfig{Mode: domain.DatabaseModeShared}},
+			"web": {ContainerName: "paracell-myapp-123-web", SourceContainer: "myapp-web"},
+		},
+	}}
+	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
+		"db": {SourceContainer: "myapp-db"}, "web": {SourceContainer: "myapp-web"},
+	}}}
+
+	err := adapter.CreateContainers(context.Background(), cell, template)
+	if !errors.Is(err, inspectErr) {
+		t.Fatalf("error = %v, want %v", err, inspectErr)
+	}
+	wantTail := []string{
+		"docker network disconnect paracell-myapp-123 myapp-db",
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
+		"docker network rm paracell-myapp-123",
+	}
+	if got := runner.runCalls[len(runner.runCalls)-len(wantTail):]; !reflect.DeepEqual(got, wantTail) {
+		t.Fatalf("rollback calls = %#v, want %#v", got, wantTail)
+	}
+}
+
 func TestCreateContainersはSharedNetworkで元ネットワークを使う(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []string{
@@ -785,6 +892,37 @@ func TestCleanContainersはコンテナ削除後にセルネットワークを�
 	want := []string{
 		"docker rm -f paracell-myapp-123-db",
 		"docker rm -f paracell-myapp-123-web",
+		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
+		"docker network rm paracell-myapp-123",
+	}
+	if !reflect.DeepEqual(runner.runCalls, want) {
+		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
+	}
+}
+
+func TestCleanContainersはSharedDatabaseを対象CellNetworkからだけ切断する(t *testing.T) {
+	runner := &fakeRunner{}
+	adapter := DockerCLIAdapter{Runner: runner}
+	cell := domain.Cell{Containers: domain.Containers{
+		NetworkMode: "isolated",
+		Network:     "paracell-myapp-123",
+		Services: map[string]domain.CellContainer{
+			"db": {
+				ContainerName:   "paracell-myapp-123-db",
+				SourceContainer: "myapp-db",
+				Database:        &domain.DatabaseConfig{Mode: domain.DatabaseModeShared},
+			},
+			"web": {ContainerName: "paracell-myapp-123-web"},
+		},
+	}}
+
+	if err := adapter.CleanContainers(context.Background(), cell); err != nil {
+		t.Fatalf("CleanContainersでエラーが返った: %v", err)
+	}
+
+	want := []string{
+		"docker rm -f paracell-myapp-123-web",
+		"docker network disconnect paracell-myapp-123 myapp-db",
 		"docker network disconnect -f paracell-myapp-123 paracell-gateway",
 		"docker network rm paracell-myapp-123",
 	}

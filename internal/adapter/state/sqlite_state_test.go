@@ -104,6 +104,7 @@ func TestSQLiteStateはDatabase設定を保存して読み戻せる(t *testing.T
 					ContainerName:   "paracell-myapp-123-db",
 					SourceContainer: "myapp-db",
 					Database: &domain.DatabaseConfig{
+						Mode:      domain.DatabaseModeCopy,
 						System:    "mysql",
 						CopyMode:  "schema",
 						InitFiles: []string{"docker/mysql/init/001-users.sql"},

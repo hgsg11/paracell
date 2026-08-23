@@ -112,6 +112,7 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 - Use `paracell retry <cell>` only for a `failed` creation shown by `paracell ls`. Retry preserves completed stages and applies the latest template only to the failed and unstarted stages. Concurrent retry of the same cell fails immediately; after an abnormal exit, its lease becomes reclaimable when the last heartbeat is more than two minutes old.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set.
 - Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.
+- A cell using `database.mode: shared` owns only the source database container's attachment to that cell network. Rollback, retry, and clean must preserve its original and other cell network attachments.
 - Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, sessions, containers, volumes, or networks while Paracell can manage them.
 - Do not assume `clean --force` bypasses the done guard; check the installed version.
 
