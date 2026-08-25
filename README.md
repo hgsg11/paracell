@@ -138,9 +138,9 @@ template は `extends` で一つの親を継承できます。親自身も別の
 
 存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
 
-## Isolated container gateway
+## Container gateway
 
-Docker provider で `containers.network: isolated` を使うと、paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各 cell 専用 network へ接続され、`paracell.yaml` の `containers.services` map key（service role）と公開済み TCP container port を使って route を自動生成します。gateway 用の設定を `paracell.yaml` に追加する必要はありません。
+Docker provider でcontainer serviceを使うすべてのcellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各cell専用networkへ接続され、`paracell.yaml` の `containers.services` map key（service role）と公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
 
 Traefik dashboard はデフォルトで有効になり、次の URL から利用できます。末尾の `/` は必須です。dashboard と API は専用の管理 port や `api.insecure` を使わず、既存の loopback-only web entrypoint を通じて `gateway.paracell.localhost` にだけ route されます。
 
@@ -179,13 +179,13 @@ http://p<containerPort>.<service-role>.<cell>.<project>.localhost
 
 たとえば project `myapp` の cell `123` で service role `frontend` が container port `3000` と `8080` を公開していれば、`http://p3000.frontend.123.myapp.localhost` と `http://p8080.frontend.123.myapp.localhost` を使います。source container名、Composeが生成したalias、追加のnetwork aliasはURLになりません。route の upstream はcell固有のcopied containerとinternal portです。そのため、複数cellが同じservice roleを持っていても衝突しません。公開TCP portがないcontainerにはrouteを作りません。
 
-source network aliasは、copied containerから`http://backend`のようにcontainer間通信するため、isolated networkへ引き続きコピーされます。さらにcopied containerにはservice role自身もnetwork aliasとして必ず追加されます。これらの内部通信用aliasと、外部公開するcanonical URLは別のものです。
+source network aliasは、copied containerから`http://backend`のようにcontainer間通信するため、cell専用networkへ引き続きコピーされます。さらにcopied containerにはservice role自身もnetwork aliasとして必ず追加されます。これらの内部通信用aliasと、外部公開するcanonical URLは別のものです。
 
 database serviceに`database.mode: shared`を指定すると、database containerだけは複製せず、source database containerをcell専用networkへ接続します。source databaseが既存networkで持つaliasをすべてコピーし、固定の`db` aliasやservice role aliasは追加しません。利用可能なaliasがない場合はcell作成を中止します。同じsource databaseを複数cellへ接続でき、rollback、retry、`paracell clean`は対象cellのnetwork接続だけを切断します。
 
 Paracellが作成するDocker resource名は、networkが`paracell-<project>-<cell>`、copied containerが`paracell-<project>-<cell>-<service-role>`です。ユーザーが起動したsource containerの名前は変更せず、このmanaged resource命名の対象にもなりません。project名自体が`paracell`なら`paracell-paracell-...`となりますが、先頭の`paracell`は管理namespace、2つ目はproject名であり、重複を省略しません。既存cellのresourceやURLは自動renameされず、修正版でcellを再作成した時点からこの規則が適用されます。
 
-`paracell clean` は copied container の削除によって route を解除し、gateway を cell network から切断してから network を削除します。gateway 自体はほかの project / cell でも共有するため残ります。`containers.network: shared` の動作は従来どおりで、gateway の対象外です。
+`paracell clean` は copied container の削除によって route を解除し、shared databaseとgatewayを対象cell networkから切断してからnetworkを削除します。gateway自体とshared databaseの元network接続は残ります。
 
 初回起動時には Docker が `traefik:v3.7` image を利用できる必要があります。まず `127.0.0.1:80` を使い、port 80 が別 process/container に使われていれば loopback 上の空き port を Docker に自動割当させます。fallback 先は `docker port paracell-gateway 80/tcp` で確認でき、その場合は表示された port を URL へ付けてください。たとえば fallback port が `49152` なら dashboard は `http://gateway.paracell.localhost:49152/dashboard/` です。gateway は route 検出のため `/var/run/docker.sock` を read-only mount しますが、Docker API socket 自体が強い権限を持つ点には注意してください。
 
@@ -290,24 +290,22 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `repository.branchMode: reuse`: 既存 branch があればその branch の worktree を作り、なければ新規作成する
 - `repository.branchMode: require`: 既存 branch の worktree だけを作る。branch がなければ失敗する
 - `files`: cell の source にコピーするファイル
-- `containers.network: isolated`: cell 用 Docker network と自動 HTTP gateway route を作る
-- `containers.network: shared`: source container の network を使う
+- container serviceを持つcellには、cell専用Docker networkと自動HTTP gateway routeを常に作る
 - `containers.services.<service>.environment`: service ごとの環境変数を設定する。source container の環境変数をコピーした後、同名の変数をこの設定で上書きする
 - `volumeMode: copy`: named volume を複製する
 - `volumeMode: readonly`: 共有 volume を read-only で使う
 - `database.mode: copy`: cell専用database containerとvolumeを作り、schemaをコピーする。省略時も後方互換のため`copy`
-- `database.mode: shared`: `containers.network: isolated`でsource database containerを既存alias付きで共有する。`volumeMode`、`copyMode`、`initFiles`との併用は不可
+- `database.mode: shared`: source database containerをcell専用networkへ既存alias付きで接続する。`volumeMode`、`copyMode`、`initFiles`との併用は不可
 - copy modeは`volumeMode: copy`、`database.system: mysql`、`database.copyMode: schema`の組み合わせだけをサポートする
 - `database.copyMode: schema`: system database を除く全 DB の schema を cell に用意する
 - `database.copyMode: data`: 設定読み込み時に未実装エラーとして拒否する
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
-container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。isolated service でも environment は application container に適用され、共有 gateway の設定と route はそのまま維持されます。
+container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
 ```yaml
 containers:
-  network: isolated
   services:
     web:
       sourceContainer: myapp-web

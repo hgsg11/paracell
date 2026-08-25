@@ -68,7 +68,6 @@ type rawRepositoryTemplate struct {
 }
 
 type rawContainerTemplate struct {
-	Network  *string                                     `yaml:"network,omitempty"`
 	Services *map[string]domain.ContainerServiceTemplate `yaml:"services,omitempty"`
 }
 
@@ -246,9 +245,6 @@ func mergeRawContainers(parent, child *rawContainerTemplate) *rawContainerTempla
 	if parent != nil {
 		merged = *parent
 	}
-	if child.Network != nil {
-		merged.Network = child.Network
-	}
 	if child.Services != nil {
 		merged.Services = child.Services
 	}
@@ -282,7 +278,6 @@ func (raw rawYAMLTemplate) domainTemplate(name string) domain.Template {
 		tpl.Files = append([]string(nil), (*raw.Files)...)
 	}
 	if raw.Containers != nil {
-		tpl.Containers.Network = domain.ContainerNetwork(stringValue(raw.Containers.Network))
 		if raw.Containers.Services != nil {
 			tpl.Containers.Services = cloneServices(*raw.Containers.Services)
 		}
@@ -343,12 +338,7 @@ func validateRepositoryBranchMode(name string, repository domain.RepositoryTempl
 }
 
 func validateContainerTemplate(containers domain.ContainerTemplate) error {
-	switch containers.Network {
-	case "", domain.ContainerNetworkIsolated, domain.ContainerNetworkShared:
-	default:
-		return fmt.Errorf("unsupported containers.network %q", containers.Network)
-	}
-	return validateContainerServices(containers.Network, containers.Services)
+	return validateContainerServices(containers.Services)
 }
 
 func normalizeDatabaseModes(containers domain.ContainerTemplate) domain.ContainerTemplate {
@@ -365,7 +355,7 @@ func normalizeDatabaseModes(containers domain.ContainerTemplate) domain.Containe
 	return containers
 }
 
-func validateContainerServices(network domain.ContainerNetwork, services map[string]domain.ContainerServiceTemplate) error {
+func validateContainerServices(services map[string]domain.ContainerServiceTemplate) error {
 	for _, role := range sortedMapKeys(services) {
 		service := services[role]
 		switch service.VolumeMode {
@@ -393,9 +383,6 @@ func validateContainerServices(network domain.ContainerNetwork, services map[str
 		}
 		switch service.Database.Mode {
 		case domain.DatabaseModeShared:
-			if network != domain.ContainerNetworkIsolated {
-				return fmt.Errorf("database mode %q for service %q requires containers.network %q", service.Database.Mode, role, domain.ContainerNetworkIsolated)
-			}
 			if service.VolumeMode != "" {
 				return fmt.Errorf("database mode %q for service %q does not support volumeMode", service.Database.Mode, role)
 			}

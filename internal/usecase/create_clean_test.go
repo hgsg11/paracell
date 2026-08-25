@@ -157,7 +157,6 @@ func TestForkCellは各工程のCheckpointを保存して失敗したCellと完�
 func TestForkCellはSharedDatabase接続後のSession失敗をRollbackしてRetryする(t *testing.T) {
 	ports := newFakePorts()
 	tpl := ports.config.Templates["webapp"]
-	tpl.Containers.Network = domain.ContainerNetworkIsolated
 	tpl.Containers.Services["db"] = domain.ContainerServiceTemplate{
 		SourceContainer: "myapp-db",
 		Database:        &domain.DatabaseConfig{Mode: domain.DatabaseModeShared},
@@ -1012,9 +1011,8 @@ func (f *fakePorts) NewCell(id string, issue string, template domain.Template, p
 			Path: ".paracell/cells/" + issue + "/source",
 		},
 		Containers: domain.Containers{
-			Network:     "paracell-" + project + "-" + issue,
-			NetworkMode: string(template.Containers.Network),
-			Services:    map[string]domain.CellContainer{},
+			Network:  "paracell-" + project + "-" + issue,
+			Services: map[string]domain.CellContainer{},
 		},
 		Session: domain.Session{
 			Name: project + "-" + issue,

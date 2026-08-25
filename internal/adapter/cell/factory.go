@@ -58,9 +58,8 @@ func (f Factory) NewCell(id string, issue string, template domain.Template, proj
 			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
 		},
 		Containers: domain.Containers{
-			Network:     prefix,
-			NetworkMode: string(template.Containers.Network),
-			Services:    services,
+			Network:  prefix,
+			Services: services,
 		},
 		Session: domain.Session{
 			Name:    sessionName,
