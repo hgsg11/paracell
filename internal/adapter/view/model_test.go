@@ -151,7 +151,7 @@ func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *
 	}
 }
 
-func TestModelViewはCell名とNoteを併記してStatusを維持する(t *testing.T) {
+func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T) {
 	cell := domain.Cell{ID: "cell-1", Name: "123", Note: "API実装中", Template: "default"}
 	if err := cell.SetStatus(domain.Pending); err != nil {
 		t.Fatal(err)
@@ -159,8 +159,11 @@ func TestModelViewはCell名とNoteを併記してStatusを維持する(t *testi
 	model := NewModel([]domain.Cell{cell})
 
 	got := model.View()
-	if !strings.Contains(got, "123 | API実装中") {
-		t.Fatalf("name and note missing: %q", got)
+	if !strings.Contains(got, "API実装中") {
+		t.Fatalf("note missing: %q", got)
+	}
+	if strings.Contains(got, "123") || strings.Contains(got, " | ") {
+		t.Fatalf("cell name or separator should not appear: %q", got)
 	}
 	if !strings.Contains(got, "[ ]  ..") {
 		t.Fatalf("pending status missing: %q", got)
