@@ -98,9 +98,10 @@ Dispatch only when the eligibility gate passed and the user has confirmed the sh
 
 1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
 2. Check `paracell ls` for a cell with that issue number. If its creation state is `failed`, run `paracell retry <cell>` instead of creating a duplicate. Do not retry `creating` or `ready` cells. A `retrying` cell already has an owner; do not loop or wait on `retry already in progress`.
-3. Build only a short instruction such as `Read GitHub issue #123 first and treat its body as the single source of truth. Implement it, verify the acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body.
-4. Run `paracell fork <issue-number> --template <template> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
-5. Run `paracell ls` and confirm the new cell and creation status. A successful dispatch is `ready`; a failed dispatch remains inspectable with its failed stage and latest error and can be retried after the cause is fixed. Report the issue URL or number, selected template, and dispatched objective.
+3. Generate a natural, concise note from the ticket title and body. If ticket information is unavailable, use the confirmed work objective. The note must be 1-20 Unicode characters after whitespace normalization; do not pad it to 20 characters or pack detailed requirements into it. Treat it only as a display label, never as a cell identifier or search key.
+4. Build only a short instruction such as `Read GitHub issue #123 first and treat its body as the single source of truth. Implement it, verify the acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body and worker command.
+5. Run `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
+6. Run `paracell ls` and confirm the new cell and creation status. A successful dispatch is `ready`; a failed dispatch remains inspectable with its failed stage and latest error and can be retried after the cause is fixed. Report the issue URL or number, selected template, and dispatched objective.
 
 Stop after reporting the confirmed dispatch. Do not capture the cell's tmux pane, monitor the worker, type follow-up input into it, wait for completion, or operate on its worktree unless the user explicitly requests that additional operation.
 

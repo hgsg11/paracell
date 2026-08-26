@@ -8,7 +8,7 @@ Use this reference when selecting a template, interpreting `paracell.yaml`, prep
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run in the configured project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml` | Fails when the file already exists |
-| `paracell fork --name <name> --template <template> --command <instruction>` | Create and start a named cell | Requires a CLI version with `fork --name`; never fall back to a positional identifier |
+| `paracell fork --name <name> --template <template> --note <note> --command <instruction>` | Create and start a named cell | Requires `fork --name` and `fork --note`; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell retry <cell>` | Resume a failed creation | Acquires a per-cell lease; concurrent retry fails immediately and completed stages are retained |
 | `paracell view` | Open the cell and template TUI | Interactive; launch only on explicit request |
 | `paracell ls` | List cells and their state | Use before and after dispatch and before destructive actions |
@@ -28,12 +28,15 @@ Dispatch uses this argument structure:
 paracell fork \
   --name <lowercase-kebab-case-name> \
   --template <template> \
+  --note <note> \
   --command <self-contained-task-instruction>
 ```
 
-- Confirm that the installed command supports `--name`; otherwise stop and report the required capability.
+- Confirm that the installed command supports `--name` and `--note`; otherwise stop and report the required capability.
 - Keep executable and arguments separate. Do not assemble the command and evaluate it through another shell.
 - Names are short, readable, provider-independent kebab-case. The CLI owns final resource-safe normalization.
+- Derive the note from the ticket title and body when available, or from the confirmed work objective otherwise. Keep it natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements.
+- Treat the note only as a display label, never as a cell identifier or search key.
 - Pass the worker instruction only in `--command`. It must be self-contained without making an external backlog item mandatory.
 - Check `paracell ls` first. Reuse an exact-name match rather than creating a duplicate or silently adding a suffix.
 

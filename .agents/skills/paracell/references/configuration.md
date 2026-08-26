@@ -113,7 +113,9 @@ The Paracell Skill stores the complete work package in a GitHub issue before dis
 - Create a new issue body with `gh issue create --body-file <path>`; do not pass a long body as a shell argument.
 - Pass the numeric issue number as the positional `fork` argument.
 - Keep `--command` short: tell the worker to read the issue and treat it as the single source of truth.
-- Use `--note` only for a short human-facing description; it is not a dispatch identifier or search key.
+- Pass `--note` on every Skill dispatch. Derive it from the issue title and body when available, or from the confirmed work objective otherwise.
+- Keep the note natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements. It is display-only, not a dispatch identifier or search key.
+- Use `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` with each argument passed separately.
 - If issue creation succeeds but `fork` fails, retain the issue and run `paracell retry <cell>` after fixing the cause. A normal `fork` with the same Issue or Name remains a duplicate.
 - A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
 
