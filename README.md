@@ -192,8 +192,8 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 ## TUI
 
 ```text
-  CELL              TEMPLATE  STATUS   DONE
-> 123 | API実装中   feat      ready    [ ]
+  CELL       TEMPLATE  STATUS   DONE
+> API実装中  feat      ready    [ ]
   456   fix       pending  [x]
 
   go root
@@ -278,7 +278,7 @@ paracell --version
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
-note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls` と tmux は note を cell 名より優先し、TUI は `<cell名> | <note>` と併記します。note は表示専用であり、cell の指定には引き続き ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
+note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は表示専用であり、cell の指定には引き続き ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
 
 ## 設定メモ
 

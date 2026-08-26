@@ -35,7 +35,7 @@ func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *t
 	}
 }
 
-func TestCellNoteの表示規則を共通化する(t *testing.T) {
+func TestCellNoteは設定時だけ表示を置き換える(t *testing.T) {
 	withoutNote := Cell{Name: "123"}
 	withNote := Cell{Name: "123", Note: "API実装中"}
 	if got := withoutNote.DisplayLabel(); got != "123" {
@@ -43,9 +43,6 @@ func TestCellNoteの表示規則を共通化する(t *testing.T) {
 	}
 	if got := withNote.DisplayLabel(); got != "API実装中" {
 		t.Fatalf("DisplayLabel() = %q, want API実装中", got)
-	}
-	if got := withNote.TUIDisplayLabel(); got != "123 | API実装中" {
-		t.Fatalf("TUIDisplayLabel() = %q, want %q", got, "123 | API実装中")
 	}
 }
 

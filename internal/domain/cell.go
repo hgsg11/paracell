@@ -252,13 +252,6 @@ func (c Cell) DisplayLabel() string {
 	return c.Name
 }
 
-func (c Cell) TUIDisplayLabel() string {
-	if c.Note != "" {
-		return c.Name + " | " + c.Note
-	}
-	return c.Name
-}
-
 type Source struct {
 	Path string
 }
