@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"errors"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -11,6 +10,7 @@ type InitConfig = domain.Config
 
 type InitProjectUseCase struct {
 	Config InitConfigPort
+	State  StateInitializer
 }
 
 func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) {
@@ -18,8 +18,11 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) 
 	if err != nil {
 		return domain.Config{}, err
 	}
+	if err := u.State.Initialize(ctx); err != nil {
+		return domain.Config{}, err
+	}
 	if exists {
-		return domain.Config{}, errors.New("paracell.yaml already exists")
+		return domain.Config{}, nil
 	}
 	cfg := domain.Config{
 		Project: domain.ProjectConfig{Name: ""},

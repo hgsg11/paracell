@@ -2,16 +2,91 @@ package state
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
+
+func TestSQLiteStateはVersion1のJSONをVersion2のSQLTablesへ移行する(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statements := []string{
+		`CREATE TABLE cells (id TEXT PRIMARY KEY, issue TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL, data BLOB NOT NULL)`,
+		`CREATE UNIQUE INDEX cells_issue_unique ON cells(issue) WHERE issue <> ''`,
+		`CREATE UNIQUE INDEX cells_name_unique ON cells(name) WHERE name <> ''`,
+		`PRAGMA user_version = 1`,
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy := []byte(`{
+		"id":"cell-1","issue":"123","name":"123","note":"移行中","template":"webapp",
+		"base":"main","branch":"feat/123","branchMode":"reuse",
+		"source":{"Path":"/tmp/cell-1"},
+		"containers":{"Network":"cell-1-network","Services":{"db":{"ContainerName":"cell-1-db","SourceContainer":"app-db","VolumeMode":"copy","Database":{"mode":"copy","system":"mysql","copyMode":"schema","initFiles":["init.sql"]}}}},
+		"session":{"Name":"paracell-cell-1","Windows":[{"Name":"agent","Command":"codex"}]},
+		"creation":{"status":"retrying","command":"read issue","completedStages":["source","files"],"failedStage":"containers","lastError":"failed","attemptId":"attempt-1","leaseStartedAt":"2026-08-10T03:34:56Z","leaseHeartbeatAt":"2026-08-10T03:35:06Z"},
+		"status":"pending","done":true
+	}`)
+	if _, err := db.Exec(`INSERT INTO cells(id, issue, name, position, data) VALUES (?, ?, ?, ?, ?)`, "cell-1", "123", "123", 0, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store := SQLiteCellStateAdapter{Path: path}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cells) != 1 {
+		t.Fatalf("cells length = %d, want 1", len(cells))
+	}
+	cell := cells[0]
+	if cell.ID != "cell-1" || cell.Status() != domain.Pending || !cell.IsDone() {
+		t.Fatalf("migrated cell = %#v", cell)
+	}
+	if cell.Containers.Services["db"].Database == nil || !reflect.DeepEqual(cell.Containers.Services["db"].Database.InitFiles, []string{"init.sql"}) {
+		t.Fatalf("migrated database = %#v", cell.Containers.Services["db"].Database)
+	}
+	if !reflect.DeepEqual(cell.Session.Windows, []domain.SessionWindow{{Name: "agent", Command: "codex"}}) {
+		t.Fatalf("migrated windows = %#v", cell.Session.Windows)
+	}
+	if cell.Creation.LeaseHeartbeatAt == nil || !cell.Creation.LeaseHeartbeatAt.Equal(time.Date(2026, 8, 10, 3, 35, 6, 0, time.UTC)) {
+		t.Fatalf("migrated creation = %#v", cell.Creation)
+	}
+
+	db, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != stateSchemaVersion {
+		t.Fatalf("schema version = %d, err = %v", version, err)
+	}
+	var status string
+	var done int
+	if err := db.QueryRow(`SELECT status, done FROM cells WHERE id = ?`, "cell-1").Scan(&status, &done); err != nil {
+		t.Fatal(err)
+	}
+	if status != string(domain.Pending) || done != 1 {
+		t.Fatalf("stored status = %q, done = %d", status, done)
+	}
+}
 
 func TestSQLiteStateが存在しない場合は空のCell一覧を返す(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".paracell", "state.db")
@@ -131,30 +206,6 @@ func TestSQLiteStateはDatabase設定を保存して読み戻せる(t *testing.T
 	}
 	if !reflect.DeepEqual(cells, []domain.Cell{cell}) {
 		t.Fatalf("cells = %#v, want %#v", cells, []domain.Cell{cell})
-	}
-}
-
-func TestSQLiteStateはStateJSONを読み込まない(t *testing.T) {
-	dir := t.TempDir()
-	legacy := filepath.Join(dir, "state.json")
-	data, err := json.Marshal(map[string]any{"cells": []domain.Cell{{ID: "legacy", Issue: "1", Name: "legacy"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	store := SQLiteCellStateAdapter{Path: filepath.Join(dir, "state.db")}
-
-	cells, err := store.LoadCells(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cells) != 0 {
-		t.Fatalf("legacy JSON was imported: %#v", cells)
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		t.Fatalf("legacy JSON was modified: %v", err)
 	}
 }
 

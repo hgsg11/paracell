@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -10,6 +11,7 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	ports := &fakeInitPorts{}
 	uc := InitProjectUseCase{
 		Config: ports,
+		State:  ports,
 	}
 
 	cfg, err := uc.Execute(ctx)
@@ -19,6 +21,9 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	}
 	if !ports.saved {
 		t.Fatal("設定が保存されなかった")
+	}
+	if !ports.initialized {
+		t.Fatal("state databaseが初期化されなかった")
 	}
 	if cfg.Project.Name != "" {
 		t.Fatalf("project.name = %q, want empty", cfg.Project.Name)
@@ -66,26 +71,47 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	}
 }
 
-func TestInitは既存設定がある場合に失敗する(t *testing.T) {
+func TestInitは既存設定を上書きせずStateDatabaseを初期化する(t *testing.T) {
 	ctx := context.Background()
 	ports := &fakeInitPorts{exists: true}
 	uc := InitProjectUseCase{
 		Config: ports,
+		State:  ports,
 	}
 
 	_, err := uc.Execute(ctx)
 
-	if err == nil {
-		t.Fatal("既存設定があるのにエラーが返らなかった")
+	if err != nil {
+		t.Fatalf("initでエラーが返った: %v", err)
 	}
 	if ports.saved {
 		t.Fatal("既存設定があるのに保存された")
 	}
+	if !ports.initialized {
+		t.Fatal("state databaseが初期化されなかった")
+	}
+}
+
+func TestInitはStateDatabaseを初期化できない場合に設定を保存しない(t *testing.T) {
+	ctx := context.Background()
+	ports := &fakeInitPorts{initializeErr: errors.New("migration failed")}
+	uc := InitProjectUseCase{Config: ports, State: ports}
+
+	_, err := uc.Execute(ctx)
+
+	if err == nil {
+		t.Fatal("state databaseを初期化できないのにエラーが返らなかった")
+	}
+	if ports.saved {
+		t.Fatal("state databaseを初期化できないのに設定が保存された")
+	}
 }
 
 type fakeInitPorts struct {
-	exists bool
-	saved  bool
+	exists        bool
+	saved         bool
+	initialized   bool
+	initializeErr error
 }
 
 func (f *fakeInitPorts) ConfigExists(ctx context.Context) (bool, error) {
@@ -95,4 +121,9 @@ func (f *fakeInitPorts) ConfigExists(ctx context.Context) (bool, error) {
 func (f *fakeInitPorts) SaveConfig(ctx context.Context, cfg InitConfig) error {
 	f.saved = true
 	return nil
+}
+
+func (f *fakeInitPorts) Initialize(ctx context.Context) error {
+	f.initialized = true
+	return f.initializeErr
 }

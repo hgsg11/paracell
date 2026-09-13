@@ -15,6 +15,10 @@ type InitConfigPort interface {
 	SaveConfig(ctx context.Context, cfg InitConfig) error
 }
 
+type StateInitializer interface {
+	Initialize(ctx context.Context) error
+}
+
 type CellStatePort interface {
 	LoadCells(ctx context.Context) ([]domain.Cell, error)
 	UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error

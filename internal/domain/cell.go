@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -45,14 +44,14 @@ const (
 )
 
 type CellCreation struct {
-	Status           CreationStatus  `json:"status"`
-	Command          string          `json:"command,omitempty"`
-	CompletedStages  []CreationStage `json:"completedStages,omitempty"`
-	FailedStage      CreationStage   `json:"failedStage,omitempty"`
-	LastError        string          `json:"lastError,omitempty"`
-	AttemptID        string          `json:"attemptId,omitempty"`
-	LeaseStartedAt   *time.Time      `json:"leaseStartedAt,omitempty"`
-	LeaseHeartbeatAt *time.Time      `json:"leaseHeartbeatAt,omitempty"`
+	Status           CreationStatus
+	Command          string
+	CompletedStages  []CreationStage
+	FailedStage      CreationStage
+	LastError        string
+	AttemptID        string
+	LeaseStartedAt   *time.Time
+	LeaseHeartbeatAt *time.Time
 }
 
 type CellStatus string
@@ -61,83 +60,6 @@ const (
 	Pending CellStatus = "pending"
 	Ready   CellStatus = "ready"
 )
-
-func (c Cell) MarshalJSON() ([]byte, error) {
-	type cellJSON struct {
-		ID         string       `json:"id"`
-		Issue      string       `json:"issue"`
-		Name       string       `json:"name"`
-		Note       string       `json:"note,omitempty"`
-		Template   string       `json:"template"`
-		Base       string       `json:"base"`
-		Branch     string       `json:"branch"`
-		BranchMode string       `json:"branchMode,omitempty"`
-		Source     Source       `json:"source"`
-		Containers Containers   `json:"containers"`
-		Session    Session      `json:"session"`
-		Creation   CellCreation `json:"creation,omitempty"`
-		Status     CellStatus   `json:"status"`
-		Done       bool         `json:"done"`
-	}
-	return json.Marshal(cellJSON{
-		ID:         c.ID,
-		Issue:      c.Issue,
-		Name:       c.Name,
-		Note:       c.Note,
-		Template:   c.Template,
-		Base:       c.Base,
-		Branch:     c.Branch,
-		BranchMode: c.BranchMode,
-		Source:     c.Source,
-		Containers: c.Containers,
-		Session:    c.Session,
-		Creation:   c.Creation,
-		Status:     c.Status(),
-		Done:       c.done,
-	})
-}
-
-func (c *Cell) UnmarshalJSON(data []byte) error {
-	type cellJSON struct {
-		ID         string       `json:"id"`
-		Issue      string       `json:"issue"`
-		Name       string       `json:"name"`
-		Note       string       `json:"note,omitempty"`
-		Template   string       `json:"template"`
-		Base       string       `json:"base"`
-		Branch     string       `json:"branch"`
-		BranchMode string       `json:"branchMode,omitempty"`
-		Source     Source       `json:"source"`
-		Containers Containers   `json:"containers"`
-		Session    Session      `json:"session"`
-		Creation   CellCreation `json:"creation,omitempty"`
-		Status     CellStatus   `json:"status"`
-		Done       bool         `json:"done"`
-	}
-	var decoded cellJSON
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	c.ID = decoded.ID
-	c.Issue = decoded.Issue
-	c.Name = decoded.Name
-	c.Note = decoded.Note
-	c.Template = decoded.Template
-	c.Base = decoded.Base
-	c.Branch = decoded.Branch
-	c.BranchMode = decoded.BranchMode
-	c.Source = decoded.Source
-	c.Containers = decoded.Containers
-	c.Session = decoded.Session
-	c.Creation = decoded.Creation
-	if decoded.Status == "" {
-		c.status = Ready
-	} else {
-		c.status = decoded.Status
-	}
-	c.done = decoded.Done
-	return nil
-}
 
 func (c *Cell) BeginCreation(command string) {
 	c.Creation = CellCreation{Status: CreationCreating, Command: command}
