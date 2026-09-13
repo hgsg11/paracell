@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -133,11 +132,15 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) (returnErr error) {
+func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell, templates []domain.ContainerTemplate) (returnErr error) {
 	network := cellNetworkName(cell)
 	networkCreated := false
 	createdContainers := make([]string, 0, len(cell.Containers.Services))
 	sharedContainers := make([]string, 0, 1)
+	templatesByName := make(map[string]domain.ContainerTemplate, len(templates))
+	for _, template := range templates {
+		templatesByName[template.Name] = template
+	}
 	defer func() {
 		if returnErr == nil {
 			return
@@ -155,28 +158,26 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 	}
 	for _, role := range sortedServiceRoles(cell.Containers.Services) {
 		service := cell.Containers.Services[role]
-		source := template.Containers.Services[role].SourceContainer
-		if source == "" {
-			source = service.SourceContainer
-		}
+		template := templatesByName[role]
+		source := service.SourceContainer
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return err
 		}
-		if isSharedDatabase(service) {
+		if service.Mode == domain.Dependency {
 			aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
 			if len(aliases) == 0 {
-				return fmt.Errorf("source database container %q for service %q has no usable network aliases", source, role)
+				return fmt.Errorf("dependency container %q for service %q has no usable network aliases", source, role)
 			}
 			if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
-				if err := a.connectSharedDatabase(ctx, network, source, aliases); err != nil {
+				if err := a.connectDependency(ctx, network, source, aliases); err != nil {
 					return err
 				}
 			}
 			sharedContainers = append(sharedContainers, source)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, cell, service, inspection)
+		mounts, err := a.prepareMounts(ctx, cell, service, template, inspection)
 		if err != nil {
 			return err
 		}
@@ -195,7 +196,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			Network:        network,
 			NetworkAliases: networkAliases,
 			Labels:         labels,
-			Env:            mergeEnvironment(inspection.Config.Env, template.Containers.Services[role].Environment),
+			Env:            mergeEnvironment(inspection.Config.Env, template.Environments),
 			Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
 			Command:        append([]string(nil), inspection.Config.Cmd...),
 			WorkDir:        inspection.Config.WorkingDir,
@@ -210,14 +211,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, cell domain.Cell
 			return err
 		}
 		createdContainers = append(createdContainers, service.ContainerName)
-		if err := a.copyDatabase(ctx, role, source, service, inspection); err != nil {
-			return err
-		}
 	}
 	return nil
 }
 
-func mergeEnvironment(source []string, overrides map[string]string) []string {
+func mergeEnvironment(source []string, overrides []domain.Environment) []string {
 	merged := append([]string(nil), source...)
 	if len(overrides) == 0 {
 		return merged
@@ -229,14 +227,9 @@ func mergeEnvironment(source []string, overrides map[string]string) []string {
 		indexes[name] = index
 	}
 
-	names := make([]string, 0, len(overrides))
-	for name := range overrides {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		entry := name + "=" + overrides[name]
-		if index, ok := indexes[name]; ok {
+	for _, override := range overrides {
+		entry := override.Name + "=" + override.Value
+		if index, ok := indexes[override.Name]; ok {
 			merged[index] = entry
 			continue
 		}
@@ -245,25 +238,21 @@ func mergeEnvironment(source []string, overrides map[string]string) []string {
 	return merged
 }
 
-func isSharedDatabase(service domain.CellContainer) bool {
-	return service.Database != nil && service.Database.Mode == domain.DatabaseModeShared
-}
-
-func (a DockerCLIAdapter) connectSharedDatabase(ctx context.Context, network string, source string, aliases []string) error {
+func (a DockerCLIAdapter) connectDependency(ctx context.Context, network string, source string, aliases []string) error {
 	args := []string{"network", "connect"}
 	for _, alias := range aliases {
 		args = append(args, "--alias", alias)
 	}
 	args = append(args, network, source)
 	if err := a.Runner.Run(ctx, "docker", args...); err != nil {
-		return fmt.Errorf("connect shared database container %q to network %q: %w", source, network, err)
+		return fmt.Errorf("connect dependency container %q to network %q: %w", source, network, err)
 	}
 	return nil
 }
 
-func (a DockerCLIAdapter) disconnectSharedDatabase(ctx context.Context, network string, source string) error {
+func (a DockerCLIAdapter) disconnectDependency(ctx context.Context, network string, source string) error {
 	if err := a.Runner.Run(ctx, "docker", "network", "disconnect", network, source); err != nil && !isMissingDockerNetworkConnectionError(err) {
-		return fmt.Errorf("disconnect shared database container %q from network %q: %w", source, network, err)
+		return fmt.Errorf("disconnect dependency container %q from network %q: %w", source, network, err)
 	}
 	return nil
 }
@@ -276,7 +265,7 @@ func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network st
 		}
 	}
 	for i := len(sharedContainers) - 1; i >= 0; i-- {
-		if err := a.disconnectSharedDatabase(ctx, network, sharedContainers[i]); err != nil {
+		if err := a.disconnectDependency(ctx, network, sharedContainers[i]); err != nil {
 			rollbackErr = errors.Join(rollbackErr, err)
 		}
 	}
@@ -303,15 +292,20 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, inspection containerInspection) ([]string, error) {
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, cell domain.Cell, service domain.CellContainer, template domain.ContainerTemplate, inspection containerInspection) ([]string, error) {
 	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
 	if err != nil {
 		return nil, err
 	}
-	if service.VolumeMode != "copy" {
-		return a.cellMounts(cell, service, inspection.Mounts, composeMounts), nil
+	mounts, err := a.copyMounts(ctx, cell, service, inspection.Mounts, composeMounts)
+	if err != nil {
+		return nil, err
 	}
-	return a.copyMounts(ctx, cell, service, inspection.Mounts, composeMounts)
+	for _, mount := range template.Mounts {
+		source := filepath.Join(a.Root, ".paracell", "cells", cell.Name, "source", mount.SourcePath)
+		mounts = append(mounts, source+":"+mount.TargetPath)
+	}
+	return mounts, nil
 }
 
 func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContainer, mounts []dockerMount, composeMounts *composeMountPlan) []string {
@@ -330,7 +324,6 @@ func (a DockerCLIAdapter) cellMounts(cell domain.Cell, service domain.CellContai
 		}
 		out = append(out, spec)
 	}
-	out = append(out, a.initFileMounts(cell, service)...)
 	return out
 }
 
@@ -339,13 +332,6 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, serv
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
 			targetVolume := copiedVolumeName(service.ContainerName, mount.Destination)
-			if service.Database != nil && service.Database.CopyMode == "schema" {
-				if err := a.createNamedVolume(ctx, targetVolume); err != nil {
-					return nil, err
-				}
-				out = append(out, targetVolume+":"+mount.Destination+":rw")
-				continue
-			}
 			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
 				return nil, err
 			}
@@ -365,7 +351,6 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, cell domain.Cell, serv
 		}
 		out = append(out, spec)
 	}
-	out = append(out, a.initFileMounts(cell, service)...)
 	return out, nil
 }
 
@@ -478,25 +463,14 @@ func canonicalUserPath(path string, base string) (string, error) {
 	return filepath.Clean(absolute), nil
 }
 
-func (a DockerCLIAdapter) initFileMounts(cell domain.Cell, service domain.CellContainer) []string {
-	if service.Database == nil {
-		return nil
-	}
-	out := make([]string, 0, len(service.Database.InitFiles))
-	for _, file := range service.Database.InitFiles {
-		clean := filepath.Clean(file)
-		source := filepath.Join(a.cellSourcePath(cell), clean)
-		target := filepath.Join("/docker-entrypoint-initdb.d", filepath.Base(clean))
-		out = append(out, source+":"+target+":ro")
-	}
-	return out
-}
-
 func (a DockerCLIAdapter) cellSourcePath(cell domain.Cell) string {
-	if filepath.IsAbs(cell.Source.Path) {
-		return filepath.Clean(cell.Source.Path)
+	if len(cell.Sources) == 0 {
+		return ""
 	}
-	return filepath.Join(a.Root, cell.Source.Path)
+	if filepath.IsAbs(cell.Sources[0].Path) {
+		return filepath.Clean(cell.Sources[0].Path)
+	}
+	return filepath.Join(a.Root, cell.Sources[0].Path)
 }
 
 func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, target string) error {
@@ -519,169 +493,6 @@ func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, ta
 
 func (a DockerCLIAdapter) createNamedVolume(ctx context.Context, name string) error {
 	return a.Runner.Run(ctx, "docker", "volume", "create", name)
-}
-
-func (a DockerCLIAdapter) copyDatabase(ctx context.Context, role string, source string, service domain.CellContainer, inspection containerInspection) error {
-	if service.Database == nil {
-		return nil
-	}
-	if service.Database.Mode != domain.DatabaseModeCopy && service.Database.Mode != "" {
-		return nil
-	}
-	switch service.Database.CopyMode {
-	case "":
-		return nil
-	case "schema":
-		switch service.Database.System {
-		case "mysql":
-			return a.copyMySQLSchema(ctx, source, role, service, inspection)
-		default:
-			return fmt.Errorf("unsupported databaseSystem %q for service %q", service.Database.System, role)
-		}
-	case "data":
-		return fmt.Errorf("copyMode %q is not implemented for service %q", service.Database.CopyMode, role)
-	default:
-		return fmt.Errorf("unsupported copyMode %q for service %q", service.Database.CopyMode, role)
-	}
-}
-
-func (a DockerCLIAdapter) copyMySQLSchema(ctx context.Context, source string, role string, service domain.CellContainer, inspection containerInspection) error {
-	conn, err := mysqlConnectionFromEnv(inspection.Config.Env)
-	if err != nil {
-		return fmt.Errorf("mysql schema dump failed for service %q: %w", role, err)
-	}
-	if err := a.waitForMySQL(ctx, service.ContainerName, conn); err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	databasesOutput, err := a.Runner.Output(ctx, "docker", mysqlDatabaseListArgs(source, conn)...)
-	if err != nil {
-		return fmt.Errorf("mysql database list failed for service %q: %w", role, err)
-	}
-	databases := mysqlDatabaseNames(databasesOutput)
-	if len(databases) == 0 {
-		return nil
-	}
-	schema, err := a.Runner.Output(ctx, "docker", mysqlDumpArgs(source, conn, databases)...)
-	if err != nil {
-		return fmt.Errorf("mysql schema dump failed for service %q: %w", role, err)
-	}
-	temp, err := os.CreateTemp("", "paracell-schema-*.sql")
-	if err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if _, err := temp.WriteString(schema); err != nil {
-		temp.Close()
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	const containerSchemaPath = "/tmp/paracell-schema.sql"
-	if err := a.Runner.Run(ctx, "docker", "cp", tempPath, service.ContainerName+":"+containerSchemaPath); err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	importCommand := fmt.Sprintf("mysql -u %s", shQuote(conn.User))
-	if conn.Password != "" {
-		importCommand += " " + shQuote("-p"+conn.Password)
-	}
-	importCommand += fmt.Sprintf(" < %s", shQuote(containerSchemaPath))
-	if err := a.Runner.Run(ctx, "docker", "exec", service.ContainerName, "sh", "-c", importCommand); err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	if err := a.Runner.Run(ctx, "docker", "exec", service.ContainerName, "rm", "-f", containerSchemaPath); err != nil {
-		return fmt.Errorf("mysql schema import failed for service %q: %w", role, err)
-	}
-	return nil
-}
-
-func (a DockerCLIAdapter) waitForMySQL(ctx context.Context, container string, conn mysqlConnection) error {
-	args := []string{"exec", container, "mysqladmin", "ping", "-h", "127.0.0.1", "-u", conn.User}
-	if conn.Password != "" {
-		args = append(args, "-p"+conn.Password)
-	}
-	args = append(args, "--silent")
-	var lastErr error
-	for i := 0; i < 60; i++ {
-		if err := a.Runner.Run(ctx, "docker", args...); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-	}
-	return lastErr
-}
-
-type mysqlConnection struct {
-	User     string
-	Password string
-	Database string
-}
-
-func mysqlConnectionFromEnv(env []string) (mysqlConnection, error) {
-	values := make(map[string]string, len(env))
-	for _, entry := range env {
-		key, value, ok := strings.Cut(entry, "=")
-		if !ok {
-			continue
-		}
-		values[key] = value
-	}
-	conn := mysqlConnection{
-		User:     values["MYSQL_USER"],
-		Password: values["MYSQL_PASSWORD"],
-		Database: values["MYSQL_DATABASE"],
-	}
-	if values["MYSQL_ROOT_PASSWORD"] != "" {
-		conn.User = "root"
-		conn.Password = values["MYSQL_ROOT_PASSWORD"]
-	} else if conn.User == "" {
-		conn.User = "root"
-		conn.Password = values["MYSQL_ROOT_PASSWORD"]
-	}
-	if conn.User == "" || conn.Database == "" {
-		return mysqlConnection{}, fmt.Errorf("MYSQL_USER/MYSQL_DATABASE or MYSQL_ROOT_PASSWORD/MYSQL_DATABASE is required")
-	}
-	return conn, nil
-}
-
-func mysqlDatabaseListArgs(container string, conn mysqlConnection) []string {
-	args := []string{"exec", container, "mysql", "--batch", "--skip-column-names", "-u", conn.User}
-	if conn.Password != "" {
-		args = append(args, "-p"+conn.Password)
-	}
-	return append(args, "-e", "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys') ORDER BY SCHEMA_NAME")
-}
-
-func mysqlDatabaseNames(output string) []string {
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	databases := make([]string, 0, len(lines))
-	for _, line := range lines {
-		if name := strings.TrimSpace(line); name != "" {
-			databases = append(databases, name)
-		}
-	}
-	return databases
-}
-
-func mysqlDumpArgs(container string, conn mysqlConnection, databases []string) []string {
-	args := []string{"exec", container, "mysqldump", "--no-data", "--no-tablespaces", "-u", conn.User}
-	if conn.Password != "" {
-		args = append(args, "-p"+conn.Password)
-	}
-	args = append(args, "--databases")
-	args = append(args, databases...)
-	return args
-}
-
-func shQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", `'\''`) + "'"
 }
 
 func copiedVolumeName(container string, destination string) string {
@@ -746,7 +557,7 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 	var cleanupErr error
 	for _, role := range sortedServiceRoles(cell.Containers.Services) {
 		service := cell.Containers.Services[role]
-		if isSharedDatabase(service) {
+		if service.Mode == domain.Dependency {
 			continue
 		}
 		if err := a.Runner.Run(ctx, "docker", "rm", "-f", service.ContainerName); err != nil && !isMissingDockerResourceError(err) {
@@ -756,10 +567,10 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, cell domain.Cell)
 	if network := cellNetworkName(cell); network != "" {
 		for _, role := range sortedServiceRoles(cell.Containers.Services) {
 			service := cell.Containers.Services[role]
-			if !isSharedDatabase(service) {
+			if service.Mode != domain.Dependency {
 				continue
 			}
-			if err := a.disconnectSharedDatabase(ctx, network, service.SourceContainer); err != nil {
+			if err := a.disconnectDependency(ctx, network, service.SourceContainer); err != nil {
 				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		}

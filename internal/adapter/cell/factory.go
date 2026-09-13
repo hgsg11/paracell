@@ -3,67 +3,62 @@ package cell
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type Factory struct{}
 
-func (f Factory) NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error) {
+func (f Factory) NewCell(id string, issue string, templateName string, sourceTemplates []domain.SourceTemplate, containerTemplates []domain.ContainerTemplate, sessionTemplate domain.SessionTemplate, project string) (domain.Cell, error) {
 	if id == "" {
 		return domain.Cell{}, errors.New("cell id is required")
 	}
 	if issue == "" {
 		return domain.Cell{}, errors.New("issue is required")
 	}
-	if template.Name == "" {
+	if templateName == "" {
 		return domain.Cell{}, errors.New("template name is required")
 	}
 	name := domain.SafeResourceName(issue, id)
 	projectName := domain.SafeResourceName(project, "project")
 	prefix := fmt.Sprintf("paracell-%s-%s", projectName, name)
-	sessionName := fmt.Sprintf("%s-%s", projectName, name)
-	services := make(map[string]domain.CellContainer, len(template.Containers.Services))
-	for role, service := range template.Containers.Services {
-		var database *domain.DatabaseConfig
-		if service.Database != nil {
-			database = &domain.DatabaseConfig{
-				Mode:      service.Database.Mode,
-				System:    service.Database.System,
-				CopyMode:  service.Database.CopyMode,
-				InitFiles: append([]string(nil), service.Database.InitFiles...),
-			}
+	sources := make([]domain.Source, 0, len(sourceTemplates))
+	for _, sourceTemplate := range sourceTemplates {
+		path := filepath.Join(".paracell", "cells", name, "source")
+		if sourceTemplate.Path != "." {
+			path = filepath.Join(path, sourceTemplate.Path)
 		}
-		services[role] = domain.CellContainer{
-			ContainerName:   fmt.Sprintf("%s-%s", prefix, domain.SafeResourceName(role, "service")),
-			SourceContainer: service.SourceContainer,
-			VolumeMode:      service.VolumeMode,
-			Database:        database,
+		sources = append(sources, domain.Source{
+			TemplatePath: sourceTemplate.Path,
+			Path:         path,
+			Base:         sourceTemplate.Base,
+			Branch:       sourceTemplate.Prefix + issue,
+		})
+	}
+	services := make(map[string]domain.CellContainer, len(containerTemplates))
+	for _, container := range containerTemplates {
+		containerName := container.Name
+		if container.Mode == domain.Target {
+			containerName = fmt.Sprintf("%s-%s", prefix, domain.SafeResourceName(container.Name, "container"))
+		}
+		services[container.Name] = domain.CellContainer{
+			ContainerName:   containerName,
+			SourceContainer: container.Name,
+			Mode:            container.Mode,
 		}
 	}
-	windows := make([]domain.SessionWindow, 0, len(template.Session.Windows))
-	for _, window := range template.Session.Windows {
+	windows := make([]domain.SessionWindow, 0, len(sessionTemplate.Windows))
+	for _, window := range sessionTemplate.Windows {
 		windows = append(windows, domain.SessionWindow{Name: window.Name, Command: window.Command})
 	}
-
 	return domain.Cell{
 		ID:         id,
 		Issue:      issue,
 		Name:       name,
-		Template:   template.Name,
-		Base:       template.Repository.Base,
-		Branch:     template.Repository.BranchPrefix + issue,
-		BranchMode: template.Repository.BranchMode,
-		Source: domain.Source{
-			Path: fmt.Sprintf(".paracell/cells/%s/source", name),
-		},
-		Containers: domain.Containers{
-			Network:  prefix,
-			Services: services,
-		},
-		Session: domain.Session{
-			Name:    sessionName,
-			Windows: windows,
-		},
+		Template:   templateName,
+		Sources:    sources,
+		Containers: domain.Containers{Network: prefix, Services: services},
+		Session:    domain.Session{Name: projectName + "-" + name, Windows: windows},
 	}, nil
 }

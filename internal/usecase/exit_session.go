@@ -12,7 +12,7 @@ func (u ExitSessionUseCase) Execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.Providers)
+	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
 	if err != nil {
 		return err
 	}

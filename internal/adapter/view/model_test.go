@@ -68,8 +68,7 @@ func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
 			Name:     "123",
 			Template: "default",
 			Issue:    "123",
-			Base:     "main",
-			Branch:   "feat/123",
+			Sources:  []domain.Source{{Base: "main", Branch: "feat/123"}},
 			Session:  domain.Session{Name: "paracell-123"},
 		},
 	})
@@ -279,8 +278,7 @@ func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
 			Name:     "123",
 			Template: "default",
 			Issue:    "123",
-			Base:     "main",
-			Branch:   "feat/123",
+			Sources:  []domain.Source{{Base: "main", Branch: "feat/123"}},
 		},
 	})
 

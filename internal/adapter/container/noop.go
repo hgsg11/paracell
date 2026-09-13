@@ -8,10 +8,10 @@ import (
 
 type NoopAdapter struct{}
 
-func (a NoopAdapter) CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error {
+func (a NoopAdapter) CreateContainers(ctx context.Context, cell domain.Cell, templates []domain.ContainerTemplate) error {
 	_ = ctx
 	_ = cell
-	_ = template
+	_ = templates
 	return nil
 }
 

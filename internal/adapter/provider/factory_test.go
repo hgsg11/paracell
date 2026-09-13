@@ -3,105 +3,33 @@ package provider
 import (
 	"testing"
 
+	"github.com/hgsg11/paracell/internal/adapter/container"
+	"github.com/hgsg11/paracell/internal/adapter/notification"
+	"github.com/hgsg11/paracell/internal/adapter/session"
+	"github.com/hgsg11/paracell/internal/adapter/source"
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestFactorySourceは対応Providerを選択できる(t *testing.T) {
-	adapter, err := Factory{}.Source(domain.ProviderConfig{Source: "git"})
-	if err != nil {
-		t.Fatalf("provider source選択でエラーが返った: %v", err)
+func TestFactoryはDriverTypeからAdapterを作る(t *testing.T) {
+	factory := Factory{}
+	if got, err := factory.Source(domain.Git); err != nil {
+		t.Fatal(err)
+	} else if _, ok := got.(source.GitSourceAdapter); !ok {
+		t.Fatalf("source = %T", got)
 	}
-	if adapter == nil {
-		t.Fatal("source adapter is nil")
+	if got, err := factory.Container(domain.Docker); err != nil {
+		t.Fatal(err)
+	} else if _, ok := got.(container.DockerCLIAdapter); !ok {
+		t.Fatalf("container = %T", got)
 	}
-}
-
-func TestFactorySourceは未対応Providerをエラーにする(t *testing.T) {
-	_, err := Factory{}.Source(domain.ProviderConfig{Source: "svn"})
-	if err == nil {
-		t.Fatal("未対応providerなのにエラーが返らなかった")
+	if got, err := factory.Session(domain.Tmux); err != nil {
+		t.Fatal(err)
+	} else if _, ok := got.(session.TmuxAdapter); !ok {
+		t.Fatalf("session = %T", got)
 	}
-	if err.Error() != `unsupported providers.source "svn"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.source "svn"`)
-	}
-}
-
-func TestFactoryContainerは対応Providerを選択できる(t *testing.T) {
-	adapter, err := Factory{}.Container(domain.ProviderConfig{Container: "docker"})
-	if err != nil {
-		t.Fatalf("provider container選択でエラーが返った: %v", err)
-	}
-	if adapter == nil {
-		t.Fatal("container adapter is nil")
-	}
-}
-
-func TestFactoryContainerは空ならNoopを返す(t *testing.T) {
-	adapter, err := Factory{}.Container(domain.ProviderConfig{})
-	if err != nil {
-		t.Fatalf("provider container選択でエラーが返った: %v", err)
-	}
-	if adapter == nil {
-		t.Fatal("container adapter is nil")
-	}
-}
-
-func TestFactoryContainerは未対応Providerをエラーにする(t *testing.T) {
-	_, err := Factory{}.Container(domain.ProviderConfig{Container: "podman"})
-	if err == nil {
-		t.Fatal("未対応container providerなのにエラーが返らなかった")
-	}
-	if err.Error() != `unsupported providers.container "podman"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.container "podman"`)
-	}
-}
-
-func TestFactorySessionは対応Providerを選択できる(t *testing.T) {
-	adapter, err := Factory{}.Session(domain.ProviderConfig{Session: "tmux"})
-	if err != nil {
-		t.Fatalf("provider session選択でエラーが返った: %v", err)
-	}
-	if adapter == nil {
-		t.Fatal("session adapter is nil")
-	}
-}
-
-func TestFactorySessionは未対応Providerをエラーにする(t *testing.T) {
-	_, err := Factory{}.Session(domain.ProviderConfig{Session: "screen"})
-	if err == nil {
-		t.Fatal("未対応session providerなのにエラーが返らなかった")
-	}
-	if err.Error() != `unsupported providers.session "screen"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.session "screen"`)
-	}
-}
-
-func TestFactoryNotificationは対応Providerを選択できる(t *testing.T) {
-	adapter, err := Factory{}.Notification(domain.ProviderConfig{Notifications: "tmux"})
-	if err != nil {
-		t.Fatalf("provider notification選択でエラーが返った: %v", err)
-	}
-	if adapter == nil {
-		t.Fatal("notification adapter is nil")
-	}
-}
-
-func TestFactoryNotificationは空ならNoopを返す(t *testing.T) {
-	adapter, err := Factory{}.Notification(domain.ProviderConfig{})
-	if err != nil {
-		t.Fatalf("provider notification選択でエラーが返った: %v", err)
-	}
-	if adapter == nil {
-		t.Fatal("notification adapter is nil")
-	}
-}
-
-func TestFactoryNotificationは未対応Providerをエラーにする(t *testing.T) {
-	_, err := Factory{}.Notification(domain.ProviderConfig{Notifications: "bark"})
-	if err == nil {
-		t.Fatal("未対応notification providerなのにエラーが返らなかった")
-	}
-	if err.Error() != `unsupported providers.notifications "bark"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported providers.notifications "bark"`)
+	if got, err := factory.Notification(domain.NoNotification); err != nil {
+		t.Fatal(err)
+	} else if _, ok := got.(notification.NoopNotifier); !ok {
+		t.Fatalf("notification = %T", got)
 	}
 }

@@ -1,43 +1,55 @@
 package domain
 
-import (
-	"encoding/json"
-	"reflect"
-	"testing"
+import "testing"
 
-	"gopkg.in/yaml.v3"
-)
-
-func TestContainerServiceTemplateEnvironmentはYAMLとJSONでRoundTripできる(t *testing.T) {
-	want := ContainerServiceTemplate{
-		SourceContainer: "myapp-web",
-		Environment: map[string]string{
-			"APP_ENV":        "cell",
-			"EXPLICIT_EMPTY": "",
-		},
-	}
-
-	yamlData, err := yaml.Marshal(want)
+func TestTemplatesは名前から各Templateを取得する(t *testing.T) {
+	mode, err := NewMode("target")
 	if err != nil {
-		t.Fatalf("YAML marshal error = %v", err)
+		t.Fatal(err)
 	}
-	var fromYAML ContainerServiceTemplate
-	if err := yaml.Unmarshal(yamlData, &fromYAML); err != nil {
-		t.Fatalf("YAML unmarshal error = %v", err)
-	}
-	if !reflect.DeepEqual(fromYAML, want) {
-		t.Fatalf("YAML round trip = %#v, want %#v", fromYAML, want)
-	}
-
-	jsonData, err := json.Marshal(want)
+	container, err := NewContainerTemplate("app", mode, nil, nil)
 	if err != nil {
-		t.Fatalf("JSON marshal error = %v", err)
+		t.Fatal(err)
 	}
-	var fromJSON ContainerServiceTemplate
-	if err := json.Unmarshal(jsonData, &fromJSON); err != nil {
-		t.Fatalf("JSON unmarshal error = %v", err)
+	source, err := NewSourceTemplate(".", "main", "feat/")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(fromJSON, want) {
-		t.Fatalf("JSON round trip = %#v, want %#v", fromJSON, want)
+	template, err := NewTemplate("feat", []SourceTemplate{source}, []ContainerTemplate{container}, NewSessionTemplate(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionDriver, _ := NewSessionDriverType("tmux")
+	sourceDriver, _ := NewSourceDriverType("git")
+	notificationDriver, _ := NewNotificationDriverType("")
+	templates, err := NewTemplates("project", []Template{template}, sessionDriver, NewContainerDriverType("docker"), sourceDriver, notificationDriver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	containers, err := templates.GetContainerTemplates("feat")
+	if err != nil || len(containers) != 1 || containers[0].Name != "app" {
+		t.Fatalf("containers = %#v, err = %v", containers, err)
+	}
+	if _, err := templates.GetSourceTemplates("missing"); err == nil {
+		t.Fatal("missing template must fail")
+	}
+}
+
+func TestNewContainerTemplateはDependencyの変更設定を拒否する(t *testing.T) {
+	_, err := NewContainerTemplate("db", Dependency, []Environment{{Name: "A", Value: "B"}}, nil)
+	if err == nil {
+		t.Fatal("dependency environment must fail")
+	}
+}
+
+func TestDriverTypeを生成する(t *testing.T) {
+	if got := NewContainerDriverType("unknown"); got != None {
+		t.Fatalf("container driver = %q", got)
+	}
+	if _, err := NewSessionDriverType(""); err == nil {
+		t.Fatal("empty session driver must fail")
+	}
+	if _, err := NewSourceDriverType(""); err == nil {
+		t.Fatal("empty source driver must fail")
 	}
 }

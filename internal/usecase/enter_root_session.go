@@ -1,8 +1,6 @@
 package usecase
 
-import (
-	"context"
-)
+import "context"
 
 type EnterRootSessionUseCase struct {
 	Config         ConfigPort
@@ -14,9 +12,9 @@ func (u EnterRootSessionUseCase) Execute(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.Providers)
+	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
 	if err != nil {
 		return err
 	}
-	return session.EnterRootSession(ctx, cfg.Project)
+	return session.EnterRootSession(ctx, cfg.ProjectName)
 }

@@ -2,345 +2,45 @@ package source
 
 import (
 	"context"
-	"errors"
-	"os"
-	"path/filepath"
-	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestCreateSourceはBaseCurrentなら現在BranchからWorktreeを作る(t *testing.T) {
+func TestCreateSourceは複数RepositoryのWorktreeを作る(t *testing.T) {
 	runner := &fakeRunner{runErrors: map[string]error{
-		"git show-ref --verify --quiet refs/heads/feat/123": exitCodeError{code: 1},
+		"git -C /project show-ref --verify --quiet refs/heads/feat/42":     exitCodeError{code: 1},
+		"git -C /project/api show-ref --verify --quiet refs/heads/feat/42": exitCodeError{code: 1},
 	}}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Base:       "current",
-		Branch:     "feat/123",
-		BranchMode: domain.RepositoryBranchModeCreate,
-		Source:     domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-	if err != nil {
-		t.Fatalf("CreateSourceでエラーが返った: %v", err)
-	}
-	if !creation.BranchCreated {
-		t.Fatal("BranchCreated = false, want true")
-	}
-
-	want := []string{
-		"git show-ref --verify --quiet refs/heads/feat/123",
-		"git worktree add .paracell/cells/123/source -b feat/123",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceはNamedBaseなら明示BaseからWorktreeを作る(t *testing.T) {
-	runner := &fakeRunner{runErrors: map[string]error{
-		"git show-ref --verify --quiet refs/heads/feat/123": exitCodeError{code: 1},
+	cell := domain.Cell{Sources: []domain.Source{
+		{TemplatePath: ".", Path: ".paracell/cells/42/source", Base: "main", Branch: "feat/42"},
+		{TemplatePath: "api", Path: ".paracell/cells/42/source/api", Base: "main", Branch: "feat/42"},
 	}}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Base:   "feature/111",
-		Branch: "feat/123",
-		Source: domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-	if err != nil {
-		t.Fatalf("CreateSourceでエラーが返った: %v", err)
-	}
-	if !creation.BranchCreated {
-		t.Fatal("BranchCreated = false, want true")
-	}
-
-	want := []string{
-		"git show-ref --verify --quiet refs/heads/feat/123",
-		"git worktree add .paracell/cells/123/source -b feat/123 feature/111",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceはBranchModeReuseで既存BranchならWorktreeを切り替える(t *testing.T) {
-	runner := &fakeRunner{}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Base:       "main",
-		Branch:     "feat/123",
-		BranchMode: "reuse",
-		Source:     domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-	if err != nil {
-		t.Fatalf("CreateSourceでエラーが返った: %v", err)
-	}
-	if creation.BranchCreated {
-		t.Fatal("BranchCreated = true, want false")
-	}
-
-	want := []string{
-		"git show-ref --verify --quiet refs/heads/feat/123",
-		"git worktree add .paracell/cells/123/source feat/123",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceはBranchModeReuseでBranchがなければ作成する(t *testing.T) {
-	runner := &fakeRunner{
-		runErrors: map[string]error{
-			"git show-ref --verify --quiet refs/heads/feat/123": exitCodeError{code: 1},
-		},
-	}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Base:       "main",
-		Branch:     "feat/123",
-		BranchMode: "reuse",
-		Source:     domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-	if err != nil {
-		t.Fatalf("CreateSourceでエラーが返った: %v", err)
-	}
-	if !creation.BranchCreated {
-		t.Fatal("BranchCreated = false, want true")
-	}
-
-	want := []string{
-		"git show-ref --verify --quiet refs/heads/feat/123",
-		"git worktree add .paracell/cells/123/source -b feat/123 main",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceはBranchModeRequireで既存Branchを使う(t *testing.T) {
-	runner := &fakeRunner{}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Base:       "main",
-		Branch:     "feat/123",
-		BranchMode: "require",
-		Source:     domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-	if err != nil {
-		t.Fatalf("CreateSourceでエラーが返った: %v", err)
-	}
-	if creation.BranchCreated {
-		t.Fatal("BranchCreated = true, want false")
-	}
-
-	want := []string{
-		"git worktree add .paracell/cells/123/source feat/123",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceはBranch確認失敗時に作成を開始しない(t *testing.T) {
-	checkErr := errors.New("git unavailable")
-	runner := &fakeRunner{runErrors: map[string]error{
-		"git show-ref --verify --quiet refs/heads/feat/123": checkErr,
-	}}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-
-	if !errors.Is(err, checkErr) {
-		t.Fatalf("error = %v, want check error", err)
-	}
-	if creation.BranchCreated {
-		t.Fatal("BranchCreated = true, want false")
-	}
-	want := []string{"git show-ref --verify --quiet refs/heads/feat/123"}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestCreateSourceは失敗時に部分作成されたBranchを明示する(t *testing.T) {
-	createErr := errors.New("worktree setup failed")
-	checkCall := "git show-ref --verify --quiet refs/heads/feat/123"
-	runner := &fakeRunner{
-		runErrors: map[string]error{
-			checkCall: exitCodeError{code: 1},
-			"git worktree add .paracell/cells/123/source -b feat/123 main": createErr,
-		},
-		runErrorSequences: map[string][]error{
-			checkCall: {exitCodeError{code: 1}, nil},
-		},
-	}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{Base: "main", Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	creation, err := adapter.CreateSource(context.Background(), cell)
-
-	if !errors.Is(err, createErr) {
-		t.Fatalf("error = %v, want create error", err)
-	}
-	if !creation.BranchCreated {
-		t.Fatal("BranchCreated = false, want true")
-	}
-}
-
-func TestResumeSourceは部分作成されたBranchを削除せずWorktreeへAttachする(t *testing.T) {
-	runner := &fakeRunner{}
-	adapter := GitSourceAdapter{Runner: runner, Root: t.TempDir()}
-	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
-		t.Fatalf("ResumeSource error: %v", err)
-	}
-	want := []string{
-		"git show-ref --verify --quiet refs/heads/feat/123",
-		"git worktree add .paracell/cells/123/source feat/123",
-	}
-	if !reflect.DeepEqual(runner.runCalls, want) {
-		t.Fatalf("run calls = %#v, want %#v", runner.runCalls, want)
-	}
-}
-
-func TestResumeSourceは既存WorktreeとBranchをそのまま使う(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, ".paracell", "cells", "123", "source")
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if _, err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), cell); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(path, ".git"), []byte("gitdir: elsewhere"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	runner := &fakeRunner{outputs: map[string]string{
-		"git -C .paracell/cells/123/source branch --show-current": "feat/123\n",
-	}}
-	adapter := GitSourceAdapter{Runner: runner, Root: root}
-	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
-		t.Fatalf("ResumeSource error: %v", err)
-	}
-	if len(runner.runCalls) != 0 {
-		t.Fatalf("existing worktree was changed: %#v", runner.runCalls)
-	}
-}
-
-func TestResumeSourceは空の部分WorktreeDirectoryを整理してBranchへAttachする(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, ".paracell", "cells", "123", "source")
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runner := &fakeRunner{}
-	adapter := GitSourceAdapter{Runner: runner, Root: root}
-	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	if err := adapter.ResumeSource(context.Background(), cell); err != nil {
-		t.Fatalf("ResumeSource error: %v", err)
-	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("empty partial directory remains: %v", err)
-	}
-}
-
-func TestResumeSourceは内容のある部分WorktreeDirectoryを削除しない(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, ".paracell", "cells", "123", "source")
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(path, "user.txt")
-	if err := os.WriteFile(marker, []byte("keep"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	adapter := GitSourceAdapter{Runner: &fakeRunner{}, Root: root}
-	cell := domain.Cell{Branch: "feat/123", Source: domain.Source{Path: ".paracell/cells/123/source"}}
-
-	if err := adapter.ResumeSource(context.Background(), cell); err == nil {
-		t.Fatal("non-empty partial worktree was accepted")
-	}
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("partial worktree data was removed: %v", err)
-	}
-}
-
-func TestCleanSourceは見つからないWorktreeをnotFound扱いにする(t *testing.T) {
-	runner := &fakeRunner{
-		runErrors: map[string]error{
-			"git worktree remove --force .paracell/cells/123/source": errors.New("fatal: '.paracell/cells/123/source' is not a working tree"),
-		},
-	}
-	adapter := GitSourceAdapter{Runner: runner}
-	cell := domain.Cell{
-		Source: domain.Source{Path: ".paracell/cells/123/source"},
-	}
-
-	err := adapter.CleanSource(context.Background(), cell)
-	if !errors.Is(err, domain.ErrNotFound) {
-		t.Fatalf("error = %v, want domain.ErrNotFound", err)
+	if got := strings.Join(runner.runCalls, "\n"); !strings.Contains(got, "git -C /project/api worktree add /project/.paracell/cells/42/source/api -b feat/42 main") {
+		t.Fatalf("calls = %s", got)
 	}
 }
 
 type fakeRunner struct {
-	runCalls          []string
-	runErrors         map[string]error
-	runErrorSequences map[string][]error
-	outputs           map[string]string
+	runCalls  []string
+	runErrors map[string]error
 }
 
-func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error {
-	_ = ctx
-	call := name + " " + joinArgs(args)
-	r.runCalls = append(r.runCalls, call)
-	if sequence := r.runErrorSequences[call]; len(sequence) > 0 {
-		err := sequence[0]
-		r.runErrorSequences[call] = sequence[1:]
-		return err
-	}
-	if r.runErrors != nil && r.runErrors[call] != nil {
-		return r.runErrors[call]
-	}
-	return nil
+func (f *fakeRunner) Run(_ context.Context, name string, args ...string) error {
+	call := strings.Join(append([]string{name}, args...), " ")
+	f.runCalls = append(f.runCalls, call)
+	return f.runErrors[call]
 }
 
-type exitCodeError struct {
-	code int
+func (f *fakeRunner) Output(_ context.Context, name string, args ...string) (string, error) {
+	return "", f.Run(context.Background(), name, args...)
 }
 
-func (e exitCodeError) Error() string {
-	return "exit status"
-}
+type exitCodeError struct{ code int }
 
-func (e exitCodeError) ExitCode() int {
-	return e.code
-}
-
-func (r *fakeRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
-	_ = ctx
-	return r.outputs[name+" "+joinArgs(args)], nil
-}
-
-func joinArgs(args []string) string {
-	if len(args) == 0 {
-		return ""
-	}
-	out := args[0]
-	for _, arg := range args[1:] {
-		out += " " + arg
-	}
-	return out
-}
+func (e exitCodeError) Error() string { return "exit" }
+func (e exitCodeError) ExitCode() int { return e.code }

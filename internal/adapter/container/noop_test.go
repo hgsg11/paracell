@@ -8,7 +8,7 @@ import (
 )
 
 func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
-	err := NoopAdapter{}.CreateContainers(context.Background(), domain.Cell{}, domain.Template{})
+	err := NoopAdapter{}.CreateContainers(context.Background(), domain.Cell{}, nil)
 
 	if err != nil {
 		t.Fatalf("CreateContainers error = %v, want nil", err)

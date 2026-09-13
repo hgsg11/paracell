@@ -14,10 +14,7 @@ type Cell struct {
 	Name       string
 	Note       string
 	Template   string
-	Base       string
-	Branch     string
-	BranchMode string
-	Source     Source
+	Sources    []Source
 	Containers Containers
 	Session    Session
 	Creation   CellCreation
@@ -38,7 +35,6 @@ type CreationStage string
 
 const (
 	CreationStageSource     CreationStage = "source"
-	CreationStageFiles      CreationStage = "files"
 	CreationStageContainers CreationStage = "containers"
 	CreationStageSession    CreationStage = "session"
 )
@@ -175,7 +171,10 @@ func (c Cell) DisplayLabel() string {
 }
 
 type Source struct {
-	Path string
+	TemplatePath string
+	Path         string
+	Base         string
+	Branch       string
 }
 
 type Containers struct {
@@ -186,8 +185,7 @@ type Containers struct {
 type CellContainer struct {
 	ContainerName   string
 	SourceContainer string
-	VolumeMode      string
-	Database        *DatabaseConfig
+	Mode            Mode
 }
 
 func (c *CellContainer) Rename(name string) error {

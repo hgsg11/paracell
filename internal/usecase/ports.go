@@ -7,12 +7,12 @@ import (
 )
 
 type ConfigPort interface {
-	Load(ctx context.Context, vars *domain.TemplateVars) (domain.Config, error)
+	Load(ctx context.Context, vars *domain.TemplateVars) (domain.Templates, error)
 }
 
 type InitConfigPort interface {
 	ConfigExists(ctx context.Context) (bool, error)
-	SaveConfig(ctx context.Context, cfg InitConfig) error
+	SaveConfig(ctx context.Context, cfg domain.Templates) error
 }
 
 type StateInitializer interface {
@@ -29,7 +29,7 @@ type Notifier interface {
 }
 
 type NotificationProviderFactory interface {
-	Notification(provider domain.ProviderConfig) (Notifier, error)
+	Notification(driver domain.NotificationDriverType) (Notifier, error)
 }
 
 type SourcePort interface {
@@ -43,21 +43,16 @@ type SourceCreation struct {
 }
 
 type SourceProviderFactory interface {
-	Source(provider domain.ProviderConfig) (SourcePort, error)
-}
-
-type FilePort interface {
-	CopyFiles(ctx context.Context, cell domain.Cell, template domain.Template) error
-	ResumeFiles(ctx context.Context, cell domain.Cell, template domain.Template) error
+	Source(driver domain.SourceDriverType) (SourcePort, error)
 }
 
 type ContainerPort interface {
-	CreateContainers(ctx context.Context, cell domain.Cell, template domain.Template) error
+	CreateContainers(ctx context.Context, cell domain.Cell, templates []domain.ContainerTemplate) error
 	CleanContainers(ctx context.Context, cell domain.Cell) error
 }
 
 type ContainerProviderFactory interface {
-	Container(provider domain.ProviderConfig) (ContainerPort, error)
+	Container(driver domain.ContainerDriverType) (ContainerPort, error)
 }
 
 type SessionPort interface {
@@ -66,12 +61,12 @@ type SessionPort interface {
 	PrepareSession(ctx context.Context, cell domain.Cell) error
 	UpdateStatusLabel(ctx context.Context, cell domain.Cell) error
 	EnterSession(ctx context.Context, cell domain.Cell) error
-	EnterRootSession(ctx context.Context, project domain.ProjectConfig) error
+	EnterRootSession(ctx context.Context, projectName string) error
 	ExitSession(ctx context.Context) error
 }
 
 type SessionProviderFactory interface {
-	Session(provider domain.ProviderConfig) (SessionPort, error)
+	Session(driver domain.SessionDriverType) (SessionPort, error)
 }
 
 type IDGenerator interface {
@@ -79,5 +74,5 @@ type IDGenerator interface {
 }
 
 type CellFactory interface {
-	NewCell(id string, issue string, template domain.Template, project string) (domain.Cell, error)
+	NewCell(id string, issue string, templateName string, sources []domain.SourceTemplate, containers []domain.ContainerTemplate, session domain.SessionTemplate, project string) (domain.Cell, error)
 }
