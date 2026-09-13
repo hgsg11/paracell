@@ -299,7 +299,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	case CommandHelp:
 		return writeCLIOutput(logger, usage)
 	case CommandInit:
-		uc := usecase.InitProjectUseCase{Config: configAdapter}
+		uc := usecase.InitProjectUseCase{Config: configAdapter, State: stateAdapter}
 		_, err := uc.Execute(ctx)
 		return err
 	case CommandList:

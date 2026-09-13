@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/hgsg11/paracell/internal/domain"
 	_ "modernc.org/sqlite"
@@ -17,7 +18,15 @@ type SQLiteCellStateAdapter struct {
 	Path string
 }
 
-const stateSchemaVersion = 1
+const stateSchemaVersion = 2
+
+func (a SQLiteCellStateAdapter) Initialize(ctx context.Context) error {
+	db, err := a.open(ctx)
+	if err != nil {
+		return err
+	}
+	return db.Close()
+}
 
 func (a SQLiteCellStateAdapter) LoadCells(ctx context.Context) ([]domain.Cell, error) {
 	db, err := a.open(ctx)
@@ -25,13 +34,7 @@ func (a SQLiteCellStateAdapter) LoadCells(ctx context.Context) ([]domain.Cell, e
 		return nil, err
 	}
 	defer db.Close()
-
-	rows, err := db.QueryContext(ctx, `SELECT data FROM cells ORDER BY position`)
-	if err != nil {
-		return nil, fmt.Errorf("query cells: %w", err)
-	}
-	defer rows.Close()
-	return decodeCells(rows)
+	return loadCells(ctx, db)
 }
 
 func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
@@ -40,7 +43,6 @@ func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]d
 		return err
 	}
 	defer db.Close()
-
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("open state connection: %w", err)
@@ -55,18 +57,9 @@ func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]d
 			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
 		}
 	}()
-
-	rows, err := conn.QueryContext(ctx, `SELECT data FROM cells ORDER BY position`)
-	if err != nil {
-		return fmt.Errorf("query cells for update: %w", err)
-	}
-	cells, err := decodeCells(rows)
-	closeErr := rows.Close()
+	cells, err := loadCells(ctx, conn)
 	if err != nil {
 		return err
-	}
-	if closeErr != nil {
-		return fmt.Errorf("close cell rows: %w", closeErr)
 	}
 	next, err := update(cells)
 	if err != nil {
@@ -82,12 +75,8 @@ func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]d
 	return nil
 }
 
-// SaveCells replaces the complete state transactionally. Production mutations
-// should use UpdateCells so they always operate on the latest committed state.
 func (a SQLiteCellStateAdapter) SaveCells(ctx context.Context, cells []domain.Cell) error {
-	return a.UpdateCells(ctx, func([]domain.Cell) ([]domain.Cell, error) {
-		return cells, nil
-	})
+	return a.UpdateCells(ctx, func([]domain.Cell) ([]domain.Cell, error) { return cells, nil })
 }
 
 func (a SQLiteCellStateAdapter) open(ctx context.Context) (*sql.DB, error) {
@@ -99,9 +88,11 @@ func (a SQLiteCellStateAdapter) open(ctx context.Context) (*sql.DB, error) {
 		return nil, fmt.Errorf("open state database: %w", err)
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.ExecContext(ctx, `PRAGMA busy_timeout = 10000`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("set state busy timeout: %w", err)
+	for _, statement := range []string{`PRAGMA busy_timeout = 10000`, `PRAGMA foreign_keys = ON`} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("configure state database: %w", err)
+		}
 	}
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil && !isSQLiteContention(err) {
 		db.Close()
@@ -134,7 +125,6 @@ func (a SQLiteCellStateAdapter) initialize(ctx context.Context, db *sql.DB) erro
 	if version > stateSchemaVersion {
 		return fmt.Errorf("state schema version %d is newer than supported version %d", version, stateSchemaVersion)
 	}
-
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("open initialization connection: %w", err)
@@ -153,34 +143,22 @@ func (a SQLiteCellStateAdapter) initialize(ctx context.Context, db *sql.DB) erro
 	if err != nil {
 		return err
 	}
-	if version == stateSchemaVersion {
-		if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-			return fmt.Errorf("commit state initialization: %w", err)
+	switch version {
+	case stateSchemaVersion:
+	case 0:
+		if err := createSchema(ctx, conn); err != nil {
+			return err
 		}
-		committed = true
-		return nil
-	}
-
-	statements := []string{
-		`CREATE TABLE IF NOT EXISTS cells (
-			id TEXT PRIMARY KEY,
-			issue TEXT NOT NULL,
-			name TEXT NOT NULL,
-			position INTEGER NOT NULL,
-			data BLOB NOT NULL
-		)`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS cells_issue_unique ON cells(issue) WHERE issue <> ''`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS cells_name_unique ON cells(name) WHERE name <> ''`,
-	}
-	for _, statement := range statements {
-		if _, err := conn.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("initialize state schema: %w", err)
+	case 1:
+		if err := migrateVersion1(ctx, conn); err != nil {
+			return err
 		}
+	default:
+		return fmt.Errorf("state schema version %d cannot be migrated", version)
 	}
-	if _, err := conn.ExecContext(ctx, `PRAGMA user_version = 1`); err != nil {
+	if _, err := conn.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
 		return fmt.Errorf("record state schema version: %w", err)
 	}
-
 	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
 		return fmt.Errorf("commit state initialization: %w", err)
 	}
@@ -188,11 +166,11 @@ func (a SQLiteCellStateAdapter) initialize(ctx context.Context, db *sql.DB) erro
 	return nil
 }
 
-type stateQueryer interface {
+type schemaQueryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func schemaVersion(ctx context.Context, queryer stateQueryer) (int, error) {
+func schemaVersion(ctx context.Context, queryer schemaQueryer) (int, error) {
 	var version int
 	if err := queryer.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return 0, fmt.Errorf("read state schema version: %w", err)
@@ -200,35 +178,340 @@ func schemaVersion(ctx context.Context, queryer stateQueryer) (int, error) {
 	return version, nil
 }
 
-type rowScanner interface {
-	Scan(dest ...any) error
+type stateExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
-func decodeCells(rows interface {
-	Next() bool
-	rowScanner
-	Err() error
-}) ([]domain.Cell, error) {
+func createSchema(ctx context.Context, execer stateExecer) error {
+	statements := []string{
+		`CREATE TABLE cells (
+			id TEXT PRIMARY KEY, issue TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL UNIQUE,
+			note TEXT NOT NULL, template TEXT NOT NULL, base TEXT NOT NULL, branch TEXT NOT NULL,
+			branch_mode TEXT NOT NULL, source_path TEXT NOT NULL, container_network TEXT NOT NULL,
+			session_name TEXT NOT NULL, creation_status TEXT NOT NULL, creation_command TEXT NOT NULL,
+			creation_failed_stage TEXT NOT NULL, creation_last_error TEXT NOT NULL,
+			creation_attempt_id TEXT NOT NULL, creation_lease_started_at TEXT,
+			creation_lease_heartbeat_at TEXT, status TEXT NOT NULL, done INTEGER NOT NULL
+		)`,
+		`CREATE UNIQUE INDEX cells_issue_unique ON cells(issue) WHERE issue <> ''`,
+		`CREATE UNIQUE INDEX cells_name_unique ON cells(name) WHERE name <> ''`,
+		`CREATE TABLE cell_services (
+			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, role TEXT NOT NULL,
+			container_name TEXT NOT NULL, source_container TEXT NOT NULL, volume_mode TEXT NOT NULL,
+			database_present INTEGER NOT NULL, database_mode TEXT NOT NULL, database_system TEXT NOT NULL,
+			database_copy_mode TEXT NOT NULL, PRIMARY KEY (cell_id, role)
+		)`,
+		`CREATE TABLE cell_service_init_files (
+			cell_id TEXT NOT NULL, role TEXT NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL,
+			PRIMARY KEY (cell_id, role, position),
+			FOREIGN KEY (cell_id, role) REFERENCES cell_services(cell_id, role) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE cell_session_windows (
+			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
+			name TEXT NOT NULL, command TEXT NOT NULL, PRIMARY KEY (cell_id, position)
+		)`,
+		`CREATE TABLE cell_creation_stages (
+			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
+			stage TEXT NOT NULL, PRIMARY KEY (cell_id, position)
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := execer.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("initialize state schema: %w", err)
+		}
+	}
+	return nil
+}
+
+type legacyCell struct {
+	ID         string            `json:"id"`
+	Issue      string            `json:"issue"`
+	Name       string            `json:"name"`
+	Note       string            `json:"note,omitempty"`
+	Template   string            `json:"template"`
+	Base       string            `json:"base"`
+	Branch     string            `json:"branch"`
+	BranchMode string            `json:"branchMode,omitempty"`
+	Source     domain.Source     `json:"source"`
+	Containers domain.Containers `json:"containers"`
+	Session    domain.Session    `json:"session"`
+	Creation   legacyCreation    `json:"creation,omitempty"`
+	Status     domain.CellStatus `json:"status"`
+	Done       bool              `json:"done"`
+}
+
+type legacyCreation struct {
+	Status           domain.CreationStatus  `json:"status"`
+	Command          string                 `json:"command,omitempty"`
+	CompletedStages  []domain.CreationStage `json:"completedStages,omitempty"`
+	FailedStage      domain.CreationStage   `json:"failedStage,omitempty"`
+	LastError        string                 `json:"lastError,omitempty"`
+	AttemptID        string                 `json:"attemptId,omitempty"`
+	LeaseStartedAt   *time.Time             `json:"leaseStartedAt,omitempty"`
+	LeaseHeartbeatAt *time.Time             `json:"leaseHeartbeatAt,omitempty"`
+}
+
+func migrateVersion1(ctx context.Context, conn *sql.Conn) error {
+	rows, err := conn.QueryContext(ctx, `SELECT data FROM cells ORDER BY position`)
+	if err != nil {
+		return fmt.Errorf("query version 1 cells: %w", err)
+	}
 	cells := []domain.Cell{}
 	for rows.Next() {
 		var data []byte
 		if err := rows.Scan(&data); err != nil {
-			return nil, fmt.Errorf("scan cell: %w", err)
+			rows.Close()
+			return fmt.Errorf("scan version 1 cell: %w", err)
 		}
-		var cell domain.Cell
-		if err := json.Unmarshal(data, &cell); err != nil {
-			return nil, fmt.Errorf("decode cell: %w", err)
+		var stored legacyCell
+		if err := json.Unmarshal(data, &stored); err != nil {
+			rows.Close()
+			return fmt.Errorf("decode version 1 cell: %w", err)
+		}
+		cell, err := stored.restore()
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("restore version 1 cell %q: %w", stored.ID, err)
 		}
 		cells = append(cells, cell)
 	}
 	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate version 1 cells: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close version 1 cells: %w", err)
+	}
+	for _, statement := range []string{
+		`DROP INDEX cells_issue_unique`,
+		`DROP INDEX cells_name_unique`,
+		`ALTER TABLE cells RENAME TO cells_version_1`,
+	} {
+		if _, err := conn.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("prepare version 1 migration: %w", err)
+		}
+	}
+	if err := createSchema(ctx, conn); err != nil {
+		return err
+	}
+	if err := replaceCells(ctx, conn, cells); err != nil {
+		return fmt.Errorf("migrate version 1 cells: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, `DROP TABLE cells_version_1`); err != nil {
+		return fmt.Errorf("remove version 1 cells: %w", err)
+	}
+	return nil
+}
+
+func (stored legacyCell) restore() (domain.Cell, error) {
+	cell := domain.Cell{
+		ID: stored.ID, Issue: stored.Issue, Name: stored.Name, Note: stored.Note,
+		Template: stored.Template, Base: stored.Base, Branch: stored.Branch,
+		BranchMode: stored.BranchMode, Source: stored.Source, Containers: stored.Containers,
+		Session: stored.Session,
+		Creation: domain.CellCreation{
+			Status: stored.Creation.Status, Command: stored.Creation.Command,
+			CompletedStages: stored.Creation.CompletedStages, FailedStage: stored.Creation.FailedStage,
+			LastError: stored.Creation.LastError, AttemptID: stored.Creation.AttemptID,
+			LeaseStartedAt: stored.Creation.LeaseStartedAt, LeaseHeartbeatAt: stored.Creation.LeaseHeartbeatAt,
+		},
+	}
+	status := stored.Status
+	if status == "" {
+		status = domain.Ready
+	}
+	if err := cell.SetStatus(status); err != nil {
+		return domain.Cell{}, err
+	}
+	if stored.Done {
+		if err := cell.MarkDone(); err != nil {
+			return domain.Cell{}, err
+		}
+	}
+	return cell, nil
+}
+
+type stateQueryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func loadCells(ctx context.Context, queryer stateQueryer) ([]domain.Cell, error) {
+	rows, err := queryer.QueryContext(ctx, `SELECT
+		id, issue, name, note, template, base, branch, branch_mode, source_path,
+		container_network, session_name, creation_status, creation_command,
+		creation_failed_stage, creation_last_error, creation_attempt_id,
+		creation_lease_started_at, creation_lease_heartbeat_at, status, done
+		FROM cells ORDER BY position`)
+	if err != nil {
+		return nil, fmt.Errorf("query cells: %w", err)
+	}
+	cells := []domain.Cell{}
+	for rows.Next() {
+		var cell domain.Cell
+		var creationStatus, failedStage, status string
+		var started, heartbeat sql.NullString
+		var done int
+		if err := rows.Scan(
+			&cell.ID, &cell.Issue, &cell.Name, &cell.Note, &cell.Template, &cell.Base,
+			&cell.Branch, &cell.BranchMode, &cell.Source.Path, &cell.Containers.Network,
+			&cell.Session.Name, &creationStatus, &cell.Creation.Command, &failedStage,
+			&cell.Creation.LastError, &cell.Creation.AttemptID, &started, &heartbeat,
+			&status, &done,
+		); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan cell: %w", err)
+		}
+		cell.Creation.Status = domain.CreationStatus(creationStatus)
+		cell.Creation.FailedStage = domain.CreationStage(failedStage)
+		cell.Creation.LeaseStartedAt, err = parseTime(started)
+		if err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("decode cell %q lease start: %w", cell.ID, err)
+		}
+		cell.Creation.LeaseHeartbeatAt, err = parseTime(heartbeat)
+		if err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("decode cell %q lease heartbeat: %w", cell.ID, err)
+		}
+		if err := cell.SetStatus(domain.CellStatus(status)); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("decode cell %q status: %w", cell.ID, err)
+		}
+		if done != 0 {
+			if err := cell.MarkDone(); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("decode cell %q done: %w", cell.ID, err)
+			}
+		}
+		cells = append(cells, cell)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
 		return nil, fmt.Errorf("iterate cells: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close cells: %w", err)
+	}
+	for index := range cells {
+		if err := loadCollections(ctx, queryer, &cells[index]); err != nil {
+			return nil, err
+		}
 	}
 	return cells, nil
 }
 
-type stateExecer interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
+func parseTime(value sql.NullString) (*time.Time, error) {
+	if !value.Valid {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value.String)
+	if err != nil {
+		return nil, err
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
+}
+
+func loadCollections(ctx context.Context, queryer stateQueryer, cell *domain.Cell) error {
+	serviceRows, err := queryer.QueryContext(ctx, `SELECT role, container_name, source_container,
+		volume_mode, database_present, database_mode, database_system, database_copy_mode
+		FROM cell_services WHERE cell_id = ? ORDER BY role`, cell.ID)
+	if err != nil {
+		return fmt.Errorf("query cell %q services: %w", cell.ID, err)
+	}
+	for serviceRows.Next() {
+		var role string
+		var service domain.CellContainer
+		var database domain.DatabaseConfig
+		var databasePresent int
+		if err := serviceRows.Scan(&role, &service.ContainerName, &service.SourceContainer,
+			&service.VolumeMode, &databasePresent, &database.Mode, &database.System,
+			&database.CopyMode); err != nil {
+			serviceRows.Close()
+			return fmt.Errorf("scan cell %q service: %w", cell.ID, err)
+		}
+		if cell.Containers.Services == nil {
+			cell.Containers.Services = map[string]domain.CellContainer{}
+		}
+		if databasePresent != 0 {
+			service.Database = &database
+		}
+		cell.Containers.Services[role] = service
+	}
+	if err := serviceRows.Err(); err != nil {
+		serviceRows.Close()
+		return fmt.Errorf("iterate cell %q services: %w", cell.ID, err)
+	}
+	if err := serviceRows.Close(); err != nil {
+		return fmt.Errorf("close cell %q services: %w", cell.ID, err)
+	}
+	for role, service := range cell.Containers.Services {
+		if service.Database == nil {
+			continue
+		}
+		fileRows, err := queryer.QueryContext(ctx, `SELECT path FROM cell_service_init_files
+			WHERE cell_id = ? AND role = ? ORDER BY position`, cell.ID, role)
+		if err != nil {
+			return fmt.Errorf("query cell %q service %q init files: %w", cell.ID, role, err)
+		}
+		for fileRows.Next() {
+			var path string
+			if err := fileRows.Scan(&path); err != nil {
+				fileRows.Close()
+				return fmt.Errorf("scan cell %q service %q init file: %w", cell.ID, role, err)
+			}
+			service.Database.InitFiles = append(service.Database.InitFiles, path)
+		}
+		if err := fileRows.Err(); err != nil {
+			fileRows.Close()
+			return fmt.Errorf("iterate cell %q service %q init files: %w", cell.ID, role, err)
+		}
+		if err := fileRows.Close(); err != nil {
+			return fmt.Errorf("close cell %q service %q init files: %w", cell.ID, role, err)
+		}
+		cell.Containers.Services[role] = service
+	}
+	windowRows, err := queryer.QueryContext(ctx, `SELECT name, command FROM cell_session_windows
+		WHERE cell_id = ? ORDER BY position`, cell.ID)
+	if err != nil {
+		return fmt.Errorf("query cell %q session windows: %w", cell.ID, err)
+	}
+	for windowRows.Next() {
+		var window domain.SessionWindow
+		if err := windowRows.Scan(&window.Name, &window.Command); err != nil {
+			windowRows.Close()
+			return fmt.Errorf("scan cell %q session window: %w", cell.ID, err)
+		}
+		cell.Session.Windows = append(cell.Session.Windows, window)
+	}
+	if err := windowRows.Err(); err != nil {
+		windowRows.Close()
+		return fmt.Errorf("iterate cell %q session windows: %w", cell.ID, err)
+	}
+	if err := windowRows.Close(); err != nil {
+		return fmt.Errorf("close cell %q session windows: %w", cell.ID, err)
+	}
+	stageRows, err := queryer.QueryContext(ctx, `SELECT stage FROM cell_creation_stages
+		WHERE cell_id = ? ORDER BY position`, cell.ID)
+	if err != nil {
+		return fmt.Errorf("query cell %q creation stages: %w", cell.ID, err)
+	}
+	for stageRows.Next() {
+		var stage string
+		if err := stageRows.Scan(&stage); err != nil {
+			stageRows.Close()
+			return fmt.Errorf("scan cell %q creation stage: %w", cell.ID, err)
+		}
+		cell.Creation.CompletedStages = append(cell.Creation.CompletedStages, domain.CreationStage(stage))
+	}
+	if err := stageRows.Err(); err != nil {
+		stageRows.Close()
+		return fmt.Errorf("iterate cell %q creation stages: %w", cell.ID, err)
+	}
+	if err := stageRows.Close(); err != nil {
+		return fmt.Errorf("close cell %q creation stages: %w", cell.ID, err)
+	}
+	return nil
 }
 
 func replaceCells(ctx context.Context, execer stateExecer, cells []domain.Cell) error {
@@ -236,16 +519,70 @@ func replaceCells(ctx context.Context, execer stateExecer, cells []domain.Cell) 
 		return fmt.Errorf("clear cells: %w", err)
 	}
 	for position, cell := range cells {
-		data, err := json.Marshal(cell)
-		if err != nil {
-			return fmt.Errorf("encode cell %q: %w", cell.ID, err)
-		}
-		if _, err := execer.ExecContext(ctx,
-			`INSERT INTO cells(id, issue, name, position, data) VALUES (?, ?, ?, ?, ?)`,
-			cell.ID, cell.Issue, cell.Name, position, data,
-		); err != nil {
-			return fmt.Errorf("insert cell %q: %w", cell.ID, err)
+		if err := insertCell(ctx, execer, position, cell); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func insertCell(ctx context.Context, execer stateExecer, position int, cell domain.Cell) error {
+	if _, err := execer.ExecContext(ctx, `INSERT INTO cells (
+		id, issue, name, position, note, template, base, branch, branch_mode, source_path,
+		container_network, session_name, creation_status, creation_command,
+		creation_failed_stage, creation_last_error, creation_attempt_id,
+		creation_lease_started_at, creation_lease_heartbeat_at, status, done
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		cell.ID, cell.Issue, cell.Name, position, cell.Note, cell.Template, cell.Base,
+		cell.Branch, cell.BranchMode, cell.Source.Path, cell.Containers.Network,
+		cell.Session.Name, cell.Creation.Status, cell.Creation.Command,
+		cell.Creation.FailedStage, cell.Creation.LastError, cell.Creation.AttemptID,
+		storedTime(cell.Creation.LeaseStartedAt), storedTime(cell.Creation.LeaseHeartbeatAt),
+		cell.Status(), cell.IsDone(),
+	); err != nil {
+		return fmt.Errorf("insert cell %q: %w", cell.ID, err)
+	}
+	for role, service := range cell.Containers.Services {
+		var database domain.DatabaseConfig
+		if service.Database != nil {
+			database = *service.Database
+		}
+		if _, err := execer.ExecContext(ctx, `INSERT INTO cell_services (
+			cell_id, role, container_name, source_container, volume_mode, database_present,
+			database_mode, database_system, database_copy_mode
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, cell.ID, role, service.ContainerName,
+			service.SourceContainer, service.VolumeMode, service.Database != nil,
+			database.Mode, database.System, database.CopyMode,
+		); err != nil {
+			return fmt.Errorf("insert cell %q service %q: %w", cell.ID, role, err)
+		}
+		for filePosition, path := range database.InitFiles {
+			if _, err := execer.ExecContext(ctx, `INSERT INTO cell_service_init_files
+				(cell_id, role, position, path) VALUES (?, ?, ?, ?)`,
+				cell.ID, role, filePosition, path); err != nil {
+				return fmt.Errorf("insert cell %q service %q init file: %w", cell.ID, role, err)
+			}
+		}
+	}
+	for windowPosition, window := range cell.Session.Windows {
+		if _, err := execer.ExecContext(ctx, `INSERT INTO cell_session_windows
+			(cell_id, position, name, command) VALUES (?, ?, ?, ?)`,
+			cell.ID, windowPosition, window.Name, window.Command); err != nil {
+			return fmt.Errorf("insert cell %q session window: %w", cell.ID, err)
+		}
+	}
+	for stagePosition, stage := range cell.Creation.CompletedStages {
+		if _, err := execer.ExecContext(ctx, `INSERT INTO cell_creation_stages
+			(cell_id, position, stage) VALUES (?, ?, ?)`, cell.ID, stagePosition, stage); err != nil {
+			return fmt.Errorf("insert cell %q creation stage: %w", cell.ID, err)
+		}
+	}
+	return nil
+}
+
+func storedTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }

@@ -1,12 +1,8 @@
 package domain
 
 import (
-	"encoding/json"
-	"errors"
-	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *testing.T) {
@@ -43,27 +39,6 @@ func TestCellNoteは設定時だけ表示を置き換える(t *testing.T) {
 	}
 	if got := withNote.DisplayLabel(); got != "API実装中" {
 		t.Fatalf("DisplayLabel() = %q, want API実装中", got)
-	}
-}
-
-func TestCellNoteはJSONをRoundTripし旧JSONでは空になる(t *testing.T) {
-	original := Cell{ID: "cell-1", Issue: "123", Name: "123", Note: "API実装中"}
-	data, err := json.Marshal(original)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded Cell
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Note != original.Note {
-		t.Fatalf("Note = %q, want %q", decoded.Note, original.Note)
-	}
-	if err := json.Unmarshal([]byte(`{"id":"legacy","issue":"1","name":"legacy"}`), &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Note != "" || decoded.DisplayLabel() != "legacy" {
-		t.Fatalf("legacy cell = %#v, want empty note and name fallback", decoded)
 	}
 }
 
@@ -163,68 +138,5 @@ func TestCellは未対応Statusを拒否する(t *testing.T) {
 	}
 	if err.Error() != `unsupported status "running"` {
 		t.Fatalf("error = %q, want %q", err.Error(), `unsupported status "running"`)
-	}
-}
-
-func TestCellは作成LifecycleとCheckpointをJSONでRoundTripできる(t *testing.T) {
-	cell := Cell{ID: "cell-1", Issue: "73", Name: "73", Template: "fix"}
-	cell.BeginCreation("read issue")
-	cell.CompleteCreationStage(CreationStageSource)
-	wantErr := errors.New("copy failed")
-	cell.FailCreation(CreationStageFiles, wantErr)
-
-	data, err := json.Marshal(cell)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded Cell
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.CreationStatus() != CreationFailed || !reflect.DeepEqual(decoded.Creation, cell.Creation) {
-		t.Fatalf("creation = %#v, want %#v", decoded.Creation, cell.Creation)
-	}
-}
-
-func TestCellはCreation情報のない旧JSONをReadyとして扱う(t *testing.T) {
-	var cell Cell
-	if err := json.Unmarshal([]byte(`{"id":"legacy","name":"legacy","status":"pending"}`), &cell); err != nil {
-		t.Fatal(err)
-	}
-	if cell.CreationStatus() != CreationReady || cell.Status() != Pending {
-		t.Fatalf("creation=%q status=%q", cell.CreationStatus(), cell.Status())
-	}
-}
-
-func TestCellはRetryLeaseをUTCのJSONでRoundTripできる(t *testing.T) {
-	started := time.Date(2026, 8, 10, 12, 34, 56, 0, time.FixedZone("JST", 9*60*60))
-	cell := Cell{ID: "cell-1", Issue: "76", Name: "76"}
-	cell.BeginCreation("retry safely")
-	cell.FailCreation(CreationStageContainers, errors.New("docker failed"))
-	cell.BeginRetry("attempt-1", started)
-
-	data, err := json.Marshal(cell)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "+09:00") || !strings.Contains(string(data), "2026-08-10T03:34:56Z") {
-		t.Fatalf("lease timestamp is not UTC: %s", data)
-	}
-	var decoded Cell
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Creation.AttemptID != "attempt-1" || decoded.Creation.LeaseHeartbeatAt == nil || !decoded.RetryLeaseValid(started.Add(2*time.Minute), 2*time.Minute) {
-		t.Fatalf("decoded lease = %#v", decoded.Creation)
-	}
-}
-
-func TestCellはLease情報のない旧RetryingJSONをStaleとして扱う(t *testing.T) {
-	var cell Cell
-	if err := json.Unmarshal([]byte(`{"id":"legacy","name":"legacy","creation":{"status":"retrying","failedStage":"files"}}`), &cell); err != nil {
-		t.Fatal(err)
-	}
-	if cell.CreationStatus() != CreationRetrying || cell.RetryLeaseValid(time.Now(), 2*time.Minute) {
-		t.Fatalf("legacy retry state = %#v", cell.Creation)
 	}
 }

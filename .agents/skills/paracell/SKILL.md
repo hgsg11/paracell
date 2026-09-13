@@ -21,7 +21,7 @@ Do not auto-trigger solely because the request contains `paracell`, asks for an 
 ## Inspect the Project
 
 1. Confirm the CLI with `command -v paracell` and `paracell version`.
-2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested.
+2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested. `paracell init` creates `paracell.yaml` and initializes or migrates `.paracell/state.db`.
 3. Read the complete root `paracell.yaml` and run `paracell ls` before selecting a template or creating, changing, or cleaning a cell.
 4. Read [references/configuration.md](references/configuration.md) before interpreting template compatibility or changing configuration.
 5. Inspect only the repository context needed to settle requirements and selection criteria. Treat repository instructions and the checked-out source as authoritative over an older installed binary.
