@@ -138,10 +138,10 @@ func createSchema(ctx context.Context, execer stateExecer) error {
 			database_present INTEGER NOT NULL, database_mode TEXT NOT NULL, database_system TEXT NOT NULL,
 			database_copy_mode TEXT NOT NULL, PRIMARY KEY (cell_id, role)
 		)`,
-		`CREATE TABLE IF NOT EXISTS cell_service_init_files (
-			cell_id TEXT NOT NULL, role TEXT NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL,
-			PRIMARY KEY (cell_id, role, position),
-			FOREIGN KEY (cell_id, role) REFERENCES cell_services(cell_id, role) ON DELETE CASCADE
+		`CREATE TABLE IF NOT EXISTS cell_sources (
+			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
+			template_path TEXT NOT NULL, path TEXT NOT NULL, base TEXT NOT NULL, branch TEXT NOT NULL,
+			PRIMARY KEY (cell_id, position)
 		)`,
 		`CREATE TABLE IF NOT EXISTS cell_session_windows (
 			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
@@ -177,12 +177,13 @@ func loadCells(ctx context.Context, queryer stateQueryer) ([]domain.Cell, error)
 	cells := []domain.Cell{}
 	for rows.Next() {
 		var cell domain.Cell
+		var legacyBase, legacyBranch, legacyBranchMode, legacySourcePath string
 		var creationStatus, failedStage, status string
 		var started, heartbeat sql.NullString
 		var done int
 		if err := rows.Scan(
-			&cell.ID, &cell.Issue, &cell.Name, &cell.Note, &cell.Template, &cell.Base,
-			&cell.Branch, &cell.BranchMode, &cell.Source.Path, &cell.Containers.Network,
+			&cell.ID, &cell.Issue, &cell.Name, &cell.Note, &cell.Template, &legacyBase,
+			&legacyBranch, &legacyBranchMode, &legacySourcePath, &cell.Containers.Network,
 			&cell.Session.Name, &creationStatus, &cell.Creation.Command, &failedStage,
 			&cell.Creation.LastError, &cell.Creation.AttemptID, &started, &heartbeat,
 			&status, &done,
@@ -190,6 +191,10 @@ func loadCells(ctx context.Context, queryer stateQueryer) ([]domain.Cell, error)
 			rows.Close()
 			return nil, fmt.Errorf("scan cell: %w", err)
 		}
+		_ = legacyBase
+		_ = legacyBranch
+		_ = legacyBranchMode
+		_ = legacySourcePath
 		cell.Creation.Status = domain.CreationStatus(creationStatus)
 		cell.Creation.FailedStage = domain.CreationStage(failedStage)
 		cell.Creation.LeaseStartedAt, err = parseTime(started)
@@ -242,6 +247,26 @@ func parseTime(value sql.NullString) (*time.Time, error) {
 }
 
 func loadCollections(ctx context.Context, queryer stateQueryer, cell *domain.Cell) error {
+	sourceRows, err := queryer.QueryContext(ctx, `SELECT template_path, path, base, branch
+		FROM cell_sources WHERE cell_id = ? ORDER BY position`, cell.ID)
+	if err != nil {
+		return fmt.Errorf("query cell %q sources: %w", cell.ID, err)
+	}
+	var sources []domain.Source
+	for sourceRows.Next() {
+		var source domain.Source
+		if err := sourceRows.Scan(&source.TemplatePath, &source.Path, &source.Base, &source.Branch); err != nil {
+			sourceRows.Close()
+			return fmt.Errorf("scan cell %q source: %w", cell.ID, err)
+		}
+		sources = append(sources, source)
+	}
+	if err := sourceRows.Close(); err != nil {
+		return fmt.Errorf("close cell %q sources: %w", cell.ID, err)
+	}
+	if len(sources) != 0 {
+		cell.Sources = sources
+	}
 	serviceRows, err := queryer.QueryContext(ctx, `SELECT role, container_name, source_container,
 		volume_mode, database_present, database_mode, database_system, database_copy_mode
 		FROM cell_services WHERE cell_id = ? ORDER BY role`, cell.ID)
@@ -251,19 +276,24 @@ func loadCollections(ctx context.Context, queryer stateQueryer, cell *domain.Cel
 	for serviceRows.Next() {
 		var role string
 		var service domain.CellContainer
-		var database domain.DatabaseConfig
+		var mode string
 		var databasePresent int
+		var ignoredMode, ignoredSystem, ignoredCopyMode string
 		if err := serviceRows.Scan(&role, &service.ContainerName, &service.SourceContainer,
-			&service.VolumeMode, &databasePresent, &database.Mode, &database.System,
-			&database.CopyMode); err != nil {
+			&mode, &databasePresent, &ignoredMode, &ignoredSystem, &ignoredCopyMode); err != nil {
 			serviceRows.Close()
 			return fmt.Errorf("scan cell %q service: %w", cell.ID, err)
 		}
 		if cell.Containers.Services == nil {
 			cell.Containers.Services = map[string]domain.CellContainer{}
 		}
-		if databasePresent != 0 {
-			service.Database = &database
+		_ = databasePresent
+		_ = ignoredMode
+		_ = ignoredSystem
+		_ = ignoredCopyMode
+		service.Mode, err = domain.NewMode(mode)
+		if err != nil {
+			service.Mode, _ = domain.NewMode(string(domain.Target))
 		}
 		cell.Containers.Services[role] = service
 	}
@@ -273,32 +303,6 @@ func loadCollections(ctx context.Context, queryer stateQueryer, cell *domain.Cel
 	}
 	if err := serviceRows.Close(); err != nil {
 		return fmt.Errorf("close cell %q services: %w", cell.ID, err)
-	}
-	for role, service := range cell.Containers.Services {
-		if service.Database == nil {
-			continue
-		}
-		fileRows, err := queryer.QueryContext(ctx, `SELECT path FROM cell_service_init_files
-			WHERE cell_id = ? AND role = ? ORDER BY position`, cell.ID, role)
-		if err != nil {
-			return fmt.Errorf("query cell %q service %q init files: %w", cell.ID, role, err)
-		}
-		for fileRows.Next() {
-			var path string
-			if err := fileRows.Scan(&path); err != nil {
-				fileRows.Close()
-				return fmt.Errorf("scan cell %q service %q init file: %w", cell.ID, role, err)
-			}
-			service.Database.InitFiles = append(service.Database.InitFiles, path)
-		}
-		if err := fileRows.Err(); err != nil {
-			fileRows.Close()
-			return fmt.Errorf("iterate cell %q service %q init files: %w", cell.ID, role, err)
-		}
-		if err := fileRows.Close(); err != nil {
-			return fmt.Errorf("close cell %q service %q init files: %w", cell.ID, role, err)
-		}
-		cell.Containers.Services[role] = service
 	}
 	windowRows, err := queryer.QueryContext(ctx, `SELECT name, command FROM cell_session_windows
 		WHERE cell_id = ? ORDER BY position`, cell.ID)
@@ -356,14 +360,18 @@ func replaceCells(ctx context.Context, execer stateExecer, cells []domain.Cell) 
 }
 
 func insertCell(ctx context.Context, execer stateExecer, position int, cell domain.Cell) error {
+	var primary domain.Source
+	if len(cell.Sources) != 0 {
+		primary = cell.Sources[0]
+	}
 	if _, err := execer.ExecContext(ctx, `INSERT INTO cells (
 		id, issue, name, position, note, template, base, branch, branch_mode, source_path,
 		container_network, session_name, creation_status, creation_command,
 		creation_failed_stage, creation_last_error, creation_attempt_id,
 		creation_lease_started_at, creation_lease_heartbeat_at, status, done
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		cell.ID, cell.Issue, cell.Name, position, cell.Note, cell.Template, cell.Base,
-		cell.Branch, cell.BranchMode, cell.Source.Path, cell.Containers.Network,
+		cell.ID, cell.Issue, cell.Name, position, cell.Note, cell.Template, primary.Base,
+		primary.Branch, "", primary.Path, cell.Containers.Network,
 		cell.Session.Name, cell.Creation.Status, cell.Creation.Command,
 		cell.Creation.FailedStage, cell.Creation.LastError, cell.Creation.AttemptID,
 		storedTime(cell.Creation.LeaseStartedAt), storedTime(cell.Creation.LeaseHeartbeatAt),
@@ -371,26 +379,21 @@ func insertCell(ctx context.Context, execer stateExecer, position int, cell doma
 	); err != nil {
 		return fmt.Errorf("insert cell %q: %w", cell.ID, err)
 	}
-	for role, service := range cell.Containers.Services {
-		var database domain.DatabaseConfig
-		if service.Database != nil {
-			database = *service.Database
+	for sourcePosition, source := range cell.Sources {
+		if _, err := execer.ExecContext(ctx, `INSERT INTO cell_sources
+			(cell_id, position, template_path, path, base, branch) VALUES (?, ?, ?, ?, ?, ?)`,
+			cell.ID, sourcePosition, source.TemplatePath, source.Path, source.Base, source.Branch); err != nil {
+			return fmt.Errorf("insert cell %q source: %w", cell.ID, err)
 		}
+	}
+	for role, service := range cell.Containers.Services {
 		if _, err := execer.ExecContext(ctx, `INSERT INTO cell_services (
 			cell_id, role, container_name, source_container, volume_mode, database_present,
 			database_mode, database_system, database_copy_mode
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, cell.ID, role, service.ContainerName,
-			service.SourceContainer, service.VolumeMode, service.Database != nil,
-			database.Mode, database.System, database.CopyMode,
+			service.SourceContainer, string(service.Mode), false, "", "", "",
 		); err != nil {
 			return fmt.Errorf("insert cell %q service %q: %w", cell.ID, role, err)
-		}
-		for filePosition, path := range database.InitFiles {
-			if _, err := execer.ExecContext(ctx, `INSERT INTO cell_service_init_files
-				(cell_id, role, position, path) VALUES (?, ?, ?, ?)`,
-				cell.ID, role, filePosition, path); err != nil {
-				return fmt.Errorf("insert cell %q service %q init file: %w", cell.ID, role, err)
-			}
 		}
 	}
 	for windowPosition, window := range cell.Session.Windows {

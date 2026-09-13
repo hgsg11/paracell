@@ -20,7 +20,7 @@ func (u EnterCellUseCase) Execute(ctx context.Context, input EnterCellInput) (do
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	session, err := u.SessionFactory.Session(cfg.Providers)
+	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
 	if err != nil {
 		return domain.Cell{}, err
 	}

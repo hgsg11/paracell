@@ -19,35 +19,45 @@ type GitSourceAdapter struct {
 }
 
 func (a GitSourceAdapter) CreateSource(ctx context.Context, cell domain.Cell) (usecase.SourceCreation, error) {
-	if cell.BranchMode == domain.RepositoryBranchModeRequire {
-		return usecase.SourceCreation{}, a.Runner.Run(ctx, "git", "worktree", "add", cell.Source.Path, cell.Branch)
-	}
-	branchExisted, err := a.branchExists(ctx, cell.Branch)
-	if err != nil {
-		return usecase.SourceCreation{}, err
-	}
-	if cell.BranchMode == domain.RepositoryBranchModeReuse && branchExisted {
-		return usecase.SourceCreation{}, a.Runner.Run(ctx, "git", "worktree", "add", cell.Source.Path, cell.Branch)
-	}
-	args := []string{"worktree", "add", cell.Source.Path, "-b", cell.Branch}
-	if cell.Base != "" && cell.Base != "current" {
-		args = append(args, cell.Base)
-	}
-	if err := a.Runner.Run(ctx, "git", args...); err != nil {
-		creation := usecase.SourceCreation{}
-		if !branchExisted {
-			existsAfterFailure, checkErr := a.branchExists(context.WithoutCancel(ctx), cell.Branch)
-			if checkErr == nil {
-				creation.BranchCreated = existsAfterFailure
-			}
+	created := false
+	for _, source := range cell.Sources {
+		existed, err := a.branchExists(ctx, source)
+		if err != nil {
+			return usecase.SourceCreation{BranchCreated: created}, err
 		}
-		return creation, err
+		args := append(a.gitArgs(source), "worktree", "add", a.worktreePath(source), "-b", source.Branch)
+		if source.Base != "" && source.Base != "current" {
+			args = append(args, source.Base)
+		}
+		if err := a.Runner.Run(ctx, "git", args...); err != nil {
+			return usecase.SourceCreation{BranchCreated: created || !existed}, err
+		}
+		created = created || !existed
 	}
-	return usecase.SourceCreation{BranchCreated: !branchExisted}, nil
+	return usecase.SourceCreation{BranchCreated: created}, nil
 }
 
-func (a GitSourceAdapter) branchExists(ctx context.Context, branch string) (bool, error) {
-	err := a.Runner.Run(ctx, "git", "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+func (a GitSourceAdapter) worktreePath(source domain.Source) string {
+	if filepath.IsAbs(source.Path) || a.Root == "" {
+		return source.Path
+	}
+	return filepath.Join(a.Root, source.Path)
+}
+
+func (a GitSourceAdapter) gitArgs(source domain.Source) []string {
+	repository := source.TemplatePath
+	if repository == "" {
+		repository = "."
+	}
+	if !filepath.IsAbs(repository) && a.Root != "" {
+		repository = filepath.Join(a.Root, repository)
+	}
+	return []string{"-C", repository}
+}
+
+func (a GitSourceAdapter) branchExists(ctx context.Context, source domain.Source) (bool, error) {
+	args := append(a.gitArgs(source), "show-ref", "--verify", "--quiet", "refs/heads/"+source.Branch)
+	err := a.Runner.Run(ctx, "git", args...)
 	if err == nil {
 		return true, nil
 	}
@@ -55,62 +65,57 @@ func (a GitSourceAdapter) branchExists(ctx context.Context, branch string) (bool
 	if errors.As(err, &exitCoder) && exitCoder.ExitCode() == 1 {
 		return false, nil
 	}
-	return false, fmt.Errorf("check git branch %q: %w", branch, err)
+	return false, fmt.Errorf("check git branch %q: %w", source.Branch, err)
 }
 
 func (a GitSourceAdapter) ResumeSource(ctx context.Context, cell domain.Cell) error {
-	path := cell.Source.Path
-	if !filepath.IsAbs(path) && a.Root != "" {
-		path = filepath.Join(a.Root, path)
-	}
-	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
-		branch, branchErr := a.Runner.Output(ctx, "git", "-C", cell.Source.Path, "branch", "--show-current")
-		if branchErr != nil {
-			return fmt.Errorf("inspect existing worktree %q: %w", cell.Source.Path, branchErr)
+	for _, source := range cell.Sources {
+		if err := a.resumeSource(ctx, source); err != nil {
+			return err
 		}
-		if strings.TrimSpace(branch) != cell.Branch {
-			return fmt.Errorf("worktree %q uses branch %q, want %q", cell.Source.Path, strings.TrimSpace(branch), cell.Branch)
+	}
+	return nil
+}
+
+func (a GitSourceAdapter) resumeSource(ctx context.Context, source domain.Source) error {
+	path := a.worktreePath(source)
+	if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+		branch, branchErr := a.Runner.Output(ctx, "git", "-C", path, "branch", "--show-current")
+		if branchErr != nil {
+			return fmt.Errorf("inspect existing worktree %q: %w", source.Path, branchErr)
+		}
+		if strings.TrimSpace(branch) != source.Branch {
+			return fmt.Errorf("worktree %q uses branch %q, want %q", source.Path, strings.TrimSpace(branch), source.Branch)
 		}
 		return nil
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect worktree %q: %w", cell.Source.Path, err)
+		return fmt.Errorf("inspect worktree %q: %w", source.Path, err)
 	}
-	if info, err := os.Stat(path); err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("worktree path %q exists and is not a directory", cell.Source.Path)
-		}
-		entries, readErr := os.ReadDir(path)
-		if readErr != nil {
-			return fmt.Errorf("inspect partial worktree %q: %w", cell.Source.Path, readErr)
-		}
-		if len(entries) != 0 {
-			return fmt.Errorf("refusing to replace non-empty partial worktree %q", cell.Source.Path)
-		}
-		if removeErr := os.Remove(path); removeErr != nil {
-			return fmt.Errorf("remove empty partial worktree %q: %w", cell.Source.Path, removeErr)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect partial worktree %q: %w", cell.Source.Path, err)
-	}
-
-	exists, err := a.branchExists(ctx, cell.Branch)
+	exists, err := a.branchExists(ctx, source)
 	if err != nil {
 		return err
 	}
 	if exists {
-		return a.Runner.Run(ctx, "git", "worktree", "add", cell.Source.Path, cell.Branch)
+		args := append(a.gitArgs(source), "worktree", "add", path, source.Branch)
+		return a.Runner.Run(ctx, "git", args...)
 	}
-	_, err = a.CreateSource(ctx, cell)
-	return err
+	args := append(a.gitArgs(source), "worktree", "add", path, "-b", source.Branch)
+	if source.Base != "" && source.Base != "current" {
+		args = append(args, source.Base)
+	}
+	return a.Runner.Run(ctx, "git", args...)
 }
 
 func (a GitSourceAdapter) CleanSource(ctx context.Context, cell domain.Cell) error {
-	err := a.Runner.Run(ctx, "git", "worktree", "remove", "--force", cell.Source.Path)
-	if err == nil {
-		return nil
+	var cleanErr error
+	for _, source := range cell.Sources {
+		args := append(a.gitArgs(source), "worktree", "remove", "--force", a.worktreePath(source))
+		if err := a.Runner.Run(ctx, "git", args...); err != nil {
+			if strings.Contains(strings.ToLower(err.Error()), "is not a working tree") {
+				err = fmt.Errorf("%w: %v", domain.ErrNotFound, err)
+			}
+			cleanErr = errors.Join(cleanErr, err)
+		}
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "is not a working tree") {
-		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
-	}
-	return err
+	return cleanErr
 }

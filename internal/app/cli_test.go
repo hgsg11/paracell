@@ -24,7 +24,7 @@ type prepareSessionFactory struct {
 	session *prepareSession
 }
 
-func (f prepareSessionFactory) Session(domain.ProviderConfig) (usecase.SessionPort, error) {
+func (f prepareSessionFactory) Session(domain.SessionDriverType) (usecase.SessionPort, error) {
 	return f.session, nil
 }
 
@@ -40,16 +40,24 @@ func (s *prepareSession) PrepareSession(_ context.Context, cell domain.Cell) err
 }
 func (*prepareSession) UpdateStatusLabel(context.Context, domain.Cell) error { return nil }
 func (*prepareSession) EnterSession(context.Context, domain.Cell) error      { return nil }
-func (*prepareSession) EnterRootSession(context.Context, domain.ProjectConfig) error {
+func (*prepareSession) EnterRootSession(context.Context, string) error {
 	return nil
 }
 func (*prepareSession) ExitSession(context.Context) error { return nil }
 
 type staticConfigPort struct {
-	config domain.Config
+	config domain.Templates
 }
 
-func (p staticConfigPort) Load(context.Context, *domain.TemplateVars) (domain.Config, error) {
+func testTemplates() domain.Templates {
+	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	sourceDriver, _ := domain.NewSourceDriverType("git")
+	notificationDriver, _ := domain.NewNotificationDriverType("")
+	templates, _ := domain.NewTemplates("myapp", nil, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	return templates
+}
+
+func (p staticConfigPort) Load(context.Context, *domain.TemplateVars) (domain.Templates, error) {
 	return p.config, nil
 }
 
@@ -58,7 +66,7 @@ func TestRunEnterCmdは復元設定後にSession環境を保持して切り替�
 	cell := domain.Cell{Name: "123", Session: domain.Session{Name: "paracell-myapp-123"}}
 	session := &prepareSession{}
 	cmd, err := runEnterCmd(context.Background(), staticConfigPort{
-		config: domain.Config{Providers: domain.ProviderConfig{Session: "tmux"}},
+		config: testTemplates(),
 	}, prepareSessionFactory{session: session}, cell)
 	if err != nil {
 		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
@@ -995,7 +1003,7 @@ templates: {}
 			t.Fatalf("interactive logging runner is not fully connected: %#v", commandRunner)
 		}
 		called = true
-		gotProject = loaded.Project.Name
+		gotProject = loaded.ProjectName
 		return nil
 	}
 	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
@@ -1046,8 +1054,8 @@ templates: {}
 		if err != nil {
 			return err
 		}
-		if loaded.Providers.Session != "tmux" {
-			t.Fatalf("session provider = %q, want tmux", loaded.Providers.Session)
+		if loaded.GetSessionDriverType() != domain.Tmux {
+			t.Fatalf("session provider = %q, want tmux", loaded.GetSessionDriverType())
 		}
 		_ = factory
 		called = true
@@ -1421,9 +1429,9 @@ templates: {}
 			ID:    "cell-1",
 			Issue: "123",
 			Name:  "123",
-			Source: domain.Source{
+			Sources: []domain.Source{{
 				Path: filepath.Join(dir, "missing-source"),
-			},
+			}},
 			Containers: domain.Containers{
 				Network: "paracell-myapp-123",
 				Services: map[string]domain.CellContainer{

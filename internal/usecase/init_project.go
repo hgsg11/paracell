@@ -6,68 +6,53 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-type InitConfig = domain.Config
-
 type InitProjectUseCase struct {
 	Config InitConfigPort
 	State  StateInitializer
 }
 
-func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Config, error) {
+func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, error) {
 	exists, err := u.Config.ConfigExists(ctx)
 	if err != nil {
-		return domain.Config{}, err
+		return domain.Templates{}, err
 	}
 	if err := u.State.Initialize(ctx); err != nil {
-		return domain.Config{}, err
+		return domain.Templates{}, err
 	}
 	if exists {
-		return domain.Config{}, nil
+		return domain.Templates{}, nil
 	}
-	cfg := domain.Config{
-		Project: domain.ProjectConfig{Name: ""},
-		Providers: domain.ProviderConfig{
-			Source:        "git",
-			Session:       "tmux",
-			Notifications: "tmux",
-		},
-		Templates: map[string]domain.Template{
-			"feat": {
-				Name: "feat",
-				Repository: domain.RepositoryTemplate{
-					BranchPrefix: "feat/",
-					Base:         "main",
-				},
-				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
-			},
-			"update": {
-				Name: "update",
-				Repository: domain.RepositoryTemplate{
-					BranchPrefix: "update/",
-					Base:         "main",
-				},
-				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
-			},
-			"fix": {
-				Name: "fix",
-				Repository: domain.RepositoryTemplate{
-					BranchPrefix: "fix/",
-					Base:         "main",
-				},
-				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
-			},
-			"review": {
-				Name: "review",
-				Repository: domain.RepositoryTemplate{
-					BranchPrefix: "review/",
-					Base:         "main",
-				},
-				Session: domain.SessionTemplate{Windows: []domain.SessionWindowTemplate{}},
-			},
-		},
+	sessionDriver, err := domain.NewSessionDriverType("tmux")
+	if err != nil {
+		return domain.Templates{}, err
+	}
+	sourceDriver, err := domain.NewSourceDriverType("git")
+	if err != nil {
+		return domain.Templates{}, err
+	}
+	notificationDriver, err := domain.NewNotificationDriverType("tmux")
+	if err != nil {
+		return domain.Templates{}, err
+	}
+	names := []string{"feat", "update", "fix", "review"}
+	items := make([]domain.Template, 0, len(names))
+	for _, name := range names {
+		source, err := domain.NewSourceTemplate(".", "main", name+"/")
+		if err != nil {
+			return domain.Templates{}, err
+		}
+		template, err := domain.NewTemplate(name, []domain.SourceTemplate{source}, nil, domain.NewSessionTemplate(nil))
+		if err != nil {
+			return domain.Templates{}, err
+		}
+		items = append(items, template)
+	}
+	cfg, err := domain.NewTemplates("", items, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	if err != nil {
+		return domain.Templates{}, err
 	}
 	if err := u.Config.SaveConfig(ctx, cfg); err != nil {
-		return domain.Config{}, err
+		return domain.Templates{}, err
 	}
 	return cfg, nil
 }

@@ -13,7 +13,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	celladapter "github.com/hgsg11/paracell/internal/adapter/cell"
 	"github.com/hgsg11/paracell/internal/adapter/config"
-	"github.com/hgsg11/paracell/internal/adapter/files"
 	"github.com/hgsg11/paracell/internal/adapter/id"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/adapter/output"
@@ -62,10 +61,10 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		if loaded.Providers.Session != "tmux" {
-			return nil, fmt.Errorf("unsupported providers.session %q", loaded.Providers.Session)
+		if loaded.GetSessionDriverType() != domain.Tmux {
+			return nil, fmt.Errorf("unsupported session driver %q", loaded.GetSessionDriverType())
 		}
-		session, err := factory.Session(loaded.Providers)
+		session, err := factory.Session(loaded.GetSessionDriverType())
 		if err != nil {
 			return nil, err
 		}
@@ -83,7 +82,6 @@ var (
 			State:            state,
 			CellFactory:      celladapter.Factory{},
 			SourceFactory:    source,
-			Files:            files.CopyAdapter{Root: root},
 			ContainerFactory: container,
 			SessionFactory:   session,
 			IDs:              id.RandomGenerator{},
@@ -96,7 +94,6 @@ var (
 			State:            state,
 			CellFactory:      celladapter.Factory{},
 			SourceFactory:    source,
-			Files:            files.CopyAdapter{Root: root},
 			ContainerFactory: container,
 			SessionFactory:   session,
 			IDs:              id.RandomGenerator{},
@@ -314,7 +311,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		session, err := (provider.Factory{Runner: quietRunner, Root: workdir}).Session(loaded.Providers)
+		session, err := (provider.Factory{Runner: quietRunner, Root: workdir}).Session(loaded.GetSessionDriverType())
 		if err != nil {
 			return err
 		}
@@ -337,7 +334,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		notifier, err := provider.Factory{Runner: quietRunner, Root: workdir}.Notification(loaded.Providers)
+		notifier, err := provider.Factory{Runner: quietRunner, Root: workdir}.Notification(loaded.GetNotificationDriverType())
 		if err != nil {
 			return err
 		}
@@ -391,7 +388,6 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			State:            stateAdapter,
 			CellFactory:      celladapter.Factory{},
 			SourceFactory:    provider.Factory{Runner: runner, Root: workdir},
-			Files:            files.CopyAdapter{Root: workdir},
 			ContainerFactory: provider.Factory{Runner: runner, Root: workdir},
 			SessionFactory:   provider.Factory{Runner: runner, Root: workdir},
 			IDs:              id.RandomGenerator{},
@@ -462,10 +458,10 @@ func projectRootForWorkdir(workdir string) string {
 	}
 }
 
-func templateNames(templates map[string]domain.Template) []string {
+func templateNames(templates []domain.Template) []string {
 	names := make([]string, 0, len(templates))
-	for name := range templates {
-		names = append(names, name)
+	for _, template := range templates {
+		names = append(names, template.Name)
 	}
 	sort.Strings(names)
 	return names

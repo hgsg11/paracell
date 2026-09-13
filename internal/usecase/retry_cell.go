@@ -24,7 +24,6 @@ type RetryCellUseCase struct {
 	State             CellStatePort
 	CellFactory       CellFactory
 	SourceFactory     SourceProviderFactory
-	Files             FilePort
 	ContainerFactory  ContainerProviderFactory
 	SessionFactory    SessionProviderFactory
 	IDs               IDGenerator
@@ -69,32 +68,39 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 	if err != nil {
 		return failValidation(err)
 	}
-	template, ok := cfg.Templates[cell.Template]
-	if !ok {
-		return failValidation(fmt.Errorf("template %q not found", cell.Template))
+	sources, err := cfg.GetSourceTemplates(cell.Template)
+	if err != nil {
+		return failValidation(err)
 	}
-	rendered, err := u.CellFactory.NewCell(cell.ID, cell.Issue, template, cfg.Project.Name)
+	containerTemplates, err := cfg.GetContainerTemplates(cell.Template)
+	if err != nil {
+		return failValidation(err)
+	}
+	sessionTemplate, err := cfg.GetSessionTemplate(cell.Template)
+	if err != nil {
+		return failValidation(err)
+	}
+	rendered, err := u.CellFactory.NewCell(cell.ID, cell.Issue, cell.Template, sources, containerTemplates, sessionTemplate, cfg.ProjectName)
 	if err != nil {
 		return failValidation(err)
 	}
 	stored := cell
 	cell = refreshRetryCell(cell, rendered)
-	source, err := u.SourceFactory.Source(cfg.Providers)
+	source, err := u.SourceFactory.Source(cfg.GetSourceDriverType())
 	if err != nil {
 		return failValidation(err)
 	}
-	containers, err := u.ContainerFactory.Container(cfg.Providers)
+	containers, err := u.ContainerFactory.Container(cfg.GetContainerDriverType())
 	if err != nil {
 		return failValidation(err)
 	}
-	session, err := u.SessionFactory.Session(cfg.Providers)
+	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
 	if err != nil {
 		return failValidation(err)
 	}
 
 	runner := cellCreationRunner{
 		State:          u.State,
-		Files:          u.Files,
 		Source:         source,
 		Containers:     containers,
 		Session:        session,
@@ -102,7 +108,7 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 		AttemptID:      attemptID,
 		BeforeTerminal: heartbeat.stop,
 	}
-	runErr := runner.run(runCtx, &cell, template, true)
+	runErr := runner.run(runCtx, &cell, containerTemplates, true)
 	heartbeatErr := heartbeat.stop()
 	if runErr != nil || heartbeatErr != nil {
 		return domain.Cell{}, errors.Join(runErr, heartbeatErr)
@@ -230,7 +236,6 @@ func resolveCell(cells []domain.Cell, identifier string) (domain.Cell, bool) {
 func nextCreationStage(cell domain.Cell) domain.CreationStage {
 	for _, stage := range []domain.CreationStage{
 		domain.CreationStageSource,
-		domain.CreationStageFiles,
 		domain.CreationStageContainers,
 		domain.CreationStageSession,
 	} {
@@ -248,13 +253,9 @@ func refreshRetryCell(stored domain.Cell, rendered domain.Cell) domain.Cell {
 	refreshed.Name = stored.Name
 	refreshed.Note = stored.Note
 	refreshed.Template = stored.Template
-	refreshed.Branch = stored.Branch
-	refreshed.Source.Path = stored.Source.Path
 	refreshed.Creation = stored.Creation
 	if stored.CreationStageCompleted(domain.CreationStageSource) {
-		refreshed.Base = stored.Base
-		refreshed.BranchMode = stored.BranchMode
-		refreshed.Source = stored.Source
+		refreshed.Sources = stored.Sources
 	}
 	if stored.CreationStageCompleted(domain.CreationStageContainers) {
 		refreshed.Containers = stored.Containers

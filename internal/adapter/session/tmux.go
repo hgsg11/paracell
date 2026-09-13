@@ -24,14 +24,14 @@ const (
 
 func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) (returnErr error) {
 	if len(cell.Session.Windows) == 0 {
-		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-c", cell.Source.Path); err != nil {
+		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-c", cellWorkingDirectory(cell)); err != nil {
 			return err
 		}
 		defer a.cleanupFailedCreation(ctx, cell, &returnErr)
 		return a.configureCellSession(ctx, cell)
 	}
 	first := cell.Session.Windows[0]
-	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", cell.Source.Path); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", cellWorkingDirectory(cell)); err != nil {
 		return err
 	}
 	defer a.cleanupFailedCreation(ctx, cell, &returnErr)
@@ -39,7 +39,7 @@ func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) (retur
 		return err
 	}
 	for _, window := range cell.Session.Windows[1:] {
-		if err := a.Runner.Run(ctx, "tmux", "new-window", "-t", cell.Session.Name, "-n", window.Name, "-c", cell.Source.Path); err != nil {
+		if err := a.Runner.Run(ctx, "tmux", "new-window", "-t", cell.Session.Name, "-n", window.Name, "-c", cellWorkingDirectory(cell)); err != nil {
 			return err
 		}
 		if err := a.runWindowCommand(ctx, cell, window); err != nil {
@@ -47,6 +47,13 @@ func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) (retur
 		}
 	}
 	return a.configureCellSession(ctx, cell)
+}
+
+func cellWorkingDirectory(cell domain.Cell) string {
+	if len(cell.Sources) == 0 {
+		return ""
+	}
+	return cell.Sources[0].Path
 }
 
 func (a TmuxAdapter) cleanupFailedCreation(ctx context.Context, cell domain.Cell, returnErr *error) {
@@ -198,8 +205,8 @@ func (a TmuxAdapter) PrepareSession(ctx context.Context, cell domain.Cell) error
 	return a.configureCellSession(ctx, cell)
 }
 
-func (a TmuxAdapter) EnterRootSession(ctx context.Context, project domain.ProjectConfig) error {
-	name := rootSessionName(project.Name)
+func (a TmuxAdapter) EnterRootSession(ctx context.Context, projectName string) error {
+	name := rootSessionName(projectName)
 	if err := a.ensureRootSession(ctx, name); err != nil {
 		return err
 	}

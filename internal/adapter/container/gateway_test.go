@@ -201,17 +201,16 @@ func TestCreateContainersはCellContainerへGatewayRouteを登録する(t *testi
 	}
 	adapter := DockerCLIAdapter{Runner: runner, Root: "/project"}
 	cell := gatewayTestCell()
-	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"web": {
-			SourceContainer: "myapp-web",
-			Environment: map[string]string{
-				"APP_ENV":     "cell",
-				"EMPTY_VALUE": "",
-			},
+	templates := []domain.ContainerTemplate{{
+		Name: "web",
+		Mode: domain.Target,
+		Environments: []domain.Environment{
+			{Name: "APP_ENV", Value: "cell"},
+			{Name: "EMPTY_VALUE", Value: ""},
 		},
-	}}}
+	}}
 
-	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+	if err := adapter.CreateContainers(context.Background(), cell, templates); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if len(runner.runCalls) != 4 {
@@ -244,11 +243,9 @@ func TestCreateContainersはAliasやPortがなくてもGatewayをCellNetworkへ�
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := gatewayTestCell()
-	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"web": {SourceContainer: "myapp-worker"},
-	}}}
+	templates := []domain.ContainerTemplate{{Name: "web", Mode: domain.Target}}
 
-	if err := adapter.CreateContainers(context.Background(), cell, template); err != nil {
+	if err := adapter.CreateContainers(context.Background(), cell, templates); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if got := runner.runCalls[2]; got != "docker network connect paracell-myapp-123 paracell-gateway" {
@@ -278,7 +275,7 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 		},
 	}
 
-	err := adapter.CreateContainers(context.Background(), cell, domain.Template{})
+	err := adapter.CreateContainers(context.Background(), cell, nil)
 	if err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
@@ -307,12 +304,12 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := gatewayTestCell()
 	cell.Containers.Services["db"] = domain.CellContainer{ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"}
-	template := domain.Template{Containers: domain.ContainerTemplate{Services: map[string]domain.ContainerServiceTemplate{
-		"db":  {SourceContainer: "myapp-db"},
-		"web": {SourceContainer: "myapp-web"},
-	}}}
+	templates := []domain.ContainerTemplate{
+		{Name: "db", Mode: domain.Target},
+		{Name: "web", Mode: domain.Target},
+	}
 
-	err := adapter.CreateContainers(context.Background(), cell, template)
+	err := adapter.CreateContainers(context.Background(), cell, templates)
 	if err == nil || !strings.Contains(err.Error(), "container start failed") {
 		t.Fatalf("error = %v", err)
 	}
@@ -339,5 +336,5 @@ func gatewayTestCell() domain.Cell {
 }
 
 func gatewayRunCommand(publish string) string {
-	return "docker " + joinArgs(gatewayRunArgs(publish))
+	return "docker " + strings.Join(gatewayRunArgs(publish), " ")
 }

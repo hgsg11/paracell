@@ -44,15 +44,15 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err := target.Clean(); err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.Providers)
+	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
 	if err != nil {
 		return err
 	}
-	containers, err := u.ContainerFactory.Container(cfg.Providers)
+	containers, err := u.ContainerFactory.Container(cfg.GetContainerDriverType())
 	if err != nil {
 		return err
 	}
-	source, err := u.SourceFactory.Source(cfg.Providers)
+	source, err := u.SourceFactory.Source(cfg.GetSourceDriverType())
 	if err != nil {
 		return err
 	}

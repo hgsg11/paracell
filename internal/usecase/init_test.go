@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestInitは現在のProject情報から設定を作成して保存する(t *testing.T) {
@@ -25,48 +27,27 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if !ports.initialized {
 		t.Fatal("state databaseが初期化されなかった")
 	}
-	if cfg.Project.Name != "" {
-		t.Fatalf("project.name = %q, want empty", cfg.Project.Name)
+	if cfg.ProjectName != "" {
+		t.Fatalf("project.name = %q, want empty", cfg.ProjectName)
 	}
-	if cfg.Providers.Source != "git" {
-		t.Fatalf("providers.source = %q, want %q", cfg.Providers.Source, "git")
+	if cfg.GetSourceDriverType() != domain.Git {
+		t.Fatalf("providers.source = %q, want %q", cfg.GetSourceDriverType(), domain.Git)
 	}
-	if cfg.Providers.Container != "" {
-		t.Fatalf("providers.container = %q, want empty", cfg.Providers.Container)
+	if cfg.GetContainerDriverType() != domain.None {
+		t.Fatalf("providers.container = %q, want none", cfg.GetContainerDriverType())
 	}
-	if cfg.Providers.Session != "tmux" {
-		t.Fatalf("providers.session = %q, want %q", cfg.Providers.Session, "tmux")
+	if cfg.GetSessionDriverType() != domain.Tmux {
+		t.Fatalf("providers.session = %q, want %q", cfg.GetSessionDriverType(), domain.Tmux)
 	}
-	if cfg.Providers.Notifications != "tmux" {
-		t.Fatalf("providers.notifications = %q, want %q", cfg.Providers.Notifications, "tmux")
+	if cfg.GetNotificationDriverType() != domain.TmuxNotification {
+		t.Fatalf("providers.notifications = %q, want %q", cfg.GetNotificationDriverType(), domain.TmuxNotification)
 	}
 	if len(cfg.Templates) != 4 {
 		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
 	}
-	for name, branchPrefix := range map[string]string{
-		"feat":   "feat/",
-		"update": "update/",
-		"fix":    "fix/",
-		"review": "review/",
-	} {
-		template, ok := cfg.Templates[name]
-		if !ok {
-			t.Fatalf("template %q is missing", name)
-		}
-		if template.Name != name {
-			t.Fatalf("template name = %q, want %q", template.Name, name)
-		}
-		if template.Repository.Base != "main" {
-			t.Fatalf("%s repository.base = %q, want main", name, template.Repository.Base)
-		}
-		if template.Repository.BranchPrefix != branchPrefix {
-			t.Fatalf("%s repository.branchPrefix = %q, want %q", name, template.Repository.BranchPrefix, branchPrefix)
-		}
-		if len(template.Containers.Services) != 0 {
-			t.Fatalf("%s containers.services length = %d, want 0", name, len(template.Containers.Services))
-		}
-		if len(template.Session.Windows) != 0 {
-			t.Fatalf("%s session windows length = %d, want 0", name, len(template.Session.Windows))
+	for _, template := range cfg.Templates {
+		if len(template.Sources) != 1 || template.Sources[0].Base != "main" || template.Sources[0].Prefix != template.Name+"/" {
+			t.Fatalf("template = %#v", template)
 		}
 	}
 }
@@ -118,7 +99,7 @@ func (f *fakeInitPorts) ConfigExists(ctx context.Context) (bool, error) {
 	return f.exists, nil
 }
 
-func (f *fakeInitPorts) SaveConfig(ctx context.Context, cfg InitConfig) error {
+func (f *fakeInitPorts) SaveConfig(ctx context.Context, cfg domain.Templates) error {
 	f.saved = true
 	return nil
 }

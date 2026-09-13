@@ -190,8 +190,8 @@ func TestCreateSessionは途中失敗時に部分Sessionを削除して再試行
 	}}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
-		Name:   "123",
-		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Name:    "123",
+		Sources: []domain.Source{{Path: ".paracell/cells/123/source"}},
 		Session: domain.Session{Name: "paracell-myapp-123", Windows: []domain.SessionWindow{
 			{Name: "editor"}, {Name: "server"},
 		}},
@@ -307,7 +307,7 @@ func TestEnterRootSessionはSessionがなければ作成してAttachする(t *te
 	}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+	if err := adapter.EnterRootSession(context.Background(), "myapp"); err != nil {
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -347,7 +347,7 @@ func TestEnterRootSessionはPopup起動用にProjectRootを引き回す(t *testi
 	}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 
-	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+	if err := adapter.EnterRootSession(context.Background(), "myapp"); err != nil {
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -387,7 +387,7 @@ func TestEnterRootSessionはHasSessionがexitStatus1だけでも作成してAtta
 	}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+	if err := adapter.EnterRootSession(context.Background(), "myapp"); err != nil {
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -423,7 +423,7 @@ func TestEnterRootSessionは既存SessionでもPopupBindingを更新する(t *te
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 
-	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+	if err := adapter.EnterRootSession(context.Background(), "myapp"); err != nil {
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -458,7 +458,7 @@ func TestEnterRootSessionはTMUX内なら環境を更新せずswitchClientを使
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.EnterRootSession(context.Background(), domain.ProjectConfig{Name: "myapp"}); err != nil {
+	if err := adapter.EnterRootSession(context.Background(), "myapp"); err != nil {
 		t.Fatalf("EnterRootSessionでエラーが返った: %v", err)
 	}
 	if got := runner.calls[len(runner.calls)-1]; got != "tmux switch-client -E -t myapp-root" {
@@ -472,7 +472,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	cell := domain.Cell{
 		Issue:   "123",
 		Name:    "123",
-		Source:  domain.Source{Path: ".paracell/cells/123/source"},
+		Sources: []domain.Source{{Path: ".paracell/cells/123/source"}},
 		Session: domain.Session{Name: "paracell-myapp-123"},
 	}
 
@@ -509,9 +509,9 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
-		Issue:  "123",
-		Name:   "123",
-		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Issue:   "123",
+		Name:    "123",
+		Sources: []domain.Source{{Path: ".paracell/cells/123/source"}},
 		Session: domain.Session{
 			Name: "paracell-myapp-123",
 			Windows: []domain.SessionWindow{
@@ -557,9 +557,9 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := domain.Cell{
-		Issue:  "123",
-		Name:   "123",
-		Source: domain.Source{Path: ".paracell/cells/123/source"},
+		Issue:   "123",
+		Name:    "123",
+		Sources: []domain.Source{{Path: ".paracell/cells/123/source"}},
 		Session: domain.Session{
 			Name: "paracell-myapp-123",
 			Windows: []domain.SessionWindow{
@@ -613,12 +613,12 @@ func TestCreateSessionは複数IssueのPopupBindingをSessionごとに分離す�
 	cells := []domain.Cell{
 		{
 			Name:    "123",
-			Source:  domain.Source{Path: ".paracell/cells/123/source"},
+			Sources: []domain.Source{{Path: ".paracell/cells/123/source"}},
 			Session: domain.Session{Name: "paracell-myapp-123"},
 		},
 		{
 			Name:    "456",
-			Source:  domain.Source{Path: ".paracell/cells/456/source"},
+			Sources: []domain.Source{{Path: ".paracell/cells/456/source"}},
 			Session: domain.Session{Name: "paracell-myapp-456"},
 		},
 	}
