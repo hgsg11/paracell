@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,8 +16,6 @@ import (
 type SQLiteCellStateAdapter struct {
 	Path string
 }
-
-const stateSchemaVersion = 2
 
 func (a SQLiteCellStateAdapter) Initialize(ctx context.Context) error {
 	db, err := a.open(ctx)
@@ -115,67 +112,7 @@ func isSQLiteContention(err error) bool {
 }
 
 func (a SQLiteCellStateAdapter) initialize(ctx context.Context, db *sql.DB) error {
-	version, err := schemaVersion(ctx, db)
-	if err != nil {
-		return err
-	}
-	if version == stateSchemaVersion {
-		return nil
-	}
-	if version > stateSchemaVersion {
-		return fmt.Errorf("state schema version %d is newer than supported version %d", version, stateSchemaVersion)
-	}
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("open initialization connection: %w", err)
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
-		return fmt.Errorf("begin state initialization: %w", err)
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
-		}
-	}()
-	version, err = schemaVersion(ctx, conn)
-	if err != nil {
-		return err
-	}
-	switch version {
-	case stateSchemaVersion:
-	case 0:
-		if err := createSchema(ctx, conn); err != nil {
-			return err
-		}
-	case 1:
-		if err := migrateVersion1(ctx, conn); err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("state schema version %d cannot be migrated", version)
-	}
-	if _, err := conn.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
-		return fmt.Errorf("record state schema version: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
-		return fmt.Errorf("commit state initialization: %w", err)
-	}
-	committed = true
-	return nil
-}
-
-type schemaQueryer interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}
-
-func schemaVersion(ctx context.Context, queryer schemaQueryer) (int, error) {
-	var version int
-	if err := queryer.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
-		return 0, fmt.Errorf("read state schema version: %w", err)
-	}
-	return version, nil
+	return createSchema(ctx, db)
 }
 
 type stateExecer interface {
@@ -184,7 +121,7 @@ type stateExecer interface {
 
 func createSchema(ctx context.Context, execer stateExecer) error {
 	statements := []string{
-		`CREATE TABLE cells (
+		`CREATE TABLE IF NOT EXISTS cells (
 			id TEXT PRIMARY KEY, issue TEXT NOT NULL, name TEXT NOT NULL, position INTEGER NOT NULL UNIQUE,
 			note TEXT NOT NULL, template TEXT NOT NULL, base TEXT NOT NULL, branch TEXT NOT NULL,
 			branch_mode TEXT NOT NULL, source_path TEXT NOT NULL, container_network TEXT NOT NULL,
@@ -193,24 +130,24 @@ func createSchema(ctx context.Context, execer stateExecer) error {
 			creation_attempt_id TEXT NOT NULL, creation_lease_started_at TEXT,
 			creation_lease_heartbeat_at TEXT, status TEXT NOT NULL, done INTEGER NOT NULL
 		)`,
-		`CREATE UNIQUE INDEX cells_issue_unique ON cells(issue) WHERE issue <> ''`,
-		`CREATE UNIQUE INDEX cells_name_unique ON cells(name) WHERE name <> ''`,
-		`CREATE TABLE cell_services (
+		`CREATE UNIQUE INDEX IF NOT EXISTS cells_issue_unique ON cells(issue) WHERE issue <> ''`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS cells_name_unique ON cells(name) WHERE name <> ''`,
+		`CREATE TABLE IF NOT EXISTS cell_services (
 			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, role TEXT NOT NULL,
 			container_name TEXT NOT NULL, source_container TEXT NOT NULL, volume_mode TEXT NOT NULL,
 			database_present INTEGER NOT NULL, database_mode TEXT NOT NULL, database_system TEXT NOT NULL,
 			database_copy_mode TEXT NOT NULL, PRIMARY KEY (cell_id, role)
 		)`,
-		`CREATE TABLE cell_service_init_files (
+		`CREATE TABLE IF NOT EXISTS cell_service_init_files (
 			cell_id TEXT NOT NULL, role TEXT NOT NULL, position INTEGER NOT NULL, path TEXT NOT NULL,
 			PRIMARY KEY (cell_id, role, position),
 			FOREIGN KEY (cell_id, role) REFERENCES cell_services(cell_id, role) ON DELETE CASCADE
 		)`,
-		`CREATE TABLE cell_session_windows (
+		`CREATE TABLE IF NOT EXISTS cell_session_windows (
 			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
 			name TEXT NOT NULL, command TEXT NOT NULL, PRIMARY KEY (cell_id, position)
 		)`,
-		`CREATE TABLE cell_creation_stages (
+		`CREATE TABLE IF NOT EXISTS cell_creation_stages (
 			cell_id TEXT NOT NULL REFERENCES cells(id) ON DELETE CASCADE, position INTEGER NOT NULL,
 			stage TEXT NOT NULL, PRIMARY KEY (cell_id, position)
 		)`,
@@ -221,114 +158,6 @@ func createSchema(ctx context.Context, execer stateExecer) error {
 		}
 	}
 	return nil
-}
-
-type legacyCell struct {
-	ID         string            `json:"id"`
-	Issue      string            `json:"issue"`
-	Name       string            `json:"name"`
-	Note       string            `json:"note,omitempty"`
-	Template   string            `json:"template"`
-	Base       string            `json:"base"`
-	Branch     string            `json:"branch"`
-	BranchMode string            `json:"branchMode,omitempty"`
-	Source     domain.Source     `json:"source"`
-	Containers domain.Containers `json:"containers"`
-	Session    domain.Session    `json:"session"`
-	Creation   legacyCreation    `json:"creation,omitempty"`
-	Status     domain.CellStatus `json:"status"`
-	Done       bool              `json:"done"`
-}
-
-type legacyCreation struct {
-	Status           domain.CreationStatus  `json:"status"`
-	Command          string                 `json:"command,omitempty"`
-	CompletedStages  []domain.CreationStage `json:"completedStages,omitempty"`
-	FailedStage      domain.CreationStage   `json:"failedStage,omitempty"`
-	LastError        string                 `json:"lastError,omitempty"`
-	AttemptID        string                 `json:"attemptId,omitempty"`
-	LeaseStartedAt   *time.Time             `json:"leaseStartedAt,omitempty"`
-	LeaseHeartbeatAt *time.Time             `json:"leaseHeartbeatAt,omitempty"`
-}
-
-func migrateVersion1(ctx context.Context, conn *sql.Conn) error {
-	rows, err := conn.QueryContext(ctx, `SELECT data FROM cells ORDER BY position`)
-	if err != nil {
-		return fmt.Errorf("query version 1 cells: %w", err)
-	}
-	cells := []domain.Cell{}
-	for rows.Next() {
-		var data []byte
-		if err := rows.Scan(&data); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan version 1 cell: %w", err)
-		}
-		var stored legacyCell
-		if err := json.Unmarshal(data, &stored); err != nil {
-			rows.Close()
-			return fmt.Errorf("decode version 1 cell: %w", err)
-		}
-		cell, err := stored.restore()
-		if err != nil {
-			rows.Close()
-			return fmt.Errorf("restore version 1 cell %q: %w", stored.ID, err)
-		}
-		cells = append(cells, cell)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("iterate version 1 cells: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close version 1 cells: %w", err)
-	}
-	for _, statement := range []string{
-		`DROP INDEX cells_issue_unique`,
-		`DROP INDEX cells_name_unique`,
-		`ALTER TABLE cells RENAME TO cells_version_1`,
-	} {
-		if _, err := conn.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("prepare version 1 migration: %w", err)
-		}
-	}
-	if err := createSchema(ctx, conn); err != nil {
-		return err
-	}
-	if err := replaceCells(ctx, conn, cells); err != nil {
-		return fmt.Errorf("migrate version 1 cells: %w", err)
-	}
-	if _, err := conn.ExecContext(ctx, `DROP TABLE cells_version_1`); err != nil {
-		return fmt.Errorf("remove version 1 cells: %w", err)
-	}
-	return nil
-}
-
-func (stored legacyCell) restore() (domain.Cell, error) {
-	cell := domain.Cell{
-		ID: stored.ID, Issue: stored.Issue, Name: stored.Name, Note: stored.Note,
-		Template: stored.Template, Base: stored.Base, Branch: stored.Branch,
-		BranchMode: stored.BranchMode, Source: stored.Source, Containers: stored.Containers,
-		Session: stored.Session,
-		Creation: domain.CellCreation{
-			Status: stored.Creation.Status, Command: stored.Creation.Command,
-			CompletedStages: stored.Creation.CompletedStages, FailedStage: stored.Creation.FailedStage,
-			LastError: stored.Creation.LastError, AttemptID: stored.Creation.AttemptID,
-			LeaseStartedAt: stored.Creation.LeaseStartedAt, LeaseHeartbeatAt: stored.Creation.LeaseHeartbeatAt,
-		},
-	}
-	status := stored.Status
-	if status == "" {
-		status = domain.Ready
-	}
-	if err := cell.SetStatus(status); err != nil {
-		return domain.Cell{}, err
-	}
-	if stored.Done {
-		if err := cell.MarkDone(); err != nil {
-			return domain.Cell{}, err
-		}
-	}
-	return cell, nil
 }
 
 type stateQueryer interface {
