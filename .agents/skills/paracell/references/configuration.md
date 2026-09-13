@@ -7,7 +7,7 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | Command | Purpose | Important constraint |
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
-| `paracell init` | Create `paracell.yaml` and initialize or migrate `.paracell/state.db` | Keeps an existing configuration unchanged |
+| `paracell init` | Create `paracell.yaml` and initialize `.paracell/state.db` | Keeps an existing configuration unchanged |
 | `paracell fork <issue> --template <name> [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
 | `paracell retry <cell>` | Resume a failed cell by ID, Issue, or Name | Acquires a per-cell lease, re-renders the latest template, and skips completed creation stages |
@@ -146,7 +146,7 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session.
-- `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the current relational schema or migrates an existing version 1 JSON-backed database. Other commands also ensure the schema is current before accessing cell state.
+- `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.
 - `.paracell/cells/<cell>/source` is the cell worktree.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
 - CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use ID, issue, or name—not the note—to address a cell.

@@ -86,7 +86,7 @@ paracell fork 123 --template feat --note "PostgreSQL案"
 paracell annotate 123 --note "API実装中"
 ```
 
-`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きせず、state database が旧schemaならmigrationします。template を編集して、作りたい cell の形を決めます。
+`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。template を編集して、作りたい cell の形を決めます。
 
 `fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残り、完了済み工程と branch/worktree は保持されます。原因を修正してから同じ cell を再開してください。
 
