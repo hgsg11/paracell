@@ -15,7 +15,7 @@ func TestAnnotateCellはIDIssueNameでNoteを設定上書きする(t *testing.T)
 		t.Run(selector, func(t *testing.T) {
 			ports := newFakePorts()
 			cell := newUsecaseTestCell(t, "cell-1", "123", "feat")
-			cell, _ = domain.SetCellNote(cell, "旧案")
+			_ = cell.SetNote("旧案")
 			ports.cells = []domain.Cell{cell}
 			updated, err := (AnnotateCellUseCase{State: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: selector, Note: "  API\t実装\n中 "})
 			if err != nil {

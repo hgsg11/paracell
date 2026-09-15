@@ -15,7 +15,7 @@ type EnterCellUseCase struct {
 }
 
 func (u EnterCellUseCase) Execute(ctx context.Context, input EnterCellInput) (domain.Cell, error) {
-	session, err := u.SessionFactory.Session(domain.CellResourceDrivers(input.Cell).Session)
+	session, err := u.SessionFactory.Session(input.Cell.ResourceDrivers().Session)
 	if err != nil {
 		return domain.Cell{}, err
 	}

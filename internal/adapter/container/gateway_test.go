@@ -297,7 +297,7 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := gatewayTestCell()
-	cell.Items = append(cell.Items, domain.NewContainerResource("db", "paracell-myapp-123-db", nil, "myapp-db", domain.Target, nil, nil))
+	cell.Items = append(cell.Items, domain.NewContainerResource("paracell-myapp-123-db", nil, "db", domain.Target, nil, nil))
 	templates := []domain.ContainerTemplate{
 		{Name: "db", Mode: domain.Target},
 		{Name: "web", Mode: domain.Target},
@@ -319,7 +319,7 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 
 func gatewayTestCell() domain.ContainerResources {
 	return domain.NewContainerResources("123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source", []domain.ContainerResource{
-		domain.NewContainerResource("web", "paracell-myapp-123-web", nil, "myapp-web", domain.Target, nil, nil),
+		domain.NewContainerResource("paracell-myapp-123-web", nil, "web", domain.Target, nil, nil),
 	})
 }
 
@@ -329,7 +329,7 @@ func withContainerTemplates(resources domain.ContainerResources, templates []dom
 		byName[template.Name] = template
 	}
 	for index := range resources.Items {
-		template, ok := byName[resources.Items[index].Role]
+		template, ok := byName[resources.Items[index].SourceContainer]
 		if !ok {
 			continue
 		}

@@ -17,7 +17,7 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 		t.Fatal(err)
 	}
 	if note != "" {
-		cell, err = domain.SetCellNote(cell, note)
+		err = cell.SetNote(note)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,8 +52,8 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
 	cell := outputCell(t, "123", "webapp", "")
-	cell = domain.BeginCellCreation(cell, "command")
-	cell = domain.FailCellCreation(cell, domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
+	cell.BeginCreation("command")
+	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
 
 	got := FormatCellList([]domain.Cell{cell})
 	if !strings.Contains(got, "failed\tready\tfalse\tcontainers\tdocker failed port already used try another") {

@@ -28,10 +28,10 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if !ok {
 		return fmt.Errorf("cell %q not found", input.Cell)
 	}
-	if err := domain.EnsureCellCanBeCleaned(target); err != nil {
+	if err := target.EnsureCanBeCleaned(); err != nil {
 		return err
 	}
-	drivers := domain.CellResourceDrivers(target)
+	drivers := target.ResourceDrivers()
 	session, err := u.SessionFactory.Session(drivers.Session)
 	if err != nil {
 		return err

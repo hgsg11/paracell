@@ -76,7 +76,7 @@ func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]d
 }
 
 func (a SQLiteCellStateAdapter) DeleteCell(ctx context.Context, cell domain.Cell) error {
-	record := domain.StoreCell(cell)
+	record := cell.Stored()
 	db, err := a.open(ctx)
 	if err != nil {
 		return err
@@ -188,11 +188,11 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 	currentByID := make(map[string]domain.Cell, len(current))
 	nextByID := make(map[string]domain.Cell, len(next))
 	for _, cell := range current {
-		record := domain.StoreCell(cell)
+		record := cell.Stored()
 		currentByID[record.ID] = cell
 	}
 	for position, cell := range next {
-		record := domain.StoreCell(cell)
+		record := cell.Stored()
 		if _, exists := nextByID[record.ID]; exists {
 			return fmt.Errorf("duplicate cell id %q", record.ID)
 		}
@@ -207,15 +207,16 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 			}
 			continue
 		}
-		storedRecord := domain.StoreCell(stored)
+		storedRecord := stored.Stored()
 		if reflect.DeepEqual(storedRecord, record) && position == cellPosition(current, record.ID) {
 			continue
 		}
 		if record.Version != storedRecord.Version {
 			return fmt.Errorf("%w: update cell %q expected version %d, found %d", domain.ErrVersionConflict, record.ID, record.Version, storedRecord.Version)
 		}
-		persisted := domain.CellAfterPersistence(cell)
-		persistedRecord := domain.StoreCell(persisted)
+		persisted := cell
+		persisted.AdvanceVersion()
+		persistedRecord := persisted.Stored()
 		data, err := json.Marshal(persistedRecord)
 		if err != nil {
 			return fmt.Errorf("encode cell %q: %w", record.ID, err)
@@ -230,7 +231,7 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 		}
 	}
 	for _, cell := range current {
-		record := domain.StoreCell(cell)
+		record := cell.Stored()
 		if _, exists := nextByID[record.ID]; exists {
 			continue
 		}
@@ -246,7 +247,7 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 }
 
 func insertCell(ctx context.Context, execer stateExecer, position int, cell domain.Cell) error {
-	record := domain.StoreCell(cell)
+	record := cell.Stored()
 	data, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode cell %q: %w", record.ID, err)
@@ -271,7 +272,7 @@ func requireOneRow(result sql.Result, operation string, id string, version uint6
 
 func cellPosition(cells []domain.Cell, id string) int {
 	for position, cell := range cells {
-		if domain.StoreCell(cell).ID == id {
+		if cell.Stored().ID == id {
 			return position
 		}
 	}
@@ -281,7 +282,7 @@ func cellPosition(cells []domain.Cell, id string) int {
 func cloneCells(cells []domain.Cell) []domain.Cell {
 	cloned := make([]domain.Cell, len(cells))
 	for i, cell := range cells {
-		cloned[i] = domain.CloneCell(cell)
+		cloned[i] = cell.Clone()
 	}
 	return cloned
 }

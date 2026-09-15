@@ -19,17 +19,11 @@ type AnnotateCellUseCase struct {
 }
 
 func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.Cell, error) {
-	note, err := domain.NormalizeCellNote(input.Note)
-	if err != nil {
-		return domain.Cell{}, err
-	}
-
 	var updated domain.Cell
 	if err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if domain.CellMatches(cell, input.Cell) {
-				cell, err = domain.SetCellNote(cell, note)
-				if err != nil {
+			if cell.Matches(input.Cell) {
+				if err := cell.SetNote(input.Note); err != nil {
 					return nil, err
 				}
 				cells[i] = cell
@@ -41,12 +35,12 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	}); err != nil {
 		return domain.Cell{}, err
 	}
-	updated = domain.CellAfterPersistence(updated)
+	updated.AdvanceVersion()
 
 	if u.SessionFactory == nil {
 		return updated, nil
 	}
-	session, err := u.SessionFactory.Session(domain.CellResourceDrivers(updated).Session)
+	session, err := u.SessionFactory.Session(updated.ResourceDrivers().Session)
 	if err != nil {
 		return updated, err
 	}

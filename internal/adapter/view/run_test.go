@@ -43,7 +43,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
-		if domain.CellName(cell) != "123" {
+		if cell.Name() != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
@@ -51,7 +51,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if len(got.Cells) != 1 || domain.CellName(got.Cells[0]) != "123" {
+	if len(got.Cells) != 1 || got.Cells[0].Name() != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
 	if got.CurrentCell != "123" {
@@ -60,7 +60,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
-	if domain.CellName(result.Cell) != "123" {
+	if result.Cell.Name() != "123" {
 		t.Fatalf("cell = %#v, want name %q", result.Cell, "123")
 	}
 }
@@ -129,7 +129,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		func() error { return nil },
 		func(cell domain.Cell) error { return nil },
 		func(cell domain.Cell) (domain.Cell, error) {
-			return domain.MarkCellDone(cell)
+			return cell, cell.MarkDone()
 		},
 		nil,
 	)
@@ -139,7 +139,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	if result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", result.Action, ActionNone)
 	}
-	if !domain.SummarizeCell(got.Cells[0]).Done {
+	if !got.Cells[0].Summary().Done {
 		t.Fatal("IsDone = false, want true")
 	}
 }

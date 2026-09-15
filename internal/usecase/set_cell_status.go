@@ -3,8 +3,9 @@ package usecase
 import (
 	"context"
 	"fmt"
+
+	"github.com/hgsg11/paracell/internal/domain"
 )
-import "github.com/hgsg11/paracell/internal/domain"
 
 type SetCellStatusInput struct {
 	Cell   string
@@ -20,13 +21,12 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 	var updated domain.Cell
 	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if domain.CellMatches(cell, input.Cell) {
-				changed, setErr := domain.SetCellStatus(cell, input.Status)
-				if setErr != nil {
+			if cell.Matches(input.Cell) {
+				if setErr := cell.SetStatus(input.Status); setErr != nil {
 					return nil, setErr
 				}
-				cells[i] = changed
-				updated = changed
+				cells[i] = cell
+				updated = cell
 				return cells, nil
 			}
 		}
@@ -35,13 +35,13 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	updated = domain.CellAfterPersistence(updated)
+	updated.AdvanceVersion()
 	if input.Status == domain.Ready && u.NotificationFactory != nil {
-		notifier, err := u.NotificationFactory.Notification(domain.CellResourceDrivers(updated).Notification)
+		notifier, err := u.NotificationFactory.Notification(updated.ResourceDrivers().Notification)
 		if err != nil {
 			return domain.Cell{}, err
 		}
-		if err := notifier.NotifyReady(ctx, domain.SessionName(updated), "Ready: "+domain.CellName(updated)); err != nil {
+		if err := notifier.NotifyReady(ctx, updated.SessionName(), "Ready: "+updated.Name()); err != nil {
 			return domain.Cell{}, err
 		}
 	}

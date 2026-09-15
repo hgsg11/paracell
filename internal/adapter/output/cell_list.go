@@ -11,7 +11,7 @@ func FormatCellList(cells []domain.Cell) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
-		summary := domain.SummarizeCell(cell)
+		summary := cell.Summary()
 		failedStage := "-"
 		lastError := "-"
 		if summary.CreationStatus == domain.CreationFailed {

@@ -41,43 +41,43 @@ func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *t
 
 func TestCellのResource名は保存せずIdentityから導出する(t *testing.T) {
 	cell := testCell(t)
-	if CellName(cell) != "42" {
-		t.Fatalf("name = %q", CellName(cell))
+	if cell.Name() != "42" {
+		t.Fatalf("name = %q", cell.Name())
 	}
-	if SourceWorktreePath(cell, cell.Sources.Items[0]) != ".paracell/cells/42/source" {
-		t.Fatalf("path = %q", SourceWorktreePath(cell, cell.Sources.Items[0]))
+	if cell.SourceWorktreePath(cell.Sources.Items[0]) != ".paracell/cells/42/source" {
+		t.Fatalf("path = %q", cell.SourceWorktreePath(cell.Sources.Items[0]))
 	}
-	if ContainerNetworkName(cell) != "paracell-sample-42" {
-		t.Fatalf("network = %q", ContainerNetworkName(cell))
+	if cell.ContainerNetworkName() != "paracell-sample-42" {
+		t.Fatalf("network = %q", cell.ContainerNetworkName())
 	}
-	if SessionName(cell) != "sample-42" {
-		t.Fatalf("session = %q", SessionName(cell))
+	if cell.SessionName() != "sample-42" {
+		t.Fatalf("session = %q", cell.SessionName())
 	}
 }
 
 func TestCellはProjectIdentityを保持してResource名だけを正規化する(t *testing.T) {
 	cell := testCell(t)
 	cell.Project = "My App"
-	if StoreCell(cell).Project != "My App" {
-		t.Fatalf("project = %q", StoreCell(cell).Project)
+	if cell.Stored().Project != "My App" {
+		t.Fatalf("project = %q", cell.Stored().Project)
 	}
-	if ContainerNetworkName(cell) != "paracell-My-App-42" || SessionName(cell) != "My-App-42" {
-		t.Fatalf("network = %q, session = %q", ContainerNetworkName(cell), SessionName(cell))
+	if cell.ContainerNetworkName() != "paracell-My-App-42" || cell.SessionName() != "My-App-42" {
+		t.Fatalf("network = %q, session = %q", cell.ContainerNetworkName(), cell.SessionName())
 	}
 }
 
 func TestCell状態変更関数はAggregateを更新する(t *testing.T) {
 	cell := testCell(t)
-	cell, err := SetCellNote(cell, "実装中")
-	if err != nil || CellDisplayLabel(cell) != "実装中" {
+	err := cell.SetNote("実装中")
+	if err != nil || cell.DisplayLabel() != "実装中" {
 		t.Fatalf("note = %#v, %v", cell, err)
 	}
-	cell = ToggleCellDone(cell)
-	if err := EnsureCellCanBeCleaned(cell); err != nil {
+	cell.ToggleDone()
+	if err := cell.EnsureCanBeCleaned(); err != nil {
 		t.Fatal(err)
 	}
-	cell, err = SetCellStatus(cell, Pending)
-	if err != nil || SummarizeCell(cell).Status != Pending {
+	err = cell.SetStatus(Pending)
+	if err != nil || cell.Summary().Status != Pending {
 		t.Fatalf("status = %#v, %v", cell, err)
 	}
 }
@@ -87,7 +87,8 @@ func Test新規CellのVersionは1でPersistence成功時だけ進む(t *testing.
 	if cell.Version != 1 {
 		t.Fatalf("version = %d", cell.Version)
 	}
-	persisted := CellAfterPersistence(cell)
+	persisted := cell
+	persisted.AdvanceVersion()
 	if persisted.Version != 2 || cell.Version != 1 {
 		t.Fatalf("versions = %d, %d", persisted.Version, cell.Version)
 	}

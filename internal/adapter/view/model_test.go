@@ -89,7 +89,7 @@ func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
 
 func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	cell, err := domain.SetCellStatus(cell, domain.Pending)
+	err := cell.SetStatus(domain.Pending)
 	if err != nil {
 		t.Fatalf("SetStatus failed: %v", err)
 	}
@@ -153,8 +153,8 @@ func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *
 
 func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	cell, _ = domain.SetCellNote(cell, "API実装中")
-	cell, err := domain.SetCellStatus(cell, domain.Pending)
+	_ = cell.SetNote("API実装中")
+	err := cell.SetStatus(domain.Pending)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestModelViewはTemplate一覧の長い名前を省略表示する(t *testi
 
 func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *testing.T) {
 	cell := viewTestCell("cell-1", "very-long-issue-name-12345", "default")
-	cell, err := domain.SetCellStatus(cell, domain.Pending)
+	err := cell.SetStatus(domain.Pending)
 	if err != nil {
 		t.Fatalf("SetStatus failed: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *t
 	if !strings.Contains(got, "very-long-issue-n...") {
 		t.Fatalf("issue should be ellipsized: %q", got)
 	}
-	if strings.Contains(got, domain.CellName(cell)) {
+	if strings.Contains(got, cell.Name()) {
 		t.Fatalf("full issue should not be shown: %q", got)
 	}
 	if !strings.Contains(got, "[ ]  ..") {
@@ -224,7 +224,7 @@ func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *t
 
 func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	cell, err := domain.SetCellStatus(cell, domain.Ready)
+	err := cell.SetStatus(domain.Ready)
 	if err != nil {
 		t.Fatalf("SetStatus failed: %v", err)
 	}
@@ -540,7 +540,7 @@ func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 	if got.Result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", got.Result.Action, ActionEnter)
 	}
-	if domain.CellName(got.Result.Cell) != "456" {
+	if got.Result.Cell.Name() != "456" {
 		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
 	}
 	if nextCmd == nil {
@@ -553,14 +553,13 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
-		if domain.CellName(cell) != "123" {
+		if cell.Name() != "123" {
 			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
 		}
-		changed, err := domain.MarkCellDone(cell)
-		if err != nil {
+		if err := cell.MarkDone(); err != nil {
 			t.Fatalf("MarkDoneでエラーが返った: %v", err)
 		}
-		return changed, nil
+		return cell, nil
 	}
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -568,7 +567,7 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if !domain.SummarizeCell(got.Cells[0]).Done {
+	if !got.Cells[0].Summary().Done {
 		t.Fatal("IsDone = false, want true")
 	}
 	if got.Result.Action != ActionNone {
@@ -585,7 +584,7 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 		viewTestCell("cell-2", "456", "webapp"),
 	})
 	model.Delete = func(cell domain.Cell) error {
-		if domain.CellName(cell) != "123" {
+		if cell.Name() != "123" {
 			t.Fatalf("delete cell = %#v, want name %q", cell, "123")
 		}
 		return nil
@@ -609,7 +608,7 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	if got.Error != "" {
 		t.Fatalf("error = %q, want empty", got.Error)
 	}
-	if len(got.Cells) != 1 || domain.CellName(got.Cells[0]) != "456" {
+	if len(got.Cells) != 1 || got.Cells[0].Name() != "456" {
 		t.Fatalf("cells = %#v, want remaining cell 456", got.Cells)
 	}
 	if got.Result.Action != ActionDelete {
@@ -626,8 +625,7 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 	})
 	model.Reload = func() ([]domain.Cell, error) {
 		cell := viewTestCell("cell-1", "123", "default")
-		cell, err := domain.SetCellStatus(cell, domain.Ready)
-		if err != nil {
+		if err := cell.SetStatus(domain.Ready); err != nil {
 			t.Fatalf("SetStatusでエラーが返った: %v", err)
 		}
 		return []domain.Cell{cell}, nil
@@ -635,8 +633,8 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if domain.SummarizeCell(got.Cells[0]).Status != domain.Ready {
-		t.Fatalf("Status = %q, want %q", domain.SummarizeCell(got.Cells[0]).Status, domain.Ready)
+	if got.Cells[0].Summary().Status != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got.Cells[0].Summary().Status, domain.Ready)
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
@@ -645,7 +643,7 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 func TestModelはRefreshでPendingStatusのアニメーションを進める(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	cell, err := domain.SetCellStatus(cell, domain.Pending)
+	err := cell.SetStatus(domain.Pending)
 	if err != nil {
 		t.Fatalf("SetStatus failed: %v", err)
 	}
@@ -945,18 +943,17 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 	model := NewModel([]domain.Cell{
 		func() domain.Cell {
 			cell := viewTestCell("cell-1", "123", "default")
-			changed, err := domain.MarkCellDone(cell)
-			if err != nil {
+			if err := cell.MarkDone(); err != nil {
 				t.Fatalf("MarkDoneでエラーが返った: %v", err)
 			}
-			return changed
+			return cell
 		}(),
 	})
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
-		if domain.CellName(cell) != "123" {
+		if cell.Name() != "123" {
 			t.Fatalf("toggle cell = %#v, want name %q", cell, "123")
 		}
-		return viewTestCell(cell.ID, domain.CellName(cell), cell.Template), nil
+		return viewTestCell(cell.ID, cell.Name(), cell.Template), nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -964,7 +961,7 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, _ := next.(Model).Update(cmd())
-	if domain.SummarizeCell(updated.(Model).Cells[0]).Done {
+	if updated.(Model).Cells[0].Summary().Done {
 		t.Fatal("IsDone = true, want false")
 	}
 }

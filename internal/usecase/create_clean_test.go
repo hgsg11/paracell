@@ -18,7 +18,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.Template != "feat" || len(cell.Sources.Items) != 1 || domain.CellCreationStatus(cell) != domain.CreationReady {
+	if cell.Template != "feat" || len(cell.Sources.Items) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
 }
@@ -32,9 +32,9 @@ func TestRetryCellは保存済みIdentityとCommandで最新Templateの未完了
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored = domain.BeginCellCreation(stored, "saved-command")
-	stored = domain.CompleteCellCreationStage(stored, domain.CreationStageSource)
-	stored = domain.FailCellCreation(stored, domain.CreationStageContainers, errors.New("failed"))
+	stored.BeginCreation("saved-command")
+	stored.CompleteCreationStage(domain.CreationStageSource)
+	stored.FailCreation(domain.CreationStageContainers, errors.New("failed"))
 	ports.cells = []domain.Cell{stored}
 
 	latestSource, _ := domain.NewSourceTemplate(".", "new-base", "feat/")
@@ -110,7 +110,7 @@ func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([
 	for index := range cells {
 		for _, previous := range before {
 			if previous.ID == cells[index].ID && !reflect.DeepEqual(previous, cells[index]) {
-				cells[index] = domain.CellAfterPersistence(cells[index])
+				cells[index].AdvanceVersion()
 			}
 		}
 	}

@@ -158,17 +158,16 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 		}
 	}
 	for _, service := range sortedContainerResources(resources.Items) {
-		role := service.Role
 		source := service.SourceContainer
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return nil, err
 		}
-		networks[role] = sortedNetworkNames(inspection.NetworkSettings.Networks)
+		networks[source] = sortedNetworkNames(inspection.NetworkSettings.Networks)
 		if service.Mode == domain.Dependency {
 			aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
 			if len(aliases) == 0 {
-				return nil, fmt.Errorf("dependency container %q for service %q has no usable network aliases", source, role)
+				return nil, fmt.Errorf("dependency container %q has no usable network aliases", source)
 			}
 			if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
 				if err := a.connectDependency(ctx, network, source, aliases); err != nil {
@@ -183,12 +182,12 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			return nil, err
 		}
 		networkAliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
-		networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(role, "service"))
+		networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(source, "service"))
 		labels := map[string]string{
 			composeProjectLabel: network,
-			composeServiceLabel: role,
+			composeServiceLabel: source,
 		}
-		for name, value := range gatewayLabels(resources, service.Name, role, inspection.HostConfig.PortBindings) {
+		for name, value := range gatewayLabels(resources, service.Name, source, inspection.HostConfig.PortBindings) {
 			labels[name] = value
 		}
 		args := BuildDockerRunArgs(RunSpec{
@@ -547,7 +546,7 @@ func appendNetworkAlias(aliases []string, alias string) []string {
 
 func sortedContainerResources(resources []domain.ContainerResource) []domain.ContainerResource {
 	items := append([]domain.ContainerResource(nil), resources...)
-	sort.Slice(items, func(i, j int) bool { return items[i].Role < items[j].Role })
+	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
 	return items
 }
 

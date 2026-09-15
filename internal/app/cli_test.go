@@ -93,11 +93,11 @@ func TestRunEnterCmdは復元設定後にSession環境を保持して切り替�
 	if err != nil {
 		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
 	}
-	wantArgs := []string{"tmux", "switch-client", "-E", "-t", domain.SessionName(cell)}
+	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.SessionName()}
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}
-	if session.prepared.CellName != domain.CellName(cell) {
+	if session.prepared.CellName != cell.Name() {
 		t.Fatalf("prepared resource = %#v, want cell %#v", session.prepared, cell)
 	}
 }
@@ -466,7 +466,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		func() domain.Cell {
 			c := appTestCell("cell-1", "123", "default")
-			c, _ = domain.SetCellNote(c, "PostgreSQL案")
+			_ = c.SetNote("PostgreSQL案")
 			return c
 		}(),
 		appTestCell("cell-2", "456", "webapp"),
@@ -688,16 +688,14 @@ templates:
 	want := []domain.Cell{
 		func() domain.Cell {
 			cell := appTestCell("cell-1", "123", "default")
-			cell, err := domain.SetCellStatus(cell, domain.Ready)
-			if err != nil {
+			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
 		}(),
 		func() domain.Cell {
 			cell := appTestCell("cell-2", "456", "webapp")
-			cell, err := domain.SetCellStatus(cell, domain.Ready)
-			if err != nil {
+			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
@@ -1236,7 +1234,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if domain.CellName(entered) != "123" {
+	if entered.Name() != "123" {
 		t.Fatalf("entered cell = %#v, want name %q", entered, "123")
 	}
 }
@@ -1306,7 +1304,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if domain.CellName(deleted) != "123" {
+	if deleted.Name() != "123" {
 		t.Fatalf("deleted cell = %#v, want name %q", deleted, "123")
 	}
 }
@@ -1504,7 +1502,7 @@ templates:
 	if err != nil {
 		t.Fatalf("state読み込みでエラーが返った: %v", err)
 	}
-	if got := domain.SummarizeCell(cells[0]).Status; got != domain.Ready {
+	if got := cells[0].Summary().Status; got != domain.Ready {
 		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
 }

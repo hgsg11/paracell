@@ -46,7 +46,7 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 		return domain.Cell{}, err
 	}
 
-	retrySpec := domain.InspectCellRetry(cell)
+	retrySpec := cell.RetrySpec()
 	runCtx, heartbeat := u.startHeartbeat(ctx, cell, attemptID)
 	failValidation := func(validationErr error) (domain.Cell, error) {
 		heartbeatErr := heartbeat.stop()
@@ -54,7 +54,7 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 		if stage == "" {
 			stage = nextCreationStage(cell)
 		}
-		cell = domain.FailCellCreation(cell, stage, validationErr)
+		cell.FailCreation(stage, validationErr)
 		if _, saveErr := replaceRetryCell(context.WithoutCancel(ctx), u.State, cell, attemptID); saveErr != nil {
 			return domain.Cell{}, errors.Join(validationErr, heartbeatErr, fmt.Errorf("save failed cell: %w", saveErr))
 		}
@@ -81,14 +81,14 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 	if err != nil {
 		return failValidation(err)
 	}
-	drivers := domain.CellResourceDrivers(cell)
+	drivers := cell.ResourceDrivers()
 	rendered, err := u.CellFactory.NewCell(retrySpec.ID, retrySpec.Issue, retrySpec.Project, retrySpec.Template, sources, containers, sessionEntity, drivers.Notification)
 	if err != nil {
 		return failValidation(err)
 	}
 	stored := cell
-	cell = domain.RefreshCellForRetry(cell, rendered)
-	drivers = domain.CellResourceDrivers(cell)
+	cell.RefreshForRetry(rendered)
+	drivers = cell.ResourceDrivers()
 	source, err := u.SourceFactory.Source(drivers.Source)
 	if err != nil {
 		return failValidation(err)
@@ -126,43 +126,43 @@ func (u RetryCellUseCase) acquireRetry(ctx context.Context, identifier string, a
 		if !ok {
 			return nil, fmt.Errorf("cell %q not found", identifier)
 		}
-		switch domain.CellCreationStatus(cell) {
+		switch cell.CreationStatus() {
 		case domain.CreationFailed:
 		case domain.CreationRetrying:
-			if domain.CellRetryLeaseValid(cell, now, u.leaseTimeout()) {
-				return nil, fmt.Errorf("retry already in progress for cell %q", domain.CellName(cell))
+			if cell.RetryLeaseValid(now, u.leaseTimeout()) {
+				return nil, fmt.Errorf("retry already in progress for cell %q", cell.Name())
 			}
 		default:
-			return nil, fmt.Errorf("cell %q is %s and cannot be retried", domain.CellName(cell), domain.CellCreationStatus(cell))
+			return nil, fmt.Errorf("cell %q is %s and cannot be retried", cell.Name(), cell.CreationStatus())
 		}
-		cell = domain.BeginCellRetry(cell, attemptID, now)
-		cellSummary := domain.SummarizeCell(cell)
+		cell.BeginRetry(attemptID, now)
+		cellSummary := cell.Summary()
 		for index := range cells {
-			if domain.SummarizeCell(cells[index]).ID == cellSummary.ID {
+			if cells[index].Summary().ID == cellSummary.ID {
 				cells[index] = cell
-				acquired = domain.CloneCell(cell)
+				acquired = cell.Clone()
 				return cells, nil
 			}
 		}
 		return nil, fmt.Errorf("cell %q not found", identifier)
 	})
 	if err == nil {
-		acquired = domain.CellAfterPersistence(acquired)
+		acquired.AdvanceVersion()
 	}
 	return acquired, err
 }
 
 func (u RetryCellUseCase) heartbeat(ctx context.Context, cell domain.Cell, attemptID string) error {
-	summary := domain.SummarizeCell(cell)
+	summary := cell.Summary()
 	return u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if domain.SummarizeCell(cells[index]).ID != summary.ID {
+			if cells[index].Summary().ID != summary.ID {
 				continue
 			}
-			if !domain.CellRetryAttemptMatches(cells[index], attemptID) {
-				return nil, retryOwnershipLostError(domain.CellName(cell))
+			if !cells[index].RetryAttemptMatches(attemptID) {
+				return nil, retryOwnershipLostError(cell.Name())
 			}
-			cells[index] = domain.HeartbeatCellRetry(cells[index], u.now())
+			cells[index].HeartbeatRetry(u.now())
 			return cells, nil
 		}
 		return nil, fmt.Errorf("cell %q not found", summary.ID)
@@ -238,7 +238,7 @@ func nextCreationStage(cell domain.Cell) domain.CreationStage {
 		domain.CreationStageContainers,
 		domain.CreationStageSession,
 	} {
-		if !domain.CellCreationStageCompleted(cell, stage) {
+		if !cell.CreationStageCompleted(stage) {
 			return stage
 		}
 	}

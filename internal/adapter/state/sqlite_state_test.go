@@ -17,7 +17,7 @@ func persistedTestCell(t *testing.T) domain.Cell {
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	container, err := domain.NewContainer("db", []string{"project_default"}, "db", domain.Dependency)
+	container, err := domain.NewContainer([]string{"project_default"}, "db", domain.Dependency)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,8 @@ func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否�
 	if err := adapter.SaveCells(ctx, []domain.Cell{cell}); err != nil {
 		t.Fatal(err)
 	}
-	changed, _ := domain.SetCellNote(cell, "updated")
+	changed := cell
+	_ = changed.SetNote("updated")
 	if err := adapter.SaveCells(ctx, []domain.Cell{changed}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,8 @@ func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否�
 		t.Fatalf("version = %d", got[0].Version)
 	}
 
-	stale, _ := domain.SetCellNote(cell, "stale")
+	stale := cell
+	_ = stale.SetNote("stale")
 	if err := adapter.SaveCells(ctx, []domain.Cell{stale}); !errors.Is(err, domain.ErrVersionConflict) {
 		t.Fatalf("error = %v", err)
 	}
@@ -83,7 +85,8 @@ func TestSQLiteStateは古いVersionによる削除を拒否する(t *testing.T)
 	if err := adapter.SaveCells(ctx, []domain.Cell{cell}); err != nil {
 		t.Fatal(err)
 	}
-	changed, _ := domain.SetCellNote(cell, "updated")
+	changed := cell
+	_ = changed.SetNote("updated")
 	if err := adapter.SaveCells(ctx, []domain.Cell{changed}); err != nil {
 		t.Fatal(err)
 	}

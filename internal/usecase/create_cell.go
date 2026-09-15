@@ -26,14 +26,6 @@ type ForkCellUseCase struct {
 }
 
 func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.Cell, error) {
-	var note string
-	if input.Note != nil {
-		var err error
-		note, err = domain.NormalizeCellNote(*input.Note)
-		if err != nil {
-			return domain.Cell{}, err
-		}
-	}
 	cfg, err := u.Config.Load(ctx)
 	if err != nil {
 		return domain.Cell{}, err
@@ -64,13 +56,12 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	if note != "" {
-		cell, err = domain.SetCellNote(cell, note)
-		if err != nil {
+	if input.Note != nil {
+		if err = cell.SetNote(*input.Note); err != nil {
 			return domain.Cell{}, err
 		}
 	}
-	if err := ensureForkUnique(existing, input.Issue, domain.CellName(cell)); err != nil {
+	if err := ensureForkUnique(existing, input.Issue, cell.Name()); err != nil {
 		return domain.Cell{}, err
 	}
 	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
@@ -86,9 +77,9 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 
-	cell = domain.BeginCellCreation(cell, input.Command)
+	cell.BeginCreation(input.Command)
 	if err := u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
-		if err := ensureForkUnique(latest, input.Issue, domain.CellName(cell)); err != nil {
+		if err := ensureForkUnique(latest, input.Issue, cell.Name()); err != nil {
 			return nil, err
 		}
 		return append(latest, cell), nil
@@ -110,12 +101,12 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 
 func ensureForkUnique(existing []domain.Cell, issue string, name string) error {
 	for _, cell := range existing {
-		summary := domain.SummarizeCell(cell)
+		summary := cell.Summary()
 		if summary.Issue != issue && summary.Name != name {
 			continue
 		}
-		if domain.CellCreationStatus(cell) == domain.CreationFailed {
-			return fmt.Errorf("cell %q is failed; use paracell retry %s", domain.CellName(cell), domain.CellName(cell))
+		if cell.CreationStatus() == domain.CreationFailed {
+			return fmt.Errorf("cell %q is failed; use paracell retry %s", cell.Name(), cell.Name())
 		}
 		return domain.EnsureCellUnique(existing, issue, name)
 	}
@@ -139,22 +130,22 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 		domain.CreationStageSession,
 	}
 	for _, stage := range stages {
-		if domain.CellCreationStageCompleted(*cell, stage) {
+		if (*cell).CreationStageCompleted(stage) {
 			continue
 		}
-		before := domain.CloneCell(*cell)
+		before := (*cell).Clone()
 		if err := r.runStage(ctx, cell, templates, stage, retry); err != nil {
 			*cell = before
 			rollbackErr := r.rollbackDependencyContainers(context.WithoutCancel(ctx), cell, stage)
 			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal(), rollbackErr))
 		}
-		*cell = domain.CompleteCellCreationStage(*cell, stage)
+		cell.CompleteCreationStage(stage)
 		if stage == domain.CreationStageSession {
 			if err := r.beforeTerminal(); err != nil {
 				*cell = before
 				return r.fail(ctx, cell, stage, err)
 			}
-			*cell = domain.FinishCellCreation(*cell)
+			cell.FinishCreation()
 		}
 		saveCtx := ctx
 		if stage == domain.CreationStageSession && r.BeforeTerminal != nil {
@@ -172,11 +163,11 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 }
 
 func (r cellCreationRunner) rollbackDependencyContainers(ctx context.Context, cell *domain.Cell, failedStage domain.CreationStage) error {
-	if failedStage != domain.CreationStageSession || !domain.CellCreationStageCompleted(*cell, domain.CreationStageContainers) || !domain.CellUsesDependency(*cell) {
+	if failedStage != domain.CreationStageSession || !cell.CreationStageCompleted(domain.CreationStageContainers) || !cell.UsesDependency() {
 		return nil
 	}
 	err := ignoreNotFound(domain.CleanContainers(ctx, *cell, r.Containers))
-	*cell = domain.ResetCellCreationStage(*cell, domain.CreationStageContainers)
+	cell.ResetCreationStage(domain.CreationStageContainers)
 	return err
 }
 
@@ -205,11 +196,7 @@ func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, tem
 				return fmt.Errorf("prepare containers retry: %w", err)
 			}
 		}
-		updated, err := domain.CreateContainers(ctx, *cell, templates, r.Containers)
-		if err == nil {
-			*cell = updated
-		}
-		return err
+		return domain.CreateContainers(ctx, cell, templates, r.Containers)
 	case domain.CreationStageSession:
 		if retry {
 			cleanupCell := *cell
@@ -238,7 +225,7 @@ func (r cellCreationRunner) cleanupUncheckpointedStage(ctx context.Context, cell
 }
 
 func (r cellCreationRunner) fail(ctx context.Context, cell *domain.Cell, stage domain.CreationStage, createErr error) error {
-	*cell = domain.FailCellCreation(*cell, stage, createErr)
+	cell.FailCreation(stage, createErr)
 	saveErr := r.save(context.WithoutCancel(ctx), cell)
 	if saveErr != nil {
 		return errors.Join(createErr, fmt.Errorf("save failed cell: %w", saveErr))
@@ -255,21 +242,20 @@ func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
 		saved, err = replaceCell(ctx, r.State, *cell)
 	}
 	if err == nil {
-		*cell = domain.CellAfterPersistence(saved)
+		saved.AdvanceVersion()
+		*cell = saved
 	}
 	return err
 }
 
 func replaceRetryCell(ctx context.Context, state CellStatePort, target domain.Cell, attemptID string) (domain.Cell, error) {
-	targetSummary := domain.SummarizeCell(target)
+	targetSummary := target.Summary()
 	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if domain.SummarizeCell(cells[index]).ID != targetSummary.ID {
+			if cells[index].Summary().ID != targetSummary.ID {
 				continue
 			}
-			var err error
-			target, err = domain.PrepareCellRetryPersistence(target, cells[index], attemptID)
-			if err != nil {
+			if err := target.PrepareRetryPersistence(cells[index], attemptID); err != nil {
 				return nil, err
 			}
 			cells[index] = target
@@ -281,10 +267,10 @@ func replaceRetryCell(ctx context.Context, state CellStatePort, target domain.Ce
 }
 
 func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) (domain.Cell, error) {
-	targetSummary := domain.SummarizeCell(target)
+	targetSummary := target.Summary()
 	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if domain.SummarizeCell(cells[index]).ID == targetSummary.ID {
+			if cells[index].Summary().ID == targetSummary.ID {
 				cells[index] = target
 				return cells, nil
 			}

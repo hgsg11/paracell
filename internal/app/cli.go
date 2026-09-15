@@ -49,7 +49,7 @@ var (
 	}
 	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
 		uc := usecase.MarkCellDoneUseCase{State: state}
-		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: domain.CellName(cell)})
+		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name()})
 	}
 	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, notifications usecase.NotificationProviderFactory, cellName string, status domain.CellStatus) (domain.Cell, error) {
 		uc := usecase.SetCellStatusUseCase{State: state, NotificationFactory: notifications}
@@ -57,7 +57,7 @@ var (
 	}
 	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) (*exec.Cmd, error) {
 		_ = cfg
-		driver := domain.CellResourceDrivers(cell).Session
+		driver := cell.ResourceDrivers().Session
 		if driver != domain.Tmux {
 			return nil, fmt.Errorf("unsupported session driver %q", driver)
 		}
@@ -69,9 +69,9 @@ var (
 			return nil, err
 		}
 		if os.Getenv("TMUX") != "" {
-			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", domain.SessionName(cell)), nil
+			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", cell.SessionName()), nil
 		}
-		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", domain.SessionName(cell)), nil
+		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.SessionName()), nil
 	}
 	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
@@ -107,7 +107,7 @@ var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.
 		ContainerFactory: container,
 		SessionFactory:   session,
 	}
-	return uc.Execute(ctx, usecase.CleanCellInput{Cell: domain.CellName(cell)})
+	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.Name()})
 }
 
 type CommandKind string
