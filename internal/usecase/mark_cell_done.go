@@ -19,7 +19,7 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 	var updated domain.Cell
 	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
+			if cell.Matches(input.Cell) {
 				cell.ToggleDone()
 				cells[i] = cell
 				updated = cell
@@ -31,5 +31,6 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 	if err != nil {
 		return domain.Cell{}, err
 	}
+	updated.AdvanceVersion()
 	return updated, nil
 }

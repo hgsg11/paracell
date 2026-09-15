@@ -13,15 +13,11 @@ func TestCreateContainersはTargetを作りDependencyを接続する(t *testing.
 		`{"Config":{"Image":"app:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
 		`{"Config":{"Image":"db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["db"]}}}}`,
 	}}
-	cell := domain.Cell{Name: "42", Containers: domain.Containers{Network: "cell-42", Services: map[string]domain.CellContainer{
-		"app": {ContainerName: "cell-42-app", SourceContainer: "app", Mode: domain.Target},
-		"db":  {ContainerName: "db", SourceContainer: "db", Mode: domain.Dependency},
-	}}}
-	templates := []domain.ContainerTemplate{
-		{Name: "app", Mode: domain.Target, Environments: []domain.Environment{{Name: "A", Value: "B"}}},
-		{Name: "db", Mode: domain.Dependency},
-	}
-	if err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), cell, templates); err != nil {
+	resources := domain.NewContainerResources("42", "sample", "cell-42", ".paracell/cells/42/source", []domain.ContainerResource{
+		domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, []domain.Environment{{Name: "A", Value: "B"}}, nil),
+		domain.NewContainerResource("db", nil, "db", domain.Dependency, nil, nil),
+	})
+	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), resources); err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Join(runner.runCalls, "\n")

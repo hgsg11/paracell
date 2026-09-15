@@ -1,14 +1,12 @@
 package config
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"text/template"
 
 	"github.com/hgsg11/paracell/internal/domain"
 	"gopkg.in/yaml.v3"
@@ -17,6 +15,8 @@ import (
 type YAMLConfigAdapter struct {
 	Path string
 }
+
+func NewYAMLConfigAdapter(path string) YAMLConfigAdapter { return YAMLConfigAdapter{Path: path} }
 
 type yamlProviders struct {
 	Source        string `yaml:"source"`
@@ -66,7 +66,7 @@ type rawWindow struct {
 	Command string `yaml:"command"`
 }
 
-func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) (domain.Templates, error) {
+func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 	_ = ctx
 	data, err := os.ReadFile(a.Path)
 	if err != nil {
@@ -74,10 +74,6 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 	}
 	var raw yamlConfig
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return domain.Templates{}, err
-	}
-	resolved, err := resolveTemplates(raw.Templates)
-	if err != nil {
 		return domain.Templates{}, err
 	}
 	if raw.Providers.Source == "" {
@@ -95,19 +91,9 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 	if err != nil {
 		return domain.Templates{}, err
 	}
-	templateVars := vars
-	if vars != nil {
-		copied := *vars
-		copied.Project = raw.Project.Name
-		templateVars = &copied
-	}
-	items := make([]domain.Template, 0, len(resolved))
-	for _, name := range sortedMapKeys(resolved) {
-		item := resolved[name]
-		if item.Abstract {
-			continue
-		}
-		domainTemplate, err := item.toDomain(name, templateVars)
+	items := make([]domain.Template, 0, len(raw.Templates))
+	for _, name := range sortedMapKeys(raw.Templates) {
+		domainTemplate, err := raw.Templates[name].toDomain(name)
 		if err != nil {
 			return domain.Templates{}, err
 		}
@@ -120,97 +106,18 @@ func (a YAMLConfigAdapter) Load(ctx context.Context, vars *domain.TemplateVars) 
 	return templates, nil
 }
 
-type templateVisitState uint8
-
-const (
-	templateUnvisited templateVisitState = iota
-	templateVisiting
-	templateResolved
-)
-
-func resolveTemplates(templates map[string]rawYAMLTemplate) (map[string]rawYAMLTemplate, error) {
-	resolved := make(map[string]rawYAMLTemplate, len(templates))
-	states := make(map[string]templateVisitState, len(templates))
-	path := make([]string, 0, len(templates))
-	var resolve func(string) (rawYAMLTemplate, error)
-	resolve = func(name string) (rawYAMLTemplate, error) {
-		switch states[name] {
-		case templateResolved:
-			return resolved[name], nil
-		case templateVisiting:
-			return rawYAMLTemplate{}, fmt.Errorf("template inheritance cycle at %q", name)
-		}
-		child := templates[name]
-		states[name] = templateVisiting
-		path = append(path, name)
-		if child.Extends != "" {
-			if _, ok := templates[child.Extends]; !ok {
-				return rawYAMLTemplate{}, fmt.Errorf("template %q extends unknown template %q", name, child.Extends)
-			}
-			parent, err := resolve(child.Extends)
-			if err != nil {
-				return rawYAMLTemplate{}, err
-			}
-			child = mergeTemplate(parent, child)
-		}
-		path = path[:len(path)-1]
-		states[name] = templateResolved
-		resolved[name] = child
-		return child, nil
-	}
-	for _, name := range sortedMapKeys(templates) {
-		if _, err := resolve(name); err != nil {
-			return nil, err
-		}
-	}
-	return resolved, nil
-}
-
-func mergeTemplate(parent rawYAMLTemplate, child rawYAMLTemplate) rawYAMLTemplate {
-	merged := parent
-	merged.Extends = child.Extends
-	merged.Abstract = child.Abstract
-	merged.Repository = mergeRepository(parent.Repository, child.Repository)
-	if child.Containers != nil {
-		merged.Containers = child.Containers
-	}
-	if child.Session != nil {
-		merged.Session = child.Session
-	}
-	return merged
-}
-
-func mergeRepository(parent *rawRepositoryTemplate, child *rawRepositoryTemplate) *rawRepositoryTemplate {
-	if child == nil {
-		return parent
-	}
-	merged := rawRepositoryTemplate{}
-	if parent != nil {
-		merged = *parent
-	}
-	if child.Path != nil {
-		merged.Path = child.Path
-	}
-	if child.Base != nil {
-		merged.Base = child.Base
-	}
-	if child.Prefix != nil {
-		merged.Prefix = child.Prefix
-	}
-	return &merged
-}
-
-func (raw rawYAMLTemplate) toDomain(name string, vars *domain.TemplateVars) (domain.Template, error) {
-	sources := []domain.SourceTemplate{}
+func (raw rawYAMLTemplate) toDomain(name string) (domain.Template, error) {
+	var repository *domain.SourceTemplate
 	if raw.Repository != nil {
-		source, err := domain.NewSourceTemplate(stringValue(raw.Repository.Path), stringValue(raw.Repository.Base), stringValue(raw.Repository.Prefix))
+		source, err := domain.NewPartialSourceTemplate(raw.Repository.Path, raw.Repository.Base, raw.Repository.Prefix)
 		if err != nil {
 			return domain.Template{}, fmt.Errorf("template %q: %w", name, err)
 		}
-		sources = append(sources, source)
+		repository = &source
 	}
-	containers := []domain.ContainerTemplate{}
+	var containers *[]domain.ContainerTemplate
 	if raw.Containers != nil && raw.Containers.Services != nil {
+		items := []domain.ContainerTemplate{}
 		for _, containerName := range sortedMapKeys(*raw.Containers.Services) {
 			rawContainer := (*raw.Containers.Services)[containerName]
 			modeValue := ""
@@ -223,11 +130,7 @@ func (raw rawYAMLTemplate) toDomain(name string, vars *domain.TemplateVars) (dom
 			}
 			environments := make([]domain.Environment, 0, len(rawContainer.Environment))
 			for _, environmentName := range sortedMapKeys(rawContainer.Environment) {
-				value, err := renderValue(rawContainer.Environment[environmentName], vars)
-				if err != nil {
-					return domain.Template{}, fmt.Errorf("render environment %q for container %q: %w", environmentName, containerName, err)
-				}
-				environment, err := domain.NewEnvironment(environmentName, value)
+				environment, err := domain.NewEnvironment(environmentName, rawContainer.Environment[environmentName])
 				if err != nil {
 					return domain.Template{}, err
 				}
@@ -245,31 +148,30 @@ func (raw rawYAMLTemplate) toDomain(name string, vars *domain.TemplateVars) (dom
 			if err != nil {
 				return domain.Template{}, err
 			}
-			containers = append(containers, container)
+			items = append(items, container)
 		}
+		containers = &items
+	} else if raw.Containers != nil {
+		empty := []domain.ContainerTemplate{}
+		containers = &empty
 	}
-	windows := []domain.Window{}
+	var session *domain.SessionTemplate
 	if raw.Session != nil && raw.Session.Windows != nil {
+		windows := []domain.Window{}
 		for _, rawWindow := range *raw.Session.Windows {
-			command, err := renderValue(rawWindow.Command, vars)
-			if err != nil {
-				return domain.Template{}, fmt.Errorf("render session window %q: %w", rawWindow.Name, err)
-			}
-			window, err := domain.NewWindow(rawWindow.Name, command)
+			window, err := domain.NewWindow(rawWindow.Name, rawWindow.Command)
 			if err != nil {
 				return domain.Template{}, err
 			}
 			windows = append(windows, window)
 		}
+		value := domain.NewSessionTemplate(windows)
+		session = &value
+	} else if raw.Session != nil {
+		value := domain.NewSessionTemplate(nil)
+		session = &value
 	}
-	return domain.NewTemplate(name, sources, containers, domain.NewSessionTemplate(windows))
-}
-
-func stringValue(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return domain.NewUnresolvedTemplate(name, raw.Extends, raw.Abstract, repository, containers, session)
 }
 
 func sortedMapKeys[T any](values map[string]T) []string {
@@ -279,21 +181,6 @@ func sortedMapKeys[T any](values map[string]T) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func renderValue(value string, vars *domain.TemplateVars) (string, error) {
-	if vars == nil {
-		return value, nil
-	}
-	tpl, err := template.New("value").Option("missingkey=error").Parse(value)
-	if err != nil {
-		return "", err
-	}
-	var rendered bytes.Buffer
-	if err := tpl.Execute(&rendered, vars); err != nil {
-		return "", err
-	}
-	return rendered.String(), nil
 }
 
 func (a YAMLConfigAdapter) ConfigExists(ctx context.Context) (bool, error) {
@@ -322,30 +209,34 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 	}
 	raw.Project.Name = cfg.ProjectName
 	for _, item := range cfg.Templates {
-		entry := rawYAMLTemplate{}
-		if len(item.Sources) > 0 {
-			source := item.Sources[0]
+		entry := rawYAMLTemplate{Extends: item.Extends, Abstract: item.Abstract}
+		if item.Repository != nil {
+			source := *item.Repository
 			entry.Repository = &rawRepositoryTemplate{Path: stringPointer(source.Path), Base: stringPointer(source.Base), Prefix: stringPointer(source.Prefix)}
 		}
-		services := make(map[string]rawContainer, len(item.Containers))
-		for _, container := range item.Containers {
-			mode := string(container.Mode)
-			environment := make(map[string]string, len(container.Environments))
-			for _, item := range container.Environments {
-				environment[item.Name] = item.Value
+		if item.Containers != nil {
+			services := make(map[string]rawContainer, len(*item.Containers))
+			for _, container := range *item.Containers {
+				mode := string(container.Mode)
+				environment := make(map[string]string, len(container.Environments))
+				for _, item := range container.Environments {
+					environment[item.Name] = item.Value
+				}
+				files := make(map[string]string, len(container.Mounts))
+				for _, mount := range container.Mounts {
+					files[mount.TargetPath] = mount.SourcePath
+				}
+				services[container.Name] = rawContainer{Mode: &mode, Environment: environment, Files: files}
 			}
-			files := make(map[string]string, len(container.Mounts))
-			for _, mount := range container.Mounts {
-				files[mount.TargetPath] = mount.SourcePath
+			entry.Containers = &rawContainerTemplate{Services: &services}
+		}
+		if item.Session != nil {
+			windows := make([]rawWindow, 0, len(item.Session.Windows))
+			for _, window := range item.Session.Windows {
+				windows = append(windows, rawWindow{Name: window.Name, Command: window.Command})
 			}
-			services[container.Name] = rawContainer{Mode: &mode, Environment: environment, Files: files}
+			entry.Session = &rawSessionTemplate{Windows: &windows}
 		}
-		entry.Containers = &rawContainerTemplate{Services: &services}
-		windows := make([]rawWindow, 0, len(item.Session.Windows))
-		for _, window := range item.Session.Windows {
-			windows = append(windows, rawWindow{Name: window.Name, Command: window.Command})
-		}
-		entry.Session = &rawSessionTemplate{Windows: &windows}
 		raw.Templates[item.Name] = entry
 	}
 	data, err := yaml.Marshal(raw)

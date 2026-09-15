@@ -276,7 +276,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.ID == msg.cell.ID {
+			if cell.Summary().ID == msg.cell.Summary().ID {
 				index = i
 				break
 			}
@@ -301,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.ID == msg.cell.ID {
+			if cell.Summary().ID == msg.cell.Summary().ID {
 				index = i
 				break
 			}
@@ -342,12 +342,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		selectedID := ""
 		if m.Selected >= 0 && m.Selected < len(m.Cells) {
-			selectedID = m.Cells[m.Selected].ID
+			selectedID = m.Cells[m.Selected].Summary().ID
 		}
 		m.Cells = cells
 		if selectedID != "" {
 			for i, cell := range m.Cells {
-				if cell.ID == selectedID {
+				if cell.Summary().ID == selectedID {
 					m.Selected = i
 					break
 				}
@@ -447,10 +447,11 @@ func renderCellsPane(m Model, width int, height int) []string {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
 			done := "[ ]"
-			if cell.IsDone() {
+			if cell.Summary().Done {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.DisplayLabel(), maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			summary := cell.Summary()
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(summary.DisplayLabel, maxIssueDisplayWidth), nameWidth), padded(ellipsize(summary.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -554,14 +555,15 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(cell.DisplayLabel(), maxIssueDisplayWidth)))
-		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
+		summary := cell.Summary()
+		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(summary.DisplayLabel, maxIssueDisplayWidth)))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(summary.Template, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
 }
 
 func renderCellStatus(cell domain.Cell, frame int) string {
-	switch cell.Status() {
+	switch cell.Summary().Status {
 	case domain.Pending:
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
 	case domain.Ready:
@@ -599,7 +601,7 @@ func resetForkInput(m Model) Model {
 }
 
 func currentCellMarker(cell domain.Cell, currentCell string) string {
-	if currentCell != "" && cell.Name == currentCell {
+	if currentCell != "" && cell.Name() == currentCell {
 		return "*"
 	}
 	return " "

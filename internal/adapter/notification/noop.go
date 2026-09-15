@@ -1,16 +1,14 @@
 package notification
 
-import (
-	"context"
-
-	"github.com/hgsg11/paracell/internal/domain"
-)
+import "context"
 
 type NoopNotifier struct{}
 
-func (NoopNotifier) NotifyReady(ctx context.Context, cell domain.Cell, message string) error {
+func NewNoopNotifier() NoopNotifier { return NoopNotifier{} }
+
+func (NoopNotifier) NotifyReady(ctx context.Context, sessionName string, message string) error {
 	_ = ctx
-	_ = cell
+	_ = sessionName
 	_ = message
 	return nil
 }

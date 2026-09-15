@@ -46,55 +46,58 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 		return domain.Cell{}, err
 	}
 
+	retrySpec := cell.RetrySpec()
 	runCtx, heartbeat := u.startHeartbeat(ctx, cell, attemptID)
 	failValidation := func(validationErr error) (domain.Cell, error) {
 		heartbeatErr := heartbeat.stop()
-		stage := cell.Creation.FailedStage
+		stage := retrySpec.FailedStage
 		if stage == "" {
 			stage = nextCreationStage(cell)
 		}
 		cell.FailCreation(stage, validationErr)
-		if saveErr := replaceRetryCell(context.WithoutCancel(ctx), u.State, cell, attemptID); saveErr != nil {
+		if _, saveErr := replaceRetryCell(context.WithoutCancel(ctx), u.State, cell, attemptID); saveErr != nil {
 			return domain.Cell{}, errors.Join(validationErr, heartbeatErr, fmt.Errorf("save failed cell: %w", saveErr))
 		}
 		return domain.Cell{}, errors.Join(validationErr, heartbeatErr)
 	}
 
-	cfg, err := u.Config.Load(runCtx, &domain.TemplateVars{
-		Issue:   cell.Issue,
-		Name:    cell.Name,
-		Command: cell.Creation.Command,
-	})
+	cfg, err := u.Config.Load(runCtx)
 	if err != nil {
 		return failValidation(err)
 	}
-	sources, err := cfg.GetSourceTemplates(cell.Template)
+	resolved, err := domain.ResolveTemplate(cfg, retrySpec.Template, domain.NewTemplateVars(retrySpec.Issue, retrySpec.Name, retrySpec.Project, retrySpec.Command))
 	if err != nil {
 		return failValidation(err)
 	}
-	containerTemplates, err := cfg.GetContainerTemplates(cell.Template)
+	sources, err := domain.BuildSourcesForRetry(cell, cfg.SourceDriverType, resolved.Sources, retrySpec.Issue)
 	if err != nil {
 		return failValidation(err)
 	}
-	sessionTemplate, err := cfg.GetSessionTemplate(cell.Template)
+	containers, err := domain.BuildContainersForRetry(cell, cfg.ContainerDriverType, resolved.Containers)
 	if err != nil {
 		return failValidation(err)
 	}
-	rendered, err := u.CellFactory.NewCell(cell.ID, cell.Issue, cell.Template, sources, containerTemplates, sessionTemplate, cfg.ProjectName)
+	sessionEntity, err := domain.BuildSessionForRetry(cell, cfg.SessionDriverType, resolved.Session)
+	if err != nil {
+		return failValidation(err)
+	}
+	drivers := cell.ResourceDrivers()
+	rendered, err := u.CellFactory.NewCell(retrySpec.ID, retrySpec.Issue, retrySpec.Project, retrySpec.Template, sources, containers, sessionEntity, drivers.Notification)
 	if err != nil {
 		return failValidation(err)
 	}
 	stored := cell
-	cell = refreshRetryCell(cell, rendered)
-	source, err := u.SourceFactory.Source(cfg.GetSourceDriverType())
+	cell.RefreshForRetry(rendered)
+	drivers = cell.ResourceDrivers()
+	source, err := u.SourceFactory.Source(drivers.Source)
 	if err != nil {
 		return failValidation(err)
 	}
-	containers, err := u.ContainerFactory.Container(cfg.GetContainerDriverType())
+	containerPort, err := u.ContainerFactory.Container(drivers.Container)
 	if err != nil {
 		return failValidation(err)
 	}
-	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
+	sessionPort, err := u.SessionFactory.Session(drivers.Session)
 	if err != nil {
 		return failValidation(err)
 	}
@@ -102,13 +105,13 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 	runner := cellCreationRunner{
 		State:          u.State,
 		Source:         source,
-		Containers:     containers,
-		Session:        session,
+		Containers:     containerPort,
+		Session:        sessionPort,
 		RetryBase:      &stored,
 		AttemptID:      attemptID,
 		BeforeTerminal: heartbeat.stop,
 	}
-	runErr := runner.run(runCtx, &cell, containerTemplates, true)
+	runErr := runner.run(runCtx, &cell, resolved.Containers, true)
 	heartbeatErr := heartbeat.stop()
 	if runErr != nil || heartbeatErr != nil {
 		return domain.Cell{}, errors.Join(runErr, heartbeatErr)
@@ -119,7 +122,7 @@ func (u RetryCellUseCase) Execute(ctx context.Context, input RetryCellInput) (do
 func (u RetryCellUseCase) acquireRetry(ctx context.Context, identifier string, attemptID string, now time.Time) (domain.Cell, error) {
 	var acquired domain.Cell
 	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		cell, ok := resolveCell(cells, identifier)
+		cell, ok := domain.ResolveCell(cells, identifier)
 		if !ok {
 			return nil, fmt.Errorf("cell %q not found", identifier)
 		}
@@ -127,37 +130,42 @@ func (u RetryCellUseCase) acquireRetry(ctx context.Context, identifier string, a
 		case domain.CreationFailed:
 		case domain.CreationRetrying:
 			if cell.RetryLeaseValid(now, u.leaseTimeout()) {
-				return nil, fmt.Errorf("retry already in progress for cell %q", cell.Name)
+				return nil, fmt.Errorf("retry already in progress for cell %q", cell.Name())
 			}
 		default:
-			return nil, fmt.Errorf("cell %q is %s and cannot be retried", cell.Name, cell.CreationStatus())
+			return nil, fmt.Errorf("cell %q is %s and cannot be retried", cell.Name(), cell.CreationStatus())
 		}
 		cell.BeginRetry(attemptID, now)
+		cellSummary := cell.Summary()
 		for index := range cells {
-			if cells[index].ID == cell.ID {
+			if cells[index].Summary().ID == cellSummary.ID {
 				cells[index] = cell
-				acquired = cloneCell(cell)
+				acquired = cell.Clone()
 				return cells, nil
 			}
 		}
 		return nil, fmt.Errorf("cell %q not found", identifier)
 	})
+	if err == nil {
+		acquired.AdvanceVersion()
+	}
 	return acquired, err
 }
 
 func (u RetryCellUseCase) heartbeat(ctx context.Context, cell domain.Cell, attemptID string) error {
+	summary := cell.Summary()
 	return u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if cells[index].ID != cell.ID {
+			if cells[index].Summary().ID != summary.ID {
 				continue
 			}
-			if cells[index].CreationStatus() != domain.CreationRetrying || cells[index].Creation.AttemptID != attemptID {
-				return nil, retryOwnershipLostError(cell.Name)
+			if !cells[index].RetryAttemptMatches(attemptID) {
+				return nil, retryOwnershipLostError(cell.Name())
 			}
 			cells[index].HeartbeatRetry(u.now())
 			return cells, nil
 		}
-		return nil, fmt.Errorf("cell %q not found", cell.ID)
+		return nil, fmt.Errorf("cell %q not found", summary.ID)
 	})
 }
 
@@ -224,15 +232,6 @@ func retryOwnershipLostError(cell string) error {
 	return fmt.Errorf("retry ownership lost for cell %q", cell)
 }
 
-func resolveCell(cells []domain.Cell, identifier string) (domain.Cell, bool) {
-	for _, cell := range cells {
-		if cell.ID == identifier || cell.Issue == identifier || cell.Name == identifier {
-			return cell, true
-		}
-	}
-	return domain.Cell{}, false
-}
-
 func nextCreationStage(cell domain.Cell) domain.CreationStage {
 	for _, stage := range []domain.CreationStage{
 		domain.CreationStageSource,
@@ -244,36 +243,4 @@ func nextCreationStage(cell domain.Cell) domain.CreationStage {
 		}
 	}
 	return domain.CreationStageSession
-}
-
-func refreshRetryCell(stored domain.Cell, rendered domain.Cell) domain.Cell {
-	refreshed := rendered
-	refreshed.ID = stored.ID
-	refreshed.Issue = stored.Issue
-	refreshed.Name = stored.Name
-	refreshed.Note = stored.Note
-	refreshed.Template = stored.Template
-	refreshed.Creation = stored.Creation
-	if stored.CreationStageCompleted(domain.CreationStageSource) {
-		refreshed.Sources = stored.Sources
-	}
-	if stored.CreationStageCompleted(domain.CreationStageContainers) {
-		refreshed.Containers = stored.Containers
-	} else {
-		refreshed.Containers.Network = stored.Containers.Network
-		for role, current := range stored.Containers.Services {
-			updated, ok := refreshed.Containers.Services[role]
-			if !ok {
-				continue
-			}
-			updated.ContainerName = current.ContainerName
-			refreshed.Containers.Services[role] = updated
-		}
-	}
-	if stored.CreationStageCompleted(domain.CreationStageSession) {
-		refreshed.Session = stored.Session
-	} else {
-		refreshed.Session.Name = stored.Session.Name
-	}
-	return refreshed
 }

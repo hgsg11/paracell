@@ -8,10 +8,27 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
+func outputCell(t *testing.T, issue string, templateName string, note string) domain.Cell {
+	t.Helper()
+	sourceDriver, _ := domain.NewSourceDriverType("git")
+	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note != "" {
+		err = cell.SetNote(note)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	return cell
+}
+
 func TestFormatCellListはNameとTemplateを表で出力する(t *testing.T) {
 	cells := []domain.Cell{
-		{Name: "123", Template: "default"},
-		{Name: "456", Template: "webapp"},
+		outputCell(t, "123", "default", ""),
+		outputCell(t, "456", "webapp", ""),
 	}
 
 	got := FormatCellList(cells)
@@ -34,7 +51,7 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 }
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
-	cell := domain.Cell{Name: "123", Template: "webapp"}
+	cell := outputCell(t, "123", "webapp", "")
 	cell.BeginCreation("command")
 	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
 
@@ -46,8 +63,8 @@ func TestFormatCellListはFailed工程と単一行に整形したErrorを出力�
 
 func TestFormatCellListはNoteをNameより優先する(t *testing.T) {
 	cells := []domain.Cell{
-		{Name: "123", Note: "PostgreSQL案", Template: "default"},
-		{Name: "456", Template: "webapp"},
+		outputCell(t, "123", "default", "PostgreSQL案"),
+		outputCell(t, "456", "webapp", ""),
 	}
 
 	got := FormatCellList(cells)

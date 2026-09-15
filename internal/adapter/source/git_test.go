@@ -13,12 +13,14 @@ func TestCreateSourceは複数RepositoryのWorktreeを作る(t *testing.T) {
 		"git -C /project show-ref --verify --quiet refs/heads/feat/42":     exitCodeError{code: 1},
 		"git -C /project/api show-ref --verify --quiet refs/heads/feat/42": exitCodeError{code: 1},
 	}}
-	cell := domain.Cell{Sources: []domain.Source{
-		{TemplatePath: ".", Path: ".paracell/cells/42/source", Base: "main", Branch: "feat/42"},
-		{TemplatePath: "api", Path: ".paracell/cells/42/source/api", Base: "main", Branch: "feat/42"},
-	}}
-	if _, err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), cell); err != nil {
-		t.Fatal(err)
+	resources := []domain.SourceResource{
+		domain.NewSourceResource(".", ".paracell/cells/42/source", "main", "feat/42"),
+		domain.NewSourceResource("api", ".paracell/cells/42/source/api", "main", "feat/42"),
+	}
+	for _, resource := range resources {
+		if _, err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), resource); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got := strings.Join(runner.runCalls, "\n"); !strings.Contains(got, "git -C /project/api worktree add /project/.paracell/cells/42/source/api -b feat/42 main") {
 		t.Fatalf("calls = %s", got)

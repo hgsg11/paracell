@@ -26,31 +26,25 @@ type ForkCellUseCase struct {
 }
 
 func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.Cell, error) {
-	var note string
-	if input.Note != nil {
-		var err error
-		note, err = domain.NormalizeCellNote(*input.Note)
-		if err != nil {
-			return domain.Cell{}, err
-		}
-	}
-	cfg, err := u.Config.Load(ctx, &domain.TemplateVars{
-		Issue:   input.Issue,
-		Name:    input.Issue,
-		Command: input.Command,
-	})
+	cfg, err := u.Config.Load(ctx)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	sources, err := cfg.GetSourceTemplates(input.Template)
+	id := u.IDs.NewID()
+	name := domain.SafeResourceName(input.Issue, id)
+	resolved, err := domain.ResolveTemplate(cfg, input.Template, domain.NewTemplateVars(input.Issue, name, cfg.ProjectName, input.Command))
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	containerTemplates, err := cfg.GetContainerTemplates(input.Template)
+	sources, err := domain.BuildSources(cfg.SourceDriverType, resolved.Sources, input.Issue)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	sessionTemplate, err := cfg.GetSessionTemplate(input.Template)
+	containers, err := domain.BuildContainers(cfg.ContainerDriverType, resolved.Containers)
+	if err != nil {
+		return domain.Cell{}, err
+	}
+	sessionEntity, err := domain.BuildSession(cfg.SessionDriverType, resolved.Session)
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -58,30 +52,34 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	cell, err := u.CellFactory.NewCell(u.IDs.NewID(), input.Issue, input.Template, sources, containerTemplates, sessionTemplate, cfg.ProjectName)
+	cell, err := u.CellFactory.NewCell(id, input.Issue, cfg.ProjectName, input.Template, sources, containers, sessionEntity, cfg.NotificationDriverType)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	cell.Note = note
-	if err := ensureForkUnique(existing, input.Issue, cell.Name); err != nil {
+	if input.Note != nil {
+		if err = cell.SetNote(*input.Note); err != nil {
+			return domain.Cell{}, err
+		}
+	}
+	if err := ensureForkUnique(existing, input.Issue, cell.Name()); err != nil {
 		return domain.Cell{}, err
 	}
-	source, err := u.SourceFactory.Source(cfg.GetSourceDriverType())
+	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	containers, err := u.ContainerFactory.Container(cfg.GetContainerDriverType())
+	containerPort, err := u.ContainerFactory.Container(cfg.ContainerDriverType)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
+	sessionPort, err := u.SessionFactory.Session(cfg.SessionDriverType)
 	if err != nil {
 		return domain.Cell{}, err
 	}
 
 	cell.BeginCreation(input.Command)
 	if err := u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
-		if err := ensureForkUnique(latest, input.Issue, cell.Name); err != nil {
+		if err := ensureForkUnique(latest, input.Issue, cell.Name()); err != nil {
 			return nil, err
 		}
 		return append(latest, cell), nil
@@ -92,10 +90,10 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	runner := cellCreationRunner{
 		State:      u.State,
 		Source:     source,
-		Containers: containers,
-		Session:    session,
+		Containers: containerPort,
+		Session:    sessionPort,
 	}
-	if err := runner.run(ctx, &cell, containerTemplates, false); err != nil {
+	if err := runner.run(ctx, &cell, resolved.Containers, false); err != nil {
 		return domain.Cell{}, err
 	}
 	return cell, nil
@@ -103,22 +101,23 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 
 func ensureForkUnique(existing []domain.Cell, issue string, name string) error {
 	for _, cell := range existing {
-		if cell.Issue != issue && cell.Name != name {
+		summary := cell.Summary()
+		if summary.Issue != issue && summary.Name != name {
 			continue
 		}
 		if cell.CreationStatus() == domain.CreationFailed {
-			return fmt.Errorf("cell %q is failed; use paracell retry %s", cell.Name, cell.Name)
+			return fmt.Errorf("cell %q is failed; use paracell retry %s", cell.Name(), cell.Name())
 		}
-		return (domain.CellUniquenessChecker{}).EnsureUnique(existing, issue, name)
+		return domain.EnsureCellUnique(existing, issue, name)
 	}
 	return nil
 }
 
 type cellCreationRunner struct {
 	State          CellStatePort
-	Source         SourcePort
-	Containers     ContainerPort
-	Session        SessionPort
+	Source         domain.SourcePort
+	Containers     domain.ContainerPort
+	Session        domain.SessionPort
 	RetryBase      *domain.Cell
 	AttemptID      string
 	BeforeTerminal func() error
@@ -131,11 +130,11 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 		domain.CreationStageSession,
 	}
 	for _, stage := range stages {
-		if cell.CreationStageCompleted(stage) {
+		if (*cell).CreationStageCompleted(stage) {
 			continue
 		}
-		before := cloneCell(*cell)
-		if err := r.runStage(ctx, *cell, templates, stage, retry); err != nil {
+		before := (*cell).Clone()
+		if err := r.runStage(ctx, cell, templates, stage, retry); err != nil {
 			*cell = before
 			rollbackErr := r.rollbackDependencyContainers(context.WithoutCancel(ctx), cell, stage)
 			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal(), rollbackErr))
@@ -152,7 +151,7 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 		if stage == domain.CreationStageSession && r.BeforeTerminal != nil {
 			saveCtx = context.WithoutCancel(ctx)
 		}
-		if err := r.save(saveCtx, *cell); err != nil {
+		if err := r.save(saveCtx, cell); err != nil {
 			terminalErr := r.beforeTerminal()
 			cleanupErr := r.cleanupUncheckpointedStage(context.WithoutCancel(ctx), before, stage)
 			*cell = before
@@ -164,21 +163,12 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell, template
 }
 
 func (r cellCreationRunner) rollbackDependencyContainers(ctx context.Context, cell *domain.Cell, failedStage domain.CreationStage) error {
-	if failedStage != domain.CreationStageSession || !cell.CreationStageCompleted(domain.CreationStageContainers) || !cellUsesDependency(*cell) {
+	if failedStage != domain.CreationStageSession || !cell.CreationStageCompleted(domain.CreationStageContainers) || !cell.UsesDependency() {
 		return nil
 	}
-	err := ignoreNotFound(r.Containers.CleanContainers(ctx, *cell))
+	err := ignoreNotFound(domain.CleanContainers(ctx, *cell, r.Containers))
 	cell.ResetCreationStage(domain.CreationStageContainers)
 	return err
-}
-
-func cellUsesDependency(cell domain.Cell) bool {
-	for _, service := range cell.Containers.Services {
-		if service.Mode == domain.Dependency {
-			return true
-		}
-	}
-	return false
 }
 
 func (r cellCreationRunner) beforeTerminal() error {
@@ -188,36 +178,36 @@ func (r cellCreationRunner) beforeTerminal() error {
 	return r.BeforeTerminal()
 }
 
-func (r cellCreationRunner) runStage(ctx context.Context, cell domain.Cell, templates []domain.ContainerTemplate, stage domain.CreationStage, retry bool) error {
+func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, templates []domain.ContainerTemplate, stage domain.CreationStage, retry bool) error {
 	switch stage {
 	case domain.CreationStageSource:
 		if retry {
-			return r.Source.ResumeSource(ctx, cell)
+			return domain.ResumeSources(ctx, *cell, r.Source)
 		}
-		_, err := r.Source.CreateSource(ctx, cell)
+		_, err := domain.CreateSources(ctx, *cell, r.Source)
 		return err
 	case domain.CreationStageContainers:
 		if retry {
-			cleanupCell := cell
+			cleanupCell := *cell
 			if r.RetryBase != nil {
 				cleanupCell = *r.RetryBase
 			}
-			if err := ignoreNotFound(r.Containers.CleanContainers(ctx, cleanupCell)); err != nil {
+			if err := ignoreNotFound(domain.CleanContainers(ctx, cleanupCell, r.Containers)); err != nil {
 				return fmt.Errorf("prepare containers retry: %w", err)
 			}
 		}
-		return r.Containers.CreateContainers(ctx, cell, templates)
+		return domain.CreateContainers(ctx, cell, templates, r.Containers)
 	case domain.CreationStageSession:
 		if retry {
-			cleanupCell := cell
+			cleanupCell := *cell
 			if r.RetryBase != nil {
 				cleanupCell = *r.RetryBase
 			}
-			if err := ignoreNotFound(r.Session.CleanSession(ctx, cleanupCell)); err != nil {
+			if err := ignoreNotFound(domain.CleanSession(ctx, cleanupCell, r.Session)); err != nil {
 				return fmt.Errorf("prepare session retry: %w", err)
 			}
 		}
-		return r.Session.CreateSession(ctx, cell)
+		return domain.CreateSession(ctx, *cell, r.Session)
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}
@@ -226,9 +216,9 @@ func (r cellCreationRunner) runStage(ctx context.Context, cell domain.Cell, temp
 func (r cellCreationRunner) cleanupUncheckpointedStage(ctx context.Context, cell domain.Cell, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageContainers:
-		return ignoreNotFound(r.Containers.CleanContainers(ctx, cell))
+		return ignoreNotFound(domain.CleanContainers(ctx, cell, r.Containers))
 	case domain.CreationStageSession:
-		return ignoreNotFound(r.Session.CleanSession(ctx, cell))
+		return ignoreNotFound(domain.CleanSession(ctx, cell, r.Session))
 	default:
 		return nil
 	}
@@ -236,53 +226,56 @@ func (r cellCreationRunner) cleanupUncheckpointedStage(ctx context.Context, cell
 
 func (r cellCreationRunner) fail(ctx context.Context, cell *domain.Cell, stage domain.CreationStage, createErr error) error {
 	cell.FailCreation(stage, createErr)
-	saveErr := r.save(context.WithoutCancel(ctx), *cell)
+	saveErr := r.save(context.WithoutCancel(ctx), cell)
 	if saveErr != nil {
 		return errors.Join(createErr, fmt.Errorf("save failed cell: %w", saveErr))
 	}
 	return createErr
 }
 
-func (r cellCreationRunner) save(ctx context.Context, cell domain.Cell) error {
+func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
+	var saved domain.Cell
+	var err error
 	if r.AttemptID != "" {
-		return replaceRetryCell(ctx, r.State, cell, r.AttemptID)
+		saved, err = replaceRetryCell(ctx, r.State, *cell, r.AttemptID)
+	} else {
+		saved, err = replaceCell(ctx, r.State, *cell)
 	}
-	return replaceCell(ctx, r.State, cell)
+	if err == nil {
+		saved.AdvanceVersion()
+		*cell = saved
+	}
+	return err
 }
 
-func replaceRetryCell(ctx context.Context, state CellStatePort, target domain.Cell, attemptID string) error {
-	return state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+func replaceRetryCell(ctx context.Context, state CellStatePort, target domain.Cell, attemptID string) (domain.Cell, error) {
+	targetSummary := target.Summary()
+	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if cells[index].ID != target.ID {
+			if cells[index].Summary().ID != targetSummary.ID {
 				continue
 			}
-			if cells[index].CreationStatus() != domain.CreationRetrying || cells[index].Creation.AttemptID != attemptID {
-				return nil, retryOwnershipLostError(target.Name)
-			}
-			if target.CreationStatus() == domain.CreationRetrying {
-				target.Creation.LeaseStartedAt = cells[index].Creation.LeaseStartedAt
-				target.Creation.LeaseHeartbeatAt = cells[index].Creation.LeaseHeartbeatAt
+			if err := target.PrepareRetryPersistence(cells[index], attemptID); err != nil {
+				return nil, err
 			}
 			cells[index] = target
 			return cells, nil
 		}
-		return nil, fmt.Errorf("cell %q not found", target.ID)
+		return nil, fmt.Errorf("cell %q not found", targetSummary.ID)
 	})
+	return target, err
 }
 
-func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) error {
-	return state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) (domain.Cell, error) {
+	targetSummary := target.Summary()
+	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if cells[index].ID == target.ID {
+			if cells[index].Summary().ID == targetSummary.ID {
 				cells[index] = target
 				return cells, nil
 			}
 		}
-		return nil, fmt.Errorf("cell %q not found", target.ID)
+		return nil, fmt.Errorf("cell %q not found", targetSummary.ID)
 	})
-}
-
-func cloneCell(cell domain.Cell) domain.Cell {
-	cell.Creation.CompletedStages = append([]domain.CreationStage(nil), cell.Creation.CompletedStages...)
-	return cell
+	return target, err
 }

@@ -33,14 +33,14 @@ type gatewayInspection struct {
 	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
 }
 
-func gatewayLabels(cell domain.Cell, containerName string, role string, bindings map[string][]dockerPortBinding) map[string]string {
+func gatewayLabels(resources domain.ContainerResources, containerName string, role string, bindings map[string][]dockerPortBinding) map[string]string {
 	ports := publishedTCPPorts(bindings)
 	if len(ports) == 0 {
 		return nil
 	}
 
-	project := gatewayProjectName(cell)
-	cellName := gatewayHostLabel(cell.Name)
+	project := gatewayHostLabel(resources.Project)
+	cellName := gatewayHostLabel(resources.CellName)
 	serviceRole := gatewayHostLabel(domain.SafeResourceName(role, "service"))
 	if project == "" || cellName == "" || serviceRole == "" {
 		return nil
@@ -48,7 +48,7 @@ func gatewayLabels(cell domain.Cell, containerName string, role string, bindings
 
 	labels := map[string]string{
 		"traefik.enable":         "true",
-		"traefik.docker.network": cellNetworkName(cell),
+		"traefik.docker.network": resources.Network,
 	}
 	for _, port := range ports {
 		name := gatewayRouteName(containerName, port)
@@ -92,15 +92,6 @@ func publishedTCPPorts(bindings map[string][]dockerPortBinding) []string {
 		return left < right
 	})
 	return ports
-}
-
-func gatewayProjectName(cell domain.Cell) string {
-	network := strings.TrimPrefix(cellNetworkName(cell), "paracell-")
-	cellSuffix := "-" + cell.Name
-	if strings.HasSuffix(network, cellSuffix) {
-		network = strings.TrimSuffix(network, cellSuffix)
-	}
-	return gatewayHostLabel(network)
 }
 
 func gatewayHostLabel(value string) string {

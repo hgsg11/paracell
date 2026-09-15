@@ -1,64 +1,240 @@
 package domain
 
 import (
-	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 )
 
 type Cell struct {
-	ID         string
-	Issue      string
-	Name       string
-	Note       string
-	Template   string
-	Sources    []Source
-	Containers Containers
-	Session    Session
-	Creation   CellCreation
-	status     CellStatus
-	done       bool
+	Version            CellVersion
+	ID                 string
+	Issue              string
+	Project            string
+	Note               string
+	Template           string
+	Sources            Sources
+	Containers         Containers
+	Session            Session
+	NotificationDriver NotificationDriverType
+	Creation           CellCreation
+	Status             CellStatus
+	Done               bool
 }
 
-type CreationStatus string
-
-const (
-	CreationCreating CreationStatus = "creating"
-	CreationFailed   CreationStatus = "failed"
-	CreationRetrying CreationStatus = "retrying"
-	CreationReady    CreationStatus = "ready"
-)
-
-type CreationStage string
-
-const (
-	CreationStageSource     CreationStage = "source"
-	CreationStageContainers CreationStage = "containers"
-	CreationStageSession    CreationStage = "session"
-)
-
-type CellCreation struct {
-	Status           CreationStatus
-	Command          string
-	CompletedStages  []CreationStage
-	FailedStage      CreationStage
-	LastError        string
-	AttemptID        string
-	LeaseStartedAt   *time.Time
-	LeaseHeartbeatAt *time.Time
+func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType) (Cell, error) {
+	if id == "" {
+		return Cell{}, fmt.Errorf("cell id is required")
+	}
+	if issue == "" {
+		return Cell{}, fmt.Errorf("issue is required")
+	}
+	if templateName == "" {
+		return Cell{}, fmt.Errorf("template name is required")
+	}
+	version, err := NewCellVersion(1)
+	if err != nil {
+		return Cell{}, err
+	}
+	return Cell{
+		Version: version, ID: id, Issue: issue, Project: project,
+		Template: templateName, Sources: sources, Containers: containers, Session: session, NotificationDriver: notificationDriver,
+		Creation: NewCellCreation(), Status: Ready,
+	}, nil
 }
 
-type CellStatus string
+func (c Cell) Name() string {
+	return SafeResourceName(c.Issue, c.ID)
+}
 
-const (
-	Pending CellStatus = "pending"
-	Ready   CellStatus = "ready"
-)
+func (c Cell) ResourcePrefix() string {
+	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.Project, "project"), c.Name())
+}
+
+func (c Cell) DisplayLabel() string {
+	if c.Note != "" {
+		return c.Note
+	}
+	return c.Name()
+}
+
+func (c Cell) Summary() CellSummary {
+	return NewCellSummary(c.Version, c.ID, c.Issue, c.Name(), c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
+}
+
+func (c Cell) ResourceDrivers() CellDrivers {
+	return NewCellDrivers(c.Sources.Driver, c.Containers.Driver, c.Session.Driver, c.NotificationDriver)
+}
+
+func NormalizeCellNote(note string) (string, error) {
+	normalized := strings.Join(strings.FieldsFunc(note, unicode.IsSpace), " ")
+	length := len([]rune(normalized))
+	if length == 0 || length > 20 {
+		return "", fmt.Errorf("cell note must be between 1 and 20 characters after whitespace normalization")
+	}
+	return normalized, nil
+}
+
+func (c *Cell) SetNote(note string) error {
+	normalized, err := NormalizeCellNote(note)
+	if err != nil {
+		return err
+	}
+	c.Note = normalized
+	return nil
+}
+
+func (c *Cell) MarkDone() error {
+	if c.Done {
+		return fmt.Errorf("cell is already done")
+	}
+	c.Done = true
+	return nil
+}
+
+func (c *Cell) ToggleDone() {
+	c.Done = !c.Done
+}
+
+func (c *Cell) SetStatus(status CellStatus) error {
+	validated, err := NewCellStatus(string(status))
+	if err != nil {
+		return err
+	}
+	c.Status = validated
+	return nil
+}
+
+func (c Cell) EnsureCanBeCleaned() error {
+	if !c.Done {
+		return fmt.Errorf("完了済みではないので消せない")
+	}
+	return nil
+}
+
+func ResolveCell(cells []Cell, identifier string) (Cell, bool) {
+	for _, cell := range cells {
+		if cell.Matches(identifier) {
+			return cell, true
+		}
+	}
+	return Cell{}, false
+}
+
+func (c Cell) Matches(identifier string) bool {
+	return c.ID == identifier || c.Issue == identifier || c.Name() == identifier
+}
+
+func EnsureCellUnique(existing []Cell, issue string, name string) error {
+	for _, cell := range existing {
+		if cell.Issue == issue {
+			return fmt.Errorf("cell issue %q already exists", issue)
+		}
+		if cell.Name() == name {
+			return fmt.Errorf("cell name %q already exists", name)
+		}
+	}
+	return nil
+}
+
+func (c *Cell) AdvanceVersion() {
+	c.Version++
+}
+
+func (c Cell) Stored() StoredCell {
+	return NewStoredCell(uint64(c.Version), c.ID, c.Issue, c.Project, c.Note, c.Template, c.Sources, c.Containers, c.Session, string(c.NotificationDriver), c.Creation, string(c.Status), c.Done)
+}
+
+func (c Cell) Clone() Cell {
+	c.Sources.Items = append([]Source(nil), c.Sources.Items...)
+	c.Containers.Items = append([]Container(nil), c.Containers.Items...)
+	for i := range c.Containers.Items {
+		c.Containers.Items[i].Network = append([]string(nil), c.Containers.Items[i].Network...)
+	}
+	c.Session.Windows = append([]SessionWindow(nil), c.Session.Windows...)
+	c.Creation.CompletedStages = append([]CreationStage(nil), c.Creation.CompletedStages...)
+	return c
+}
+
+func (c Cell) SourceWorktreePath(source Source) string {
+	path := filepath.Join(".paracell", "cells", c.Name(), "source")
+	if source.Path != "." {
+		path = filepath.Join(path, source.Path)
+	}
+	return path
+}
+
+func (c Cell) RetrySpec() CellRetrySpec {
+	return NewCellRetrySpec(c.ID, c.Issue, c.Name(), c.Project, c.Template, c.Creation.Command, c.Creation.FailedStage)
+}
+
+func (c Cell) ContainerNetworkName() string {
+	return c.ResourcePrefix()
+}
+
+func (c Cell) ContainerResourceName(container Container) string {
+	if container.Mode == Dependency {
+		return container.SourceContainer
+	}
+	return c.ResourcePrefix() + "-" + SafeResourceName(container.SourceContainer, "container")
+}
+
+func (c Cell) UsesDependency() bool {
+	for _, container := range c.Containers.Items {
+		if container.Mode == Dependency {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
+	for index := range c.Containers.Items {
+		c.Containers.Items[index].Network = append([]string(nil), networks[c.Containers.Items[index].SourceContainer]...)
+	}
+}
+
+func (c Cell) SessionName() string {
+	return SafeResourceName(c.Project, "project") + "-" + c.Name()
+}
+
+func (c Cell) RetryAttemptMatches(attemptID string) bool {
+	return c.CreationStatus() == CreationRetrying && c.Creation.AttemptID == attemptID
+}
+
+func (c *Cell) PrepareRetryPersistence(current Cell, attemptID string) error {
+	if !current.RetryAttemptMatches(attemptID) {
+		return fmt.Errorf("retry ownership lost for cell %q", c.Name())
+	}
+	if c.CreationStatus() == CreationRetrying {
+		c.Creation.LeaseStartedAt = current.Creation.LeaseStartedAt
+		c.Creation.LeaseHeartbeatAt = current.Creation.LeaseHeartbeatAt
+	}
+	c.Version = current.Version
+	return nil
+}
+
+func (c *Cell) RefreshForRetry(rendered Cell) {
+	rendered.ID = c.ID
+	rendered.Issue = c.Issue
+	rendered.Project = c.Project
+	rendered.Note = c.Note
+	rendered.Template = c.Template
+	rendered.Creation = c.Creation
+	rendered.Version = c.Version
+	rendered.Status = c.Status
+	rendered.Done = c.Done
+	rendered.NotificationDriver = c.NotificationDriver
+	*c = rendered
+}
 
 func (c *Cell) BeginCreation(command string) {
-	c.Creation = CellCreation{Status: CreationCreating, Command: command}
+	creation := NewCellCreation()
+	creation.Status = CreationCreating
+	creation.Command = command
+	c.Creation = creation
 }
 
 func (c *Cell) ResumeCreation() {
@@ -81,16 +257,8 @@ func (c *Cell) HeartbeatRetry(now time.Time) {
 }
 
 func (c Cell) RetryLeaseValid(now time.Time, timeout time.Duration) bool {
-	if c.CreationStatus() != CreationRetrying || c.Creation.AttemptID == "" || c.Creation.LeaseHeartbeatAt == nil {
-		return false
-	}
-	return !now.UTC().After(c.Creation.LeaseHeartbeatAt.Add(timeout))
-}
-
-func (c *Cell) clearRetryLease() {
-	c.Creation.AttemptID = ""
-	c.Creation.LeaseStartedAt = nil
-	c.Creation.LeaseHeartbeatAt = nil
+	return c.CreationStatus() == CreationRetrying && c.Creation.AttemptID != "" &&
+		c.Creation.LeaseHeartbeatAt != nil && !now.UTC().After(c.Creation.LeaseHeartbeatAt.Add(timeout))
 }
 
 func (c *Cell) CompleteCreationStage(stage CreationStage) {
@@ -102,7 +270,7 @@ func (c *Cell) CompleteCreationStage(stage CreationStage) {
 }
 
 func (c *Cell) ResetCreationStage(stage CreationStage) {
-	completed := c.Creation.CompletedStages[:0]
+	completed := make([]CreationStage, 0, len(c.Creation.CompletedStages))
 	for _, current := range c.Creation.CompletedStages {
 		if current != stage {
 			completed = append(completed, current)
@@ -113,26 +281,26 @@ func (c *Cell) ResetCreationStage(stage CreationStage) {
 
 func (c *Cell) FailCreation(stage CreationStage, err error) {
 	c.Creation.Status = CreationFailed
-	c.clearRetryLease()
+	c.Creation.AttemptID = ""
+	c.Creation.LeaseStartedAt = nil
+	c.Creation.LeaseHeartbeatAt = nil
 	c.Creation.FailedStage = stage
-	if err == nil {
-		c.Creation.LastError = ""
-		return
+	c.Creation.LastError = ""
+	if err != nil {
+		c.Creation.LastError = err.Error()
 	}
-	c.Creation.LastError = err.Error()
 }
 
 func (c *Cell) FinishCreation() {
 	c.Creation.Status = CreationReady
 	c.Creation.FailedStage = ""
 	c.Creation.LastError = ""
-	c.clearRetryLease()
+	c.Creation.AttemptID = ""
+	c.Creation.LeaseStartedAt = nil
+	c.Creation.LeaseHeartbeatAt = nil
 }
 
 func (c Cell) CreationStatus() CreationStatus {
-	if c.Creation.Status == "" {
-		return CreationReady
-	}
 	return c.Creation.Status
 }
 
@@ -145,115 +313,41 @@ func (c Cell) CreationStageCompleted(stage CreationStage) bool {
 	return false
 }
 
-func NormalizeCellNote(note string) (string, error) {
-	normalized := strings.Join(strings.FieldsFunc(note, unicode.IsSpace), " ")
-	length := len([]rune(normalized))
-	if length == 0 || length > 20 {
-		return "", fmt.Errorf("cell note must be between 1 and 20 characters after whitespace normalization")
+func (c Cell) sourceResources() []SourceResource {
+	resources := make([]SourceResource, 0, len(c.Sources.Items))
+	for _, source := range c.Sources.Items {
+		resources = append(resources, NewSourceResource(source.Path, c.SourceWorktreePath(source), source.Base, source.Branch))
 	}
-	return normalized, nil
+	return resources
 }
 
-func (c *Cell) SetNote(note string) error {
-	normalized, err := NormalizeCellNote(note)
-	if err != nil {
-		return err
+func (c Cell) containerResources(templates []ContainerTemplate) ContainerResources {
+	bySourceContainer := make(map[string]ContainerTemplate, len(templates))
+	for _, template := range templates {
+		bySourceContainer[template.Name] = template
 	}
-	c.Note = normalized
-	return nil
-}
-
-func (c Cell) DisplayLabel() string {
-	if c.Note != "" {
-		return c.Note
+	items := make([]ContainerResource, 0, len(c.Containers.Items))
+	for _, container := range c.Containers.Items {
+		template := bySourceContainer[container.SourceContainer]
+		items = append(items, NewContainerResource(
+			c.ContainerResourceName(container), container.Network,
+			container.SourceContainer, container.Mode, template.Environments, template.Mounts,
+		))
 	}
-	return c.Name
-}
-
-type Source struct {
-	TemplatePath string
-	Path         string
-	Base         string
-	Branch       string
-}
-
-type Containers struct {
-	Network  string
-	Services map[string]CellContainer
-}
-
-type CellContainer struct {
-	ContainerName   string
-	SourceContainer string
-	Mode            Mode
-}
-
-func (c *CellContainer) Rename(name string) error {
-	if name == "" {
-		return errors.New("container name is required")
+	sourcePath := ""
+	if len(c.Sources.Items) > 0 {
+		sourcePath = c.SourceWorktreePath(c.Sources.Items[0])
+		if sourcePath != "" {
+			sourcePath = filepath.Clean(sourcePath)
+		}
 	}
-	c.ContainerName = name
-	return nil
+	return NewContainerResources(c.Name(), c.Project, c.ContainerNetworkName(), sourcePath, items)
 }
 
-type Session struct {
-	Name    string
-	Windows []SessionWindow
-}
-
-type SessionWindow struct {
-	Name    string
-	Command string
-}
-
-func (c *Cell) RenameContainer(role string, name string) error {
-	service, ok := c.Containers.Services[role]
-	if !ok {
-		return fmt.Errorf("container service role %q not found", role)
+func (c Cell) sessionResource() SessionResource {
+	workingDirectory := ""
+	if len(c.Sources.Items) > 0 {
+		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
 	}
-	if err := service.Rename(name); err != nil {
-		return err
-	}
-	c.Containers.Services[role] = service
-	return nil
-}
-
-func (c *Cell) MarkDone() error {
-	if c.done {
-		return fmt.Errorf("cell is already done")
-	}
-	c.done = true
-	return nil
-}
-
-func (c *Cell) ToggleDone() {
-	c.done = !c.done
-}
-
-func (c *Cell) SetStatus(status CellStatus) error {
-	switch status {
-	case Pending, Ready:
-		c.status = status
-		return nil
-	default:
-		return fmt.Errorf("unsupported status %q", status)
-	}
-}
-
-func (c Cell) Status() CellStatus {
-	if c.status == "" {
-		return Ready
-	}
-	return c.status
-}
-
-func (c Cell) IsDone() bool {
-	return c.done
-}
-
-func (c *Cell) Clean() error {
-	if !c.done {
-		return fmt.Errorf("完了済みではないので消せない")
-	}
-	return nil
+	return NewSessionResource(c.SessionName(), c.Name(), c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
 }
