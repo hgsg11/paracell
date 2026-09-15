@@ -210,7 +210,7 @@ func TestCreateContainersはCellContainerへGatewayRouteを登録する(t *testi
 		},
 	}}
 
-	if err := adapter.CreateContainers(context.Background(), cell, templates); err != nil {
+	if _, err := adapter.CreateContainers(context.Background(), withContainerTemplates(cell, templates)); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if len(runner.runCalls) != 4 {
@@ -245,7 +245,7 @@ func TestCreateContainersはAliasやPortがなくてもGatewayをCellNetworkへ�
 	cell := gatewayTestCell()
 	templates := []domain.ContainerTemplate{{Name: "web", Mode: domain.Target}}
 
-	if err := adapter.CreateContainers(context.Background(), cell, templates); err != nil {
+	if _, err := adapter.CreateContainers(context.Background(), withContainerTemplates(cell, templates)); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if got := runner.runCalls[2]; got != "docker network connect paracell-myapp-123 paracell-gateway" {
@@ -267,15 +267,9 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
-	cell := domain.Cell{
-		Name: "123",
-		Containers: domain.Containers{
-			Network:  "paracell-myapp-123",
-			Services: map[string]domain.CellContainer{},
-		},
-	}
+	cell := domain.NewContainerResources("123", "myapp", "paracell-myapp-123", "", nil)
 
-	err := adapter.CreateContainers(context.Background(), cell, nil)
+	_, err := adapter.CreateContainers(context.Background(), cell)
 	if err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
@@ -303,13 +297,13 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
 	cell := gatewayTestCell()
-	cell.Containers.Services["db"] = domain.CellContainer{ContainerName: "paracell-myapp-123-db", SourceContainer: "myapp-db"}
+	cell.Items = append(cell.Items, domain.NewContainerResource("db", "paracell-myapp-123-db", nil, "myapp-db", domain.Target, nil, nil))
 	templates := []domain.ContainerTemplate{
 		{Name: "db", Mode: domain.Target},
 		{Name: "web", Mode: domain.Target},
 	}
 
-	err := adapter.CreateContainers(context.Background(), cell, templates)
+	_, err := adapter.CreateContainers(context.Background(), withContainerTemplates(cell, templates))
 	if err == nil || !strings.Contains(err.Error(), "container start failed") {
 		t.Fatalf("error = %v", err)
 	}
@@ -323,16 +317,27 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 	}
 }
 
-func gatewayTestCell() domain.Cell {
-	return domain.Cell{
-		Name: "123",
-		Containers: domain.Containers{
-			Network: "paracell-myapp-123",
-			Services: map[string]domain.CellContainer{
-				"web": {ContainerName: "paracell-myapp-123-web"},
-			},
-		},
+func gatewayTestCell() domain.ContainerResources {
+	return domain.NewContainerResources("123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source", []domain.ContainerResource{
+		domain.NewContainerResource("web", "paracell-myapp-123-web", nil, "myapp-web", domain.Target, nil, nil),
+	})
+}
+
+func withContainerTemplates(resources domain.ContainerResources, templates []domain.ContainerTemplate) domain.ContainerResources {
+	byName := make(map[string]domain.ContainerTemplate, len(templates))
+	for _, template := range templates {
+		byName[template.Name] = template
 	}
+	for index := range resources.Items {
+		template, ok := byName[resources.Items[index].Role]
+		if !ok {
+			continue
+		}
+		resources.Items[index].Mode = template.Mode
+		resources.Items[index].Environments = template.Environments
+		resources.Items[index].Mounts = template.Mounts
+	}
+	return resources
 }
 
 func gatewayRunCommand(publish string) string {

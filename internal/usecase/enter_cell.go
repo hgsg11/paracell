@@ -11,20 +11,15 @@ type EnterCellInput struct {
 }
 
 type EnterCellUseCase struct {
-	Config         ConfigPort
 	SessionFactory SessionProviderFactory
 }
 
 func (u EnterCellUseCase) Execute(ctx context.Context, input EnterCellInput) (domain.Cell, error) {
-	cfg, err := u.Config.Load(ctx, nil)
+	session, err := u.SessionFactory.Session(domain.CellResourceDrivers(input.Cell).Session)
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
-	if err != nil {
-		return domain.Cell{}, err
-	}
-	if err := session.EnterSession(ctx, input.Cell); err != nil {
+	if err := domain.EnterSession(ctx, input.Cell, session); err != nil {
 		return domain.Cell{}, err
 	}
 	return input.Cell, nil

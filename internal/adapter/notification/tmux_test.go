@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestTmuxNotifierはdisplayMessageを実行する(t *testing.T) {
@@ -15,10 +13,7 @@ func TestTmuxNotifierはdisplayMessageを実行する(t *testing.T) {
 	notifier := TmuxNotifier{Runner: runner}
 	runner.output = "/dev/ttys009"
 
-	err := notifier.NotifyReady(context.Background(), domain.Cell{
-		Name:    "123",
-		Session: domain.Session{Name: "paracell-demo-123"},
-	}, "ready 123")
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
 	if err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
@@ -37,10 +32,7 @@ func TestTmuxNotifierはTmux内では現在のclientを使う(t *testing.T) {
 	notifier := TmuxNotifier{Runner: runner}
 	runner.output = "/dev/ttys010"
 
-	err := notifier.NotifyReady(context.Background(), domain.Cell{
-		Name:    "123",
-		Session: domain.Session{Name: "paracell-demo-123"},
-	}, "ready 123")
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
 	if err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
@@ -63,10 +55,7 @@ func TestTmuxNotifierは現在clientが取れない場合sessionのclientへフ�
 	}
 	notifier := TmuxNotifier{Runner: runner}
 
-	err := notifier.NotifyReady(context.Background(), domain.Cell{
-		Name:    "123",
-		Session: domain.Session{Name: "paracell-demo-123"},
-	}, "ready 123")
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
 	if err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
@@ -82,7 +71,7 @@ func TestTmuxNotifierは現在clientが取れない場合sessionのclientへフ�
 func TestTmuxNotifierはメッセージ未設定なら何もしない(t *testing.T) {
 	runner := &recordingRunner{}
 	notifier := TmuxNotifier{Runner: runner}
-	if err := notifier.NotifyReady(context.Background(), domain.Cell{Name: "123"}, ""); err != nil {
+	if err := notifier.NotifyReady(context.Background(), "paracell-demo-123", ""); err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
 	if len(runner.calls) != 0 {

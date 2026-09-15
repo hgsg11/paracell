@@ -12,20 +12,21 @@ type SetCellStatusInput struct {
 }
 
 type SetCellStatusUseCase struct {
-	State    CellStatePort
-	Notifier Notifier
+	State               CellStatePort
+	NotificationFactory NotificationProviderFactory
 }
 
 func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.Cell, error) {
 	var updated domain.Cell
 	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
-				if err := cell.SetStatus(input.Status); err != nil {
-					return nil, err
+			if domain.CellMatches(cell, input.Cell) {
+				changed, setErr := domain.SetCellStatus(cell, input.Status)
+				if setErr != nil {
+					return nil, setErr
 				}
-				cells[i] = cell
-				updated = cell
+				cells[i] = changed
+				updated = changed
 				return cells, nil
 			}
 		}
@@ -34,8 +35,13 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	if input.Status == domain.Ready && u.Notifier != nil {
-		if err := u.Notifier.NotifyReady(ctx, updated, "Ready: "+updated.Name); err != nil {
+	updated = domain.CellAfterPersistence(updated)
+	if input.Status == domain.Ready && u.NotificationFactory != nil {
+		notifier, err := u.NotificationFactory.Notification(domain.CellResourceDrivers(updated).Notification)
+		if err != nil {
+			return domain.Cell{}, err
+		}
+		if err := notifier.NotifyReady(ctx, domain.SessionName(updated), "Ready: "+domain.CellName(updated)); err != nil {
 			return domain.Cell{}, err
 		}
 	}

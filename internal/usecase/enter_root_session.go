@@ -8,11 +8,11 @@ type EnterRootSessionUseCase struct {
 }
 
 func (u EnterRootSessionUseCase) Execute(ctx context.Context) error {
-	cfg, err := u.Config.Load(ctx, nil)
+	cfg, err := u.Config.Load(ctx)
 	if err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
+	session, err := u.SessionFactory.Session(cfg.SessionDriverType)
 	if err != nil {
 		return err
 	}

@@ -30,23 +30,23 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.ProjectName != "" {
 		t.Fatalf("project.name = %q, want empty", cfg.ProjectName)
 	}
-	if cfg.GetSourceDriverType() != domain.Git {
-		t.Fatalf("providers.source = %q, want %q", cfg.GetSourceDriverType(), domain.Git)
+	if cfg.SourceDriverType != domain.Git {
+		t.Fatalf("providers.source = %q, want %q", cfg.SourceDriverType, domain.Git)
 	}
-	if cfg.GetContainerDriverType() != domain.None {
-		t.Fatalf("providers.container = %q, want none", cfg.GetContainerDriverType())
+	if cfg.ContainerDriverType != domain.None {
+		t.Fatalf("providers.container = %q, want none", cfg.ContainerDriverType)
 	}
-	if cfg.GetSessionDriverType() != domain.Tmux {
-		t.Fatalf("providers.session = %q, want %q", cfg.GetSessionDriverType(), domain.Tmux)
+	if cfg.SessionDriverType != domain.Tmux {
+		t.Fatalf("providers.session = %q, want %q", cfg.SessionDriverType, domain.Tmux)
 	}
-	if cfg.GetNotificationDriverType() != domain.TmuxNotification {
-		t.Fatalf("providers.notifications = %q, want %q", cfg.GetNotificationDriverType(), domain.TmuxNotification)
+	if cfg.NotificationDriverType != domain.TmuxNotification {
+		t.Fatalf("providers.notifications = %q, want %q", cfg.NotificationDriverType, domain.TmuxNotification)
 	}
 	if len(cfg.Templates) != 4 {
 		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
 	}
 	for _, template := range cfg.Templates {
-		if len(template.Sources) != 1 || template.Sources[0].Base != "main" || template.Sources[0].Prefix != template.Name+"/" {
+		if template.Repository == nil || template.Repository.Base != "main" || template.Repository.Prefix != template.Name+"/" {
 			t.Fatalf("template = %#v", template)
 		}
 	}

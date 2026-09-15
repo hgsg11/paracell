@@ -38,12 +38,12 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	}
 
 	cells := []domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
+		viewTestCell("cell-1", "123", "default"),
 	}
 	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
-		if cell.Name != "123" {
+		if domain.CellName(cell) != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
@@ -51,7 +51,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name != "123" {
+	if len(got.Cells) != 1 || domain.CellName(got.Cells[0]) != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
 	if got.CurrentCell != "123" {
@@ -60,7 +60,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
-	if result.Cell.Name != "123" {
+	if domain.CellName(result.Cell) != "123" {
 		t.Fatalf("cell = %#v, want name %q", result.Cell, "123")
 	}
 }
@@ -81,7 +81,7 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 	}
 
 	cells := []domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
+		viewTestCell("cell-1", "123", "default"),
 	}
 	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.Cell, error) {
 		return cells, nil
@@ -117,7 +117,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	}
 
 	cells := []domain.Cell{
-		{ID: "cell-1", Name: "123", Template: "default"},
+		viewTestCell("cell-1", "123", "default"),
 	}
 	result, err := Run(
 		context.Background(),
@@ -129,10 +129,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		func() error { return nil },
 		func(cell domain.Cell) error { return nil },
 		func(cell domain.Cell) (domain.Cell, error) {
-			if err := cell.MarkDone(); err != nil {
-				return domain.Cell{}, err
-			}
-			return cell, nil
+			return domain.MarkCellDone(cell)
 		},
 		nil,
 	)
@@ -142,7 +139,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	if result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", result.Action, ActionNone)
 	}
-	if !got.Cells[0].IsDone() {
+	if !domain.SummarizeCell(got.Cells[0]).Done {
 		t.Fatal("IsDone = false, want true")
 	}
 }
@@ -167,11 +164,11 @@ func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 
 	result, err := Run(
 		context.Background(),
-		[]domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}},
+		[]domain.Cell{viewTestCell("cell-1", "123", "default")},
 		nil,
 		"",
 		func() ([]domain.Cell, error) {
-			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
+			return []domain.Cell{viewTestCell("cell-1", "123", "default")}, nil
 		},
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error {
@@ -222,7 +219,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		"",
 		func() ([]domain.Cell, error) {
 			reloaded = true
-			return []domain.Cell{{ID: "cell-1", Name: "123", Template: "default"}}, nil
+			return []domain.Cell{viewTestCell("cell-1", "123", "default")}, nil
 		},
 		func(cell domain.Cell) tea.Cmd { return nil },
 		func() error { return nil },
@@ -230,7 +227,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
 		func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
-				return forkResultMsg{cell: domain.Cell{ID: "cell-1", Name: "123", Template: "default"}}
+				return forkResultMsg{cell: viewTestCell("cell-1", "123", "default")}
 			}
 		},
 	)

@@ -14,8 +14,8 @@ type AnnotateCellInput struct {
 }
 
 type AnnotateCellUseCase struct {
-	State   CellStatePort
-	Session SessionPort
+	State          CellStatePort
+	SessionFactory SessionProviderFactory
 }
 
 func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.Cell, error) {
@@ -27,8 +27,11 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	var updated domain.Cell
 	if err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
-				cell.Note = note
+			if domain.CellMatches(cell, input.Cell) {
+				cell, err = domain.SetCellNote(cell, note)
+				if err != nil {
+					return nil, err
+				}
 				cells[i] = cell
 				updated = cell
 				return cells, nil
@@ -38,11 +41,16 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	}); err != nil {
 		return domain.Cell{}, err
 	}
+	updated = domain.CellAfterPersistence(updated)
 
-	if u.Session == nil {
+	if u.SessionFactory == nil {
 		return updated, nil
 	}
-	if err := u.Session.UpdateStatusLabel(ctx, updated); err != nil {
+	session, err := u.SessionFactory.Session(domain.CellResourceDrivers(updated).Session)
+	if err != nil {
+		return updated, err
+	}
+	if err := domain.UpdateSessionStatusLabel(ctx, updated, session); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}

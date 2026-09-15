@@ -13,7 +13,6 @@ type CleanCellInput struct {
 }
 
 type CleanCellUseCase struct {
-	Config           ConfigPort
 	State            CellStatePort
 	SourceFactory    SourceProviderFactory
 	ContainerFactory ContainerProviderFactory
@@ -21,60 +20,40 @@ type CleanCellUseCase struct {
 }
 
 func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) error {
-	cfg, err := u.Config.Load(ctx, nil)
-	if err != nil {
-		return err
-	}
 	cells, err := u.State.LoadCells(ctx)
 	if err != nil {
 		return err
 	}
-	index := -1
-	var target domain.Cell
-	for i, cell := range cells {
-		if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
-			index = i
-			target = cell
-			break
-		}
-	}
-	if index < 0 {
+	target, ok := domain.ResolveCell(cells, input.Cell)
+	if !ok {
 		return fmt.Errorf("cell %q not found", input.Cell)
 	}
-	if err := target.Clean(); err != nil {
+	if err := domain.EnsureCellCanBeCleaned(target); err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.GetSessionDriverType())
+	drivers := domain.CellResourceDrivers(target)
+	session, err := u.SessionFactory.Session(drivers.Session)
 	if err != nil {
 		return err
 	}
-	containers, err := u.ContainerFactory.Container(cfg.GetContainerDriverType())
+	containers, err := u.ContainerFactory.Container(drivers.Container)
 	if err != nil {
 		return err
 	}
-	source, err := u.SourceFactory.Source(cfg.GetSourceDriverType())
+	source, err := u.SourceFactory.Source(drivers.Source)
 	if err != nil {
 		return err
 	}
-	if err := ignoreNotFound(session.CleanSession(ctx, target)); err != nil {
+	if err := ignoreNotFound(domain.CleanSession(ctx, target, session)); err != nil {
 		return err
 	}
-	if err := ignoreNotFound(containers.CleanContainers(ctx, target)); err != nil {
+	if err := ignoreNotFound(domain.CleanContainers(ctx, target, containers)); err != nil {
 		return err
 	}
-	if err := ignoreNotFound(source.CleanSource(ctx, target)); err != nil {
+	if err := ignoreNotFound(domain.CleanSources(ctx, target, source)); err != nil {
 		return err
 	}
-	return u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
-		for i, cell := range latest {
-			if cell.ID != target.ID {
-				continue
-			}
-			next := append([]domain.Cell{}, latest[:i]...)
-			return append(next, latest[i+1:]...), nil
-		}
-		return latest, nil
-	})
+	return u.State.DeleteCell(ctx, target)
 }
 
 func ignoreNotFound(err error) error {

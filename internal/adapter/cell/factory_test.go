@@ -6,21 +6,23 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestFactoryはTemplateからCellを生成する(t *testing.T) {
-	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
-	target, _ := domain.NewContainerTemplate("app", domain.Target, nil, nil)
-	dependency, _ := domain.NewContainerTemplate("db", domain.Dependency, nil, nil)
-	cell, err := (Factory{}).NewCell("id", "42", "feat", []domain.SourceTemplate{source}, []domain.ContainerTemplate{target, dependency}, domain.NewSessionTemplate(nil), "project")
+func TestFactoryは完成した配下EntityからCellを生成する(t *testing.T) {
+	sourceDriver, _ := domain.NewSourceDriverType("git")
+	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	source, _ := domain.NewSource(".", "main", "feat/42")
+	target, _ := domain.NewContainer("app", nil, "app", domain.Target)
+	dependency, _ := domain.NewContainer("db", nil, "db", domain.Dependency)
+	cell, err := NewFactory().NewCell("id", "42", "project", "feat", domain.NewSources(sourceDriver, []domain.Source{source}), domain.NewContainers(domain.Docker, []domain.Container{target, dependency}), domain.NewSession(sessionDriver, nil), domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cell.Sources) != 1 || cell.Sources[0].Branch != "feat/42" {
+	if len(cell.Sources.Items) != 1 || cell.Sources.Items[0].Branch != "feat/42" {
 		t.Fatalf("sources = %#v", cell.Sources)
 	}
-	if cell.Containers.Services["app"].ContainerName == "app" {
+	if domain.ContainerResourceName(cell, cell.Containers.Items[0]) == "app" {
 		t.Fatal("target container must have a cell-specific name")
 	}
-	if cell.Containers.Services["db"].ContainerName != "db" {
+	if domain.ContainerResourceName(cell, cell.Containers.Items[1]) != "db" {
 		t.Fatal("dependency must keep its source container name")
 	}
 }

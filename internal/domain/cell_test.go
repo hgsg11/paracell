@@ -5,138 +5,90 @@ import (
 	"testing"
 )
 
+func testCell(t *testing.T) Cell {
+	t.Helper()
+	source, err := NewSource(".", "main", "feat/42")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionDriver, _ := NewSessionDriverType("tmux")
+	sourceDriver, _ := NewSourceDriverType("git")
+	cell, err := NewCell("id", "42", "sample", "feat", NewSources(sourceDriver, []Source{source}), NewContainers(None, nil), NewSession(sessionDriver, nil), NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cell
+}
+
 func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr bool
+		input, want string
+		wantErr     bool
 	}{
-		{name: "空白正規化", input: "  API\t実装\n  中  ", want: "API 実装 中"},
-		{name: "1文字", input: "案", want: "案"},
-		{name: "20文字", input: strings.Repeat("案", 20), want: strings.Repeat("案", 20)},
-		{name: "空文字", input: " \t\n ", wantErr: true},
-		{name: "21文字", input: strings.Repeat("案", 21), wantErr: true},
+		{input: "  API\t実装\n  中  ", want: "API 実装 中"},
+		{input: "案", want: "案"},
+		{input: strings.Repeat("案", 20), want: strings.Repeat("案", 20)},
+		{input: " \t\n ", wantErr: true},
+		{input: strings.Repeat("案", 21), wantErr: true},
 	}
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := NormalizeCellNote(tt.input)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("NormalizeCellNote() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if got != tt.want {
-				t.Fatalf("NormalizeCellNote() = %q, want %q", got, tt.want)
-			}
-		})
+		got, err := NormalizeCellNote(tt.input)
+		if (err != nil) != tt.wantErr || got != tt.want {
+			t.Fatalf("NormalizeCellNote(%q) = %q, %v", tt.input, got, err)
+		}
 	}
 }
 
-func TestCellNoteは設定時だけ表示を置き換える(t *testing.T) {
-	withoutNote := Cell{Name: "123"}
-	withNote := Cell{Name: "123", Note: "API実装中"}
-	if got := withoutNote.DisplayLabel(); got != "123" {
-		t.Fatalf("DisplayLabel() = %q, want 123", got)
+func TestCellのResource名は保存せずIdentityから導出する(t *testing.T) {
+	cell := testCell(t)
+	if CellName(cell) != "42" {
+		t.Fatalf("name = %q", CellName(cell))
 	}
-	if got := withNote.DisplayLabel(); got != "API実装中" {
-		t.Fatalf("DisplayLabel() = %q, want API実装中", got)
+	if SourceWorktreePath(cell, cell.Sources.Items[0]) != ".paracell/cells/42/source" {
+		t.Fatalf("path = %q", SourceWorktreePath(cell, cell.Sources.Items[0]))
 	}
-}
-
-func Test同じIssueのCellは重複として扱う(t *testing.T) {
-	checker := CellUniquenessChecker{}
-	existing := []Cell{{Issue: "123", Name: "123"}}
-
-	err := checker.EnsureUnique(existing, "123", "123")
-
-	if err == nil {
-		t.Fatal("重複しているのにエラーが返らなかった")
+	if ContainerNetworkName(cell) != "paracell-sample-42" {
+		t.Fatalf("network = %q", ContainerNetworkName(cell))
+	}
+	if SessionName(cell) != "sample-42" {
+		t.Fatalf("session = %q", SessionName(cell))
 	}
 }
 
-func TestAggregateRootから子Entityのメソッドを呼び出してコンテナ名を変更する(t *testing.T) {
-	cell := Cell{
-		Containers: Containers{
-			Services: map[string]CellContainer{
-				"web": {SourceContainer: "myapp-web"},
-			},
-		},
+func TestCellはProjectIdentityを保持してResource名だけを正規化する(t *testing.T) {
+	cell := testCell(t)
+	cell.Project = "My App"
+	if StoreCell(cell).Project != "My App" {
+		t.Fatalf("project = %q", StoreCell(cell).Project)
 	}
-
-	err := cell.RenameContainer("web", "paracell-myapp-123-web-renamed")
-
-	if err != nil {
-		t.Fatalf("コンテナ名変更でエラーが返った: %v", err)
-	}
-	if got := cell.Containers.Services["web"].ContainerName; got != "paracell-myapp-123-web-renamed" {
-		t.Fatalf("webコンテナ名 = %q, want %q", got, "paracell-myapp-123-web-renamed")
+	if ContainerNetworkName(cell) != "paracell-My-App-42" || SessionName(cell) != "My-App-42" {
+		t.Fatalf("network = %q, session = %q", ContainerNetworkName(cell), SessionName(cell))
 	}
 }
 
-func Test存在しないServiceRoleのコンテナ名変更は失敗する(t *testing.T) {
-	cell := Cell{}
-
-	err := cell.RenameContainer("web", "new-name")
-
-	if err == nil {
-		t.Fatal("存在しないservice roleなのにエラーが返らなかった")
+func TestCell状態変更関数はAggregateを更新する(t *testing.T) {
+	cell := testCell(t)
+	cell, err := SetCellNote(cell, "実装中")
+	if err != nil || CellDisplayLabel(cell) != "実装中" {
+		t.Fatalf("note = %#v, %v", cell, err)
+	}
+	cell = ToggleCellDone(cell)
+	if err := EnsureCellCanBeCleaned(cell); err != nil {
+		t.Fatal(err)
+	}
+	cell, err = SetCellStatus(cell, Pending)
+	if err != nil || SummarizeCell(cell).Status != Pending {
+		t.Fatalf("status = %#v, %v", cell, err)
 	}
 }
 
-func TestCellはMarkDoneできる(t *testing.T) {
-	cell := Cell{}
-
-	if err := cell.MarkDone(); err != nil {
-		t.Fatalf("MarkDoneでエラーが返った: %v", err)
+func Test新規CellのVersionは1でPersistence成功時だけ進む(t *testing.T) {
+	cell := testCell(t)
+	if cell.Version != 1 {
+		t.Fatalf("version = %d", cell.Version)
 	}
-	if !cell.IsDone() {
-		t.Fatal("IsDone = false, want true")
-	}
-	if err := cell.Clean(); err != nil {
-		t.Fatalf("Cleanでエラーが返った: %v", err)
-	}
-}
-
-func TestCellはDone状態を切り替えられる(t *testing.T) {
-	cell := Cell{}
-
-	cell.ToggleDone()
-	if !cell.IsDone() {
-		t.Fatal("IsDone = false, want true")
-	}
-	cell.ToggleDone()
-	if cell.IsDone() {
-		t.Fatal("IsDone = true, want false")
-	}
-}
-
-func TestDoneでないCellはCleanできない(t *testing.T) {
-	cell := Cell{}
-
-	if err := cell.Clean(); err == nil {
-		t.Fatal("doneでないcellなのにCleanできてしまった")
-	}
-}
-
-func TestCellはStatusを更新できる(t *testing.T) {
-	cell := Cell{}
-
-	if err := cell.SetStatus(Ready); err != nil {
-		t.Fatalf("SetStatusでエラーが返った: %v", err)
-	}
-	if got := cell.Status(); got != Ready {
-		t.Fatalf("Status = %q, want %q", got, Ready)
-	}
-}
-
-func TestCellは未対応Statusを拒否する(t *testing.T) {
-	cell := Cell{}
-
-	err := cell.SetStatus(CellStatus("running"))
-
-	if err == nil {
-		t.Fatal("未対応statusなのにエラーが返らなかった")
-	}
-	if err.Error() != `unsupported status "running"` {
-		t.Fatalf("error = %q, want %q", err.Error(), `unsupported status "running"`)
+	persisted := CellAfterPersistence(cell)
+	if persisted.Version != 2 || cell.Version != 1 {
+		t.Fatalf("versions = %d, %d", persisted.Version, cell.Version)
 	}
 }
