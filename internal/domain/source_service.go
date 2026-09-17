@@ -2,21 +2,14 @@ package domain
 
 import "context"
 
-func CreateSources(ctx context.Context, cell Cell, port SourcePort) (bool, error) {
-	created := false
-	for _, resource := range cell.sourceResources() {
-		branchCreated, err := port.CreateSource(ctx, resource)
-		created = created || branchCreated
-		if err != nil {
-			return created, err
-		}
+func CreateSources(ctx context.Context, cell *Cell, driver SourceDriverType, templates []SourceTemplate, issue string, port SourcePort) error {
+	sources, err := buildSources(driver, templates, issue)
+	if err != nil {
+		return err
 	}
-	return created, nil
-}
-
-func ResumeSources(ctx context.Context, cell Cell, port SourcePort) error {
+	cell.PlanSources(sources)
 	for _, resource := range cell.sourceResources() {
-		if err := port.ResumeSource(ctx, resource); err != nil {
+		if err := port.CreateSource(ctx, resource); err != nil {
 			return err
 		}
 	}

@@ -97,7 +97,7 @@ func TestRunEnterCmdは復元設定後にSession環境を保持して切り替�
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}
-	if session.prepared.CellName != cell.Name() {
+	if session.prepared.CellName != cell.Name().Value {
 		t.Fatalf("prepared resource = %#v, want cell %#v", session.prepared, cell)
 	}
 }
@@ -127,22 +127,6 @@ func TestForkコマンドはcommand付きで解析できる(t *testing.T) {
 	}
 	if cmd.Command != "make test" {
 		t.Fatalf("command = %q, want %q", cmd.Command, "make test")
-	}
-}
-
-func TestRetryコマンドを解析できる(t *testing.T) {
-	cmd, err := ParseCommand([]string{"retry", "cell-123"})
-	if err != nil {
-		t.Fatalf("retry parse error: %v", err)
-	}
-	if cmd.Kind != CommandRetry || cmd.Cell != "cell-123" {
-		t.Fatalf("command = %#v", cmd)
-	}
-}
-
-func TestRetryコマンドはCell指定を必須にする(t *testing.T) {
-	if _, err := ParseCommand([]string{"retry"}); err == nil || err.Error() != "usage: paracell retry <cell>" {
-		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -360,30 +344,9 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|annotate|retry|ls|view|clean|pending|ready|exit|version|help]\n"
+	want := "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
-	}
-}
-
-func TestRunはRetryUseCaseをCell指定で呼ぶ(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("PARACELL_ROOT", "")
-	originalRetry := runRetry
-	defer func() { runRetry = originalRetry }()
-	called := false
-	runRetry = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell string, root string) (domain.Cell, error) {
-		called = true
-		if cell != "cell-123" || root != dir {
-			t.Fatalf("cell=%q root=%q", cell, root)
-		}
-		return appTestCell("cell-1", "123", "default"), nil
-	}
-	if err := Run(context.Background(), []string{"retry", "cell-123"}, dir); err != nil {
-		t.Fatalf("Run retry error: %v", err)
-	}
-	if !called {
-		t.Fatal("runRetry was not called")
 	}
 }
 
@@ -1234,7 +1197,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if entered.Name() != "123" {
+	if entered.Name().Value != "123" {
 		t.Fatalf("entered cell = %#v, want name %q", entered, "123")
 	}
 }
@@ -1304,7 +1267,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if deleted.Name() != "123" {
+	if deleted.Name().Value != "123" {
 		t.Fatalf("deleted cell = %#v, want name %q", deleted, "123")
 	}
 }

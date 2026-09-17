@@ -43,7 +43,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
 		return cells, nil
 	}, func(cell domain.Cell) tea.Cmd {
-		if cell.Name() != "123" {
+		if cell.Name().Value != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
@@ -51,7 +51,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name() != "123" {
+	if len(got.Cells) != 1 || got.Cells[0].Name().Value != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
 	if got.CurrentCell != "123" {
@@ -60,7 +60,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
-	if result.Cell.Name() != "123" {
+	if result.Cell.Name().Value != "123" {
 		t.Fatalf("cell = %#v, want name %q", result.Cell, "123")
 	}
 }

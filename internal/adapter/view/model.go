@@ -601,7 +601,7 @@ func resetForkInput(m Model) Model {
 }
 
 func currentCellMarker(cell domain.Cell, currentCell string) string {
-	if currentCell != "" && cell.Name() == currentCell {
+	if currentCell != "" && cell.Name().Value == currentCell {
 		return "*"
 	}
 	return " "

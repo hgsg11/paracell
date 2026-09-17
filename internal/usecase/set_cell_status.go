@@ -41,7 +41,7 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 		if err != nil {
 			return domain.Cell{}, err
 		}
-		if err := notifier.NotifyReady(ctx, updated.SessionName(), "Ready: "+updated.Name()); err != nil {
+		if err := notifier.NotifyReady(ctx, updated.SessionName(), "Ready: "+updated.Name().Value); err != nil {
 			return domain.Cell{}, err
 		}
 	}

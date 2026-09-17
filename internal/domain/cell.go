@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode"
 )
 
@@ -45,23 +44,23 @@ func NewCell(id string, issue string, project string, templateName string, sourc
 	}, nil
 }
 
-func (c Cell) Name() string {
-	return SafeResourceName(c.Issue, c.ID)
+func (c Cell) Name() CellName {
+	return NewCellName(c.Issue)
 }
 
 func (c Cell) ResourcePrefix() string {
-	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.Project, "project"), c.Name())
+	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.Project, "project"), c.Name().Value)
 }
 
 func (c Cell) DisplayLabel() string {
 	if c.Note != "" {
 		return c.Note
 	}
-	return c.Name()
+	return c.Name().Value
 }
 
 func (c Cell) Summary() CellSummary {
-	return NewCellSummary(c.Version, c.ID, c.Issue, c.Name(), c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
+	return NewCellSummary(c.Version, c.ID, c.Issue, c.Name().Value, c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
 }
 
 func (c Cell) ResourceDrivers() CellDrivers {
@@ -124,16 +123,16 @@ func ResolveCell(cells []Cell, identifier string) (Cell, bool) {
 }
 
 func (c Cell) Matches(identifier string) bool {
-	return c.ID == identifier || c.Issue == identifier || c.Name() == identifier
+	return c.ID == identifier || c.Issue == identifier || c.Name().Value == identifier
 }
 
-func EnsureCellUnique(existing []Cell, issue string, name string) error {
+func EnsureCellUnique(existing []Cell, issue string, name CellName) error {
 	for _, cell := range existing {
 		if cell.Issue == issue {
 			return fmt.Errorf("cell issue %q already exists", issue)
 		}
 		if cell.Name() == name {
-			return fmt.Errorf("cell name %q already exists", name)
+			return fmt.Errorf("cell name %q already exists", name.Value)
 		}
 	}
 	return nil
@@ -154,20 +153,15 @@ func (c Cell) Clone() Cell {
 		c.Containers.Items[i].Network = append([]string(nil), c.Containers.Items[i].Network...)
 	}
 	c.Session.Windows = append([]SessionWindow(nil), c.Session.Windows...)
-	c.Creation.CompletedStages = append([]CreationStage(nil), c.Creation.CompletedStages...)
 	return c
 }
 
 func (c Cell) SourceWorktreePath(source Source) string {
-	path := filepath.Join(".paracell", "cells", c.Name(), "source")
+	path := filepath.Join(".paracell", "cells", c.Name().Value, "source")
 	if source.Path != "." {
 		path = filepath.Join(path, source.Path)
 	}
 	return path
-}
-
-func (c Cell) RetrySpec() CellRetrySpec {
-	return NewCellRetrySpec(c.ID, c.Issue, c.Name(), c.Project, c.Template, c.Creation.Command, c.Creation.FailedStage)
 }
 
 func (c Cell) ContainerNetworkName() string {
@@ -196,94 +190,30 @@ func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
 	}
 }
 
+func (c *Cell) PlanSources(sources Sources) {
+	c.Sources = sources
+}
+
+func (c *Cell) PlanContainers(containers Containers) {
+	c.Containers = containers
+}
+
+func (c *Cell) PlanSession(session Session) {
+	c.Session = session
+}
+
 func (c Cell) SessionName() string {
-	return SafeResourceName(c.Project, "project") + "-" + c.Name()
+	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
 }
 
-func (c Cell) RetryAttemptMatches(attemptID string) bool {
-	return c.CreationStatus() == CreationRetrying && c.Creation.AttemptID == attemptID
-}
-
-func (c *Cell) PrepareRetryPersistence(current Cell, attemptID string) error {
-	if !current.RetryAttemptMatches(attemptID) {
-		return fmt.Errorf("retry ownership lost for cell %q", c.Name())
-	}
-	if c.CreationStatus() == CreationRetrying {
-		c.Creation.LeaseStartedAt = current.Creation.LeaseStartedAt
-		c.Creation.LeaseHeartbeatAt = current.Creation.LeaseHeartbeatAt
-	}
-	c.Version = current.Version
-	return nil
-}
-
-func (c *Cell) RefreshForRetry(rendered Cell) {
-	rendered.ID = c.ID
-	rendered.Issue = c.Issue
-	rendered.Project = c.Project
-	rendered.Note = c.Note
-	rendered.Template = c.Template
-	rendered.Creation = c.Creation
-	rendered.Version = c.Version
-	rendered.Status = c.Status
-	rendered.Done = c.Done
-	rendered.NotificationDriver = c.NotificationDriver
-	*c = rendered
-}
-
-func (c *Cell) BeginCreation(command string) {
+func (c *Cell) BeginCreation() {
 	creation := NewCellCreation()
 	creation.Status = CreationCreating
-	creation.Command = command
 	c.Creation = creation
-}
-
-func (c *Cell) ResumeCreation() {
-	c.Creation.Status = CreationCreating
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
-}
-
-func (c *Cell) BeginRetry(attemptID string, now time.Time) {
-	now = now.UTC()
-	c.Creation.Status = CreationRetrying
-	c.Creation.AttemptID = attemptID
-	c.Creation.LeaseStartedAt = &now
-	c.Creation.LeaseHeartbeatAt = &now
-}
-
-func (c *Cell) HeartbeatRetry(now time.Time) {
-	now = now.UTC()
-	c.Creation.LeaseHeartbeatAt = &now
-}
-
-func (c Cell) RetryLeaseValid(now time.Time, timeout time.Duration) bool {
-	return c.CreationStatus() == CreationRetrying && c.Creation.AttemptID != "" &&
-		c.Creation.LeaseHeartbeatAt != nil && !now.UTC().After(c.Creation.LeaseHeartbeatAt.Add(timeout))
-}
-
-func (c *Cell) CompleteCreationStage(stage CreationStage) {
-	if !c.CreationStageCompleted(stage) {
-		c.Creation.CompletedStages = append(c.Creation.CompletedStages, stage)
-	}
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
-}
-
-func (c *Cell) ResetCreationStage(stage CreationStage) {
-	completed := make([]CreationStage, 0, len(c.Creation.CompletedStages))
-	for _, current := range c.Creation.CompletedStages {
-		if current != stage {
-			completed = append(completed, current)
-		}
-	}
-	c.Creation.CompletedStages = completed
 }
 
 func (c *Cell) FailCreation(stage CreationStage, err error) {
 	c.Creation.Status = CreationFailed
-	c.Creation.AttemptID = ""
-	c.Creation.LeaseStartedAt = nil
-	c.Creation.LeaseHeartbeatAt = nil
 	c.Creation.FailedStage = stage
 	c.Creation.LastError = ""
 	if err != nil {
@@ -295,22 +225,10 @@ func (c *Cell) FinishCreation() {
 	c.Creation.Status = CreationReady
 	c.Creation.FailedStage = ""
 	c.Creation.LastError = ""
-	c.Creation.AttemptID = ""
-	c.Creation.LeaseStartedAt = nil
-	c.Creation.LeaseHeartbeatAt = nil
 }
 
 func (c Cell) CreationStatus() CreationStatus {
 	return c.Creation.Status
-}
-
-func (c Cell) CreationStageCompleted(stage CreationStage) bool {
-	for _, completed := range c.Creation.CompletedStages {
-		if completed == stage {
-			return true
-		}
-	}
-	return false
 }
 
 func (c Cell) sourceResources() []SourceResource {
@@ -341,7 +259,7 @@ func (c Cell) containerResources(templates []ContainerTemplate) ContainerResourc
 			sourcePath = filepath.Clean(sourcePath)
 		}
 	}
-	return NewContainerResources(c.Name(), c.Project, c.ContainerNetworkName(), sourcePath, items)
+	return NewContainerResources(c.Name().Value, c.Project, c.ContainerNetworkName(), sourcePath, items)
 }
 
 func (c Cell) sessionResource() SessionResource {
@@ -349,5 +267,5 @@ func (c Cell) sessionResource() SessionResource {
 	if len(c.Sources.Items) > 0 {
 		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
 	}
-	return NewSessionResource(c.SessionName(), c.Name(), c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
+	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
 }

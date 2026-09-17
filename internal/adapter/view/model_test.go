@@ -214,7 +214,7 @@ func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *t
 	if !strings.Contains(got, "very-long-issue-n...") {
 		t.Fatalf("issue should be ellipsized: %q", got)
 	}
-	if strings.Contains(got, cell.Name()) {
+	if strings.Contains(got, cell.Name().Value) {
 		t.Fatalf("full issue should not be shown: %q", got)
 	}
 	if !strings.Contains(got, "[ ]  ..") {
@@ -540,7 +540,7 @@ func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 	if got.Result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", got.Result.Action, ActionEnter)
 	}
-	if got.Result.Cell.Name() != "456" {
+	if got.Result.Cell.Name().Value != "456" {
 		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
 	}
 	if nextCmd == nil {
@@ -553,7 +553,7 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
-		if cell.Name() != "123" {
+		if cell.Name().Value != "123" {
 			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
 		}
 		if err := cell.MarkDone(); err != nil {
@@ -584,7 +584,7 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 		viewTestCell("cell-2", "456", "webapp"),
 	})
 	model.Delete = func(cell domain.Cell) error {
-		if cell.Name() != "123" {
+		if cell.Name().Value != "123" {
 			t.Fatalf("delete cell = %#v, want name %q", cell, "123")
 		}
 		return nil
@@ -608,7 +608,7 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	if got.Error != "" {
 		t.Fatalf("error = %q, want empty", got.Error)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name() != "456" {
+	if len(got.Cells) != 1 || got.Cells[0].Name().Value != "456" {
 		t.Fatalf("cells = %#v, want remaining cell 456", got.Cells)
 	}
 	if got.Result.Action != ActionDelete {
@@ -950,10 +950,10 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		}(),
 	})
 	model.MarkDone = func(cell domain.Cell) (domain.Cell, error) {
-		if cell.Name() != "123" {
+		if cell.Name().Value != "123" {
 			t.Fatalf("toggle cell = %#v, want name %q", cell, "123")
 		}
-		return viewTestCell(cell.ID, cell.Name(), cell.Template), nil
+		return viewTestCell(cell.ID, cell.Name().Value, cell.Template), nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})

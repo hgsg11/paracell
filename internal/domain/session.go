@@ -9,7 +9,7 @@ func NewSession(driver SessionDriverType, windows []SessionWindow) Session {
 	return Session{Driver: driver, Windows: append([]SessionWindow(nil), windows...)}
 }
 
-func BuildSession(driver SessionDriverType, template SessionTemplate) (Session, error) {
+func buildSession(driver SessionDriverType, template SessionTemplate) (Session, error) {
 	windows := make([]SessionWindow, 0, len(template.Windows))
 	for _, item := range template.Windows {
 		window, err := NewSessionWindow(item.Name, item.Command)
@@ -19,11 +19,4 @@ func BuildSession(driver SessionDriverType, template SessionTemplate) (Session, 
 		windows = append(windows, window)
 	}
 	return NewSession(driver, windows), nil
-}
-
-func BuildSessionForRetry(stored Cell, driver SessionDriverType, template SessionTemplate) (Session, error) {
-	if stored.CreationStageCompleted(CreationStageSession) {
-		return stored.Clone().Session, nil
-	}
-	return BuildSession(driver, template)
 }

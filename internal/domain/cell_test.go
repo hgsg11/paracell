@@ -41,7 +41,7 @@ func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *t
 
 func TestCellのResource名は保存せずIdentityから導出する(t *testing.T) {
 	cell := testCell(t)
-	if cell.Name() != "42" {
+	if cell.Name().Value != "42" {
 		t.Fatalf("name = %q", cell.Name())
 	}
 	if cell.SourceWorktreePath(cell.Sources.Items[0]) != ".paracell/cells/42/source" {

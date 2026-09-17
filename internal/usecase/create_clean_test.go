@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
-	"slices"
 	"testing"
-	"time"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -21,48 +19,42 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if cell.Template != "feat" || len(cell.Sources.Items) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
+	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
+		t.Fatalf("drivers = %#v, want %#v", got, want)
+	}
+	wantCalls := []string{
+		"factory:source:git",
+		"factory:container:none",
+		"factory:session:tmux",
+		"source:create",
+		"containers:create",
+		"session:create",
+	}
+	if !reflect.DeepEqual(ports.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
+	}
 }
 
-func TestRetryCellは保存済みIdentityとCommandで最新Templateの未完了Stageだけを作る(t *testing.T) {
+func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t *testing.T) {
 	ports := newFakePorts()
-	oldSource, _ := domain.NewSource(".", "old-base", "feat/42")
-	sourceDriver, _ := domain.NewSourceDriverType("git")
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	stored, err := domain.NewCell("cell-1", "42", "original-project", "feat", domain.NewSources(sourceDriver, []domain.Source{oldSource}), domain.NewContainers(domain.Docker, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
-	if err != nil {
+	ports.createSourceErr = errors.New("create source")
+
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if !errors.Is(err, ports.createSourceErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(ports.cells) != 1 {
+		t.Fatalf("cells = %d", len(ports.cells))
+	}
+	summary := ports.cells[0].Summary()
+	if summary.CreationStatus != domain.CreationFailed || summary.FailedStage != domain.CreationStageSource {
+		t.Fatalf("summary = %#v", summary)
+	}
+	if err := domain.CleanSources(context.Background(), ports.cells[0], ports); err != nil {
 		t.Fatal(err)
 	}
-	stored.BeginCreation("saved-command")
-	stored.CompleteCreationStage(domain.CreationStageSource)
-	stored.FailCreation(domain.CreationStageContainers, errors.New("failed"))
-	ports.cells = []domain.Cell{stored}
-
-	latestSource, _ := domain.NewSourceTemplate(".", "new-base", "feat/")
-	environment, _ := domain.NewEnvironment("VALUE", "{{.Project}}/{{.Command}}")
-	container, _ := domain.NewContainerTemplate("app", domain.Target, []domain.Environment{environment}, nil)
-	window, _ := domain.NewWindow("agent", "run {{.Command}}")
-	latest, _ := domain.NewTemplate("feat", []domain.SourceTemplate{latestSource}, []domain.ContainerTemplate{container}, domain.NewSessionTemplate([]domain.Window{window}))
-	ports.config, _ = domain.NewTemplates("changed-project", []domain.Template{latest}, sessionDriver, domain.Docker, sourceDriver, domain.NoNotification)
-
-	cell, err := (RetryCellUseCase{
-		Config: ports, State: ports, CellFactory: ports, SourceFactory: ports,
-		ContainerFactory: ports, SessionFactory: ports, IDs: fixedIDGenerator{id: "attempt-1"},
-		Now: func() time.Time { return time.Unix(1, 0) }, HeartbeatInterval: time.Hour,
-	}).Execute(context.Background(), RetryCellInput{Cell: "42"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cell.Sources.Items[0].Base != "old-base" {
-		t.Fatalf("completed source was rebuilt: %#v", cell.Sources.Items[0])
-	}
-	if slices.Contains(ports.calls, "source:resume") {
-		t.Fatalf("completed source was resumed: %#v", ports.calls)
-	}
-	if got := ports.containerResources.Items[0].Environments[0].Value; got != "original-project/saved-command" {
-		t.Fatalf("environment = %q", got)
-	}
-	if ports.sessionResource.Windows[0].Command != "run saved-command" || cell.Containers.Items[0].Network[0] != "original_default" {
-		t.Fatalf("session = %#v, containers = %#v", ports.sessionResource, cell.Containers)
+	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleaned sources = %#v, want %#v", got, want)
 	}
 }
 
@@ -72,6 +64,8 @@ type fakePorts struct {
 	cells                []domain.Cell
 	calls                []string
 	updateStatusLabelErr error
+	createSourceErr      error
+	cleanedSources       []domain.SourceResource
 	containerResources   domain.ContainerResources
 	sessionResource      domain.SessionResource
 }
@@ -150,16 +144,13 @@ func (f *fakePorts) NewCell(id string, issue string, project string, templateNam
 	return domain.NewCell(id, issue, project, templateName, sources, containers, session, notificationDriver)
 }
 
-func (f *fakePorts) CreateSource(context.Context, domain.SourceResource) (bool, error) {
+func (f *fakePorts) CreateSource(context.Context, domain.SourceResource) error {
 	f.calls = append(f.calls, "source:create")
-	return false, nil
+	return f.createSourceErr
 }
-func (f *fakePorts) ResumeSource(context.Context, domain.SourceResource) error {
-	f.calls = append(f.calls, "source:resume")
-	return nil
-}
-func (f *fakePorts) CleanSource(context.Context, domain.SourceResource) error {
+func (f *fakePorts) CleanSource(_ context.Context, resource domain.SourceResource) error {
 	f.calls = append(f.calls, "source:clean")
+	f.cleanedSources = append(f.cleanedSources, resource)
 	return nil
 }
 func (f *fakePorts) CreateContainers(_ context.Context, resources domain.ContainerResources) (map[string][]string, error) {

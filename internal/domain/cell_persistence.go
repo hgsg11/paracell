@@ -36,11 +36,6 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 		return Cell{}, err
 	}
 	stored.Creation.Status = creationStatus
-	for _, stage := range stored.Creation.CompletedStages {
-		if _, err := NewCreationStage(string(stage)); err != nil {
-			return Cell{}, err
-		}
-	}
 	if stored.Creation.FailedStage != "" {
 		if _, err := NewCreationStage(string(stored.Creation.FailedStage)); err != nil {
 			return Cell{}, err

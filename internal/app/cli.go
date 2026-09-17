@@ -49,7 +49,7 @@ var (
 	}
 	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
 		uc := usecase.MarkCellDoneUseCase{State: state}
-		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name()})
+		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name().Value})
 	}
 	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, notifications usecase.NotificationProviderFactory, cellName string, status domain.CellStatus) (domain.Cell, error) {
 		uc := usecase.SetCellStatusUseCase{State: state, NotificationFactory: notifications}
@@ -85,18 +85,6 @@ var (
 		}
 		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command, Note: note})
 	}
-	runRetry = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell string, root string) (domain.Cell, error) {
-		uc := usecase.RetryCellUseCase{
-			Config:           cfg,
-			State:            state,
-			CellFactory:      celladapter.NewFactory(),
-			SourceFactory:    source,
-			ContainerFactory: container,
-			SessionFactory:   session,
-			IDs:              id.RandomGenerator{},
-		}
-		return uc.Execute(ctx, usecase.RetryCellInput{Cell: cell})
-	}
 )
 
 var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
@@ -107,7 +95,7 @@ var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.
 		ContainerFactory: container,
 		SessionFactory:   session,
 	}
-	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.Name()})
+	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.Name().Value})
 }
 
 type CommandKind string
@@ -118,7 +106,6 @@ const (
 	CommandInit     CommandKind = "init"
 	CommandFork     CommandKind = "fork"
 	CommandAnnotate CommandKind = "annotate"
-	CommandRetry    CommandKind = "retry"
 	CommandClean    CommandKind = "clean"
 	CommandList     CommandKind = "ls"
 	CommandPending  CommandKind = "pending"
@@ -130,7 +117,7 @@ const (
 	CommandHelp     CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|annotate|retry|ls|view|clean|pending|ready|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|exit|version|help]\n"
 
 const (
 	forkUsage     = "usage: paracell fork <issue> --template <template> [--command <command>] [--note <note>]"
@@ -211,11 +198,6 @@ func ParseCommand(args []string) (Command, error) {
 		}
 		note := args[3]
 		return Command{Kind: CommandAnnotate, Cell: args[1], Note: &note}, nil
-	case "retry":
-		if len(args) != 2 || args[1] == "" {
-			return Command{}, errors.New("usage: paracell retry <cell>")
-		}
-		return Command{Kind: CommandRetry, Cell: args[1]}, nil
 	case "clean":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--force") {
 			return Command{}, errors.New("usage: paracell clean <cell> [--force]")
@@ -380,10 +362,6 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			IDs:              id.RandomGenerator{},
 		}
 		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command, Note: cmd.Note})
-		return err
-	case CommandRetry:
-		factory := provider.NewFactory(runner, workdir)
-		_, err = runRetry(ctx, configAdapter, factory, factory, factory, stateAdapter, cmd.Cell, workdir)
 		return err
 	case CommandClean:
 		uc := usecase.CleanCellUseCase{
