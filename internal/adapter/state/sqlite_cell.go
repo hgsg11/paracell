@@ -14,13 +14,13 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-type SQLiteCellStateAdapter struct{ Path string }
+type SQLiteCellAdapter struct{ Path string }
 
-func NewSQLiteCellStateAdapter(path string) SQLiteCellStateAdapter {
-	return SQLiteCellStateAdapter{Path: path}
+func NewSQLiteCellAdapter(path string) SQLiteCellAdapter {
+	return SQLiteCellAdapter{Path: path}
 }
 
-func (a SQLiteCellStateAdapter) Initialize(ctx context.Context) error {
+func (a SQLiteCellAdapter) Initialize(ctx context.Context) error {
 	db, err := a.open(ctx)
 	if err != nil {
 		return err
@@ -28,7 +28,7 @@ func (a SQLiteCellStateAdapter) Initialize(ctx context.Context) error {
 	return db.Close()
 }
 
-func (a SQLiteCellStateAdapter) LoadCells(ctx context.Context) ([]domain.Cell, error) {
+func (a SQLiteCellAdapter) LoadCells(ctx context.Context) ([]domain.Cell, error) {
 	db, err := a.open(ctx)
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func (a SQLiteCellStateAdapter) LoadCells(ctx context.Context) ([]domain.Cell, e
 	return loadCells(ctx, db)
 }
 
-func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
+func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
 	db, err := a.open(ctx)
 	if err != nil {
 		return err
@@ -75,7 +75,7 @@ func (a SQLiteCellStateAdapter) UpdateCells(ctx context.Context, update func([]d
 	return nil
 }
 
-func (a SQLiteCellStateAdapter) DeleteCell(ctx context.Context, cell domain.Cell) error {
+func (a SQLiteCellAdapter) DeleteCell(ctx context.Context, cell domain.Cell) error {
 	record := cell.Stored()
 	db, err := a.open(ctx)
 	if err != nil {
@@ -96,13 +96,13 @@ func (a SQLiteCellStateAdapter) DeleteCell(ctx context.Context, cell domain.Cell
 	return nil
 }
 
-func (a SQLiteCellStateAdapter) SaveCells(ctx context.Context, cells []domain.Cell) error {
+func (a SQLiteCellAdapter) SaveCells(ctx context.Context, cells []domain.Cell) error {
 	return a.UpdateCells(ctx, func([]domain.Cell) ([]domain.Cell, error) {
 		return cloneCells(cells), nil
 	})
 }
 
-func (a SQLiteCellStateAdapter) open(ctx context.Context) (*sql.DB, error) {
+func (a SQLiteCellAdapter) open(ctx context.Context) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(a.Path), 0o755); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}

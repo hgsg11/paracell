@@ -425,7 +425,7 @@ func TestRunはCLI解析エラーもProjectログへ保存する(t *testing.T) {
 func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		func() domain.Cell {
 			c := appTestCell("cell-1", "123", "default")
@@ -457,7 +457,7 @@ func TestRunはAnnotateでStateを更新しTmuxSessionなしを成功扱いに�
 	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{appTestCell("cell-1", "123", "default")}); err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +503,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
@@ -530,7 +530,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 
 func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootのStateを読む(t *testing.T) {
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
@@ -573,7 +573,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
@@ -1061,7 +1061,7 @@ templates: {}
 
 func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -1121,7 +1121,7 @@ templates:
 func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
@@ -1205,7 +1205,7 @@ templates: {}
 func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
@@ -1274,7 +1274,7 @@ templates: {}
 
 func TestRunはViewのGoRoot選択でRootSessionEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{appTestCell("cell-1", "123", "default")}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
@@ -1412,7 +1412,7 @@ templates: {}
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
@@ -1450,7 +1450,7 @@ templates:
 `), 0o644); err != nil {
 		t.Fatalf("config保存でエラーが返った: %v", err)
 	}
-	store := state.SQLiteCellStateAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := store.SaveCells(context.Background(), []domain.Cell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {

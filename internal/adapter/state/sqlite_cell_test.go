@@ -29,7 +29,7 @@ func persistedTestCell(t *testing.T) domain.Cell {
 }
 
 func TestSQLiteStateは新規CellをVersion1で保存して読込では進めない(t *testing.T) {
-	adapter := NewSQLiteCellStateAdapter(filepath.Join(t.TempDir(), "state.db"))
+	adapter := NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
 	cell := persistedTestCell(t)
 	if err := adapter.SaveCells(context.Background(), []domain.Cell{cell}); err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestSQLiteStateは新規CellをVersion1で保存して読込では進めな
 
 func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否する(t *testing.T) {
 	ctx := context.Background()
-	adapter := NewSQLiteCellStateAdapter(filepath.Join(t.TempDir(), "state.db"))
+	adapter := NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
 	cell := persistedTestCell(t)
 	if err := adapter.SaveCells(ctx, []domain.Cell{cell}); err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否�
 
 func TestSQLiteStateは古いVersionによる削除を拒否する(t *testing.T) {
 	ctx := context.Background()
-	adapter := NewSQLiteCellStateAdapter(filepath.Join(t.TempDir(), "state.db"))
+	adapter := NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
 	cell := persistedTestCell(t)
 	if err := adapter.SaveCells(ctx, []domain.Cell{cell}); err != nil {
 		t.Fatal(err)
