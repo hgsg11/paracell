@@ -11,15 +11,15 @@ func FormatCellList(cells []domain.Cell) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
-		summary := cell.Summary()
+		display := cell.Display()
 		failedStage := "-"
 		lastError := "-"
-		if summary.CreationStatus == domain.CreationFailed {
-			failedStage = string(summary.FailedStage)
-			lastError = singleLine(summary.LastError, 120)
+		if display.CreationStatus == domain.CreationFailed {
+			failedStage = string(display.FailedStage)
+			lastError = singleLine(display.LastError, 120)
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
-			summary.DisplayLabel, summary.Template, summary.CreationStatus, summary.Status, summary.Done, failedStage, lastError)
+			display.Label, display.Template, display.CreationStatus, display.Status, display.Done, failedStage, lastError)
 	}
 	return b.String()
 }

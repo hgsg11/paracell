@@ -1465,7 +1465,7 @@ templates:
 	if err != nil {
 		t.Fatalf("state読み込みでエラーが返った: %v", err)
 	}
-	if got := cells[0].Summary().Status; got != domain.Ready {
+	if got := cells[0].Display().Status; got != domain.Ready {
 		t.Fatalf("Status = %q, want %q", got, domain.Ready)
 	}
 }

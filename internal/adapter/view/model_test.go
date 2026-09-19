@@ -567,7 +567,7 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if !got.Cells[0].Summary().Done {
+	if !got.Cells[0].Display().Done {
 		t.Fatal("IsDone = false, want true")
 	}
 	if got.Result.Action != ActionNone {
@@ -633,8 +633,8 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if got.Cells[0].Summary().Status != domain.Ready {
-		t.Fatalf("Status = %q, want %q", got.Cells[0].Summary().Status, domain.Ready)
+	if got.Cells[0].Display().Status != domain.Ready {
+		t.Fatalf("Status = %q, want %q", got.Cells[0].Display().Status, domain.Ready)
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
@@ -961,7 +961,7 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, _ := next.(Model).Update(cmd())
-	if updated.(Model).Cells[0].Summary().Done {
+	if updated.(Model).Cells[0].Display().Done {
 		t.Fatal("IsDone = true, want false")
 	}
 }

@@ -59,8 +59,8 @@ func (c Cell) DisplayLabel() string {
 	return c.Name().Value
 }
 
-func (c Cell) Summary() CellSummary {
-	return NewCellSummary(c.Version, c.ID, c.Issue, c.Name().Value, c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
+func (c Cell) Display() CellDisplay {
+	return NewCellDisplay(c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
 }
 
 func (c Cell) ResourceDrivers() CellDrivers {
@@ -124,6 +124,10 @@ func ResolveCell(cells []Cell, identifier string) (Cell, bool) {
 
 func (c Cell) Matches(identifier string) bool {
 	return c.ID == identifier || c.Issue == identifier || c.Name().Value == identifier
+}
+
+func (c Cell) SameIdentity(other Cell) bool {
+	return c.ID == other.ID
 }
 
 func EnsureCellUnique(existing []Cell, issue string, name CellName) error {

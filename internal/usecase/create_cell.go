@@ -204,15 +204,14 @@ func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
 }
 
 func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) (domain.Cell, error) {
-	targetSummary := target.Summary()
 	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
-			if cells[index].Summary().ID == targetSummary.ID {
+			if cells[index].SameIdentity(target) {
 				cells[index] = target
 				return cells, nil
 			}
 		}
-		return nil, fmt.Errorf("cell %q not found", targetSummary.ID)
+		return nil, fmt.Errorf("cell %q not found", target.Name().Value)
 	})
 	return target, err
 }
