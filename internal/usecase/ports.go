@@ -15,6 +15,16 @@ type InitConfigPort interface {
 	SaveConfig(ctx context.Context, cfg domain.Templates) error
 }
 
+type CellInitializer interface {
+	Initialize(context.Context) error
+}
+
+type CellPort interface {
+	LoadCells(context.Context) ([]domain.Cell, error)
+	UpdateCells(context.Context, func([]domain.Cell) ([]domain.Cell, error)) error
+	DeleteCell(context.Context, domain.Cell) error
+}
+
 type Notifier interface {
 	NotifyReady(ctx context.Context, sessionName string, message string) error
 }
