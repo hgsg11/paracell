@@ -18,7 +18,6 @@ type ForkCellInput struct {
 type ForkCellUseCase struct {
 	Config           ConfigPort
 	Cells            CellPort
-	CellFactory      CellFactory
 	SourceFactory    SourceProviderFactory
 	ContainerFactory ContainerProviderFactory
 	SessionFactory   SessionProviderFactory
@@ -40,6 +39,28 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
+	sources, err := domain.BuildSources(cfg.SourceDriverType, resolved.Sources, input.Issue)
+	if err != nil {
+		return domain.Cell{}, err
+	}
+	containers, err := domain.BuildContainers(cfg.ContainerDriverType, resolved.Containers)
+	if err != nil {
+		return domain.Cell{}, err
+	}
+	session, err := domain.BuildSession(cfg.SessionDriverType, resolved.Session)
+	if err != nil {
+		return domain.Cell{}, err
+	}
+	cell, err := domain.NewCell(
+		id, input.Issue, cfg.ProjectName, input.Template,
+		sources,
+		containers,
+		session,
+		cfg.NotificationDriverType,
+	)
+	if err != nil {
+		return domain.Cell{}, err
+	}
 	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
 		return domain.Cell{}, err
@@ -49,16 +70,6 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	sessionPort, err := u.SessionFactory.Session(cfg.SessionDriverType)
-	if err != nil {
-		return domain.Cell{}, err
-	}
-	cell, err := u.CellFactory.NewCell(
-		id, input.Issue, cfg.ProjectName, input.Template,
-		domain.NewSources(cfg.SourceDriverType, nil),
-		domain.NewContainers(cfg.ContainerDriverType, nil),
-		domain.NewSession(cfg.SessionDriverType, nil),
-		cfg.NotificationDriverType,
-	)
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -83,15 +94,9 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	runner := cellCreationRunner{
 		Cells:              u.Cells,
 		Source:             source,
-		SourceDriver:       cfg.SourceDriverType,
-		SourceTemplates:    resolved.Sources,
-		Issue:              input.Issue,
 		Containers:         containerPort,
-		ContainerDriver:    cfg.ContainerDriverType,
 		ContainerTemplates: resolved.Containers,
 		Session:            sessionPort,
-		SessionDriver:      cfg.SessionDriverType,
-		SessionTemplate:    resolved.Session,
 	}
 	if err := runner.run(ctx, &cell); err != nil {
 		return domain.Cell{}, err
@@ -102,15 +107,9 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 type cellCreationRunner struct {
 	Cells              CellPort
 	Source             SourcePort
-	SourceDriver       domain.SourceDriverType
-	SourceTemplates    []domain.SourceTemplate
-	Issue              string
 	Containers         ContainerPort
-	ContainerDriver    domain.ContainerDriverType
 	ContainerTemplates []domain.ContainerTemplate
 	Session            SessionPort
-	SessionDriver      domain.SessionDriverType
-	SessionTemplate    domain.SessionTemplate
 	BeforeTerminal     func() error
 }
 
@@ -162,33 +161,21 @@ func (r cellCreationRunner) beforeTerminal() error {
 func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		resources, err := cell.ConfigureSources(r.SourceDriver, r.SourceTemplates, r.Issue)
-		if err != nil {
-			return err
-		}
-		for _, resource := range resources {
+		for _, resource := range cell.SourceResources() {
 			if err := r.Source.CreateSource(ctx, resource); err != nil {
 				return err
 			}
 		}
 		return nil
 	case domain.CreationStageContainers:
-		resources, err := cell.ConfigureContainers(r.ContainerDriver, r.ContainerTemplates)
-		if err != nil {
-			return err
-		}
-		networks, err := r.Containers.CreateContainers(ctx, resources)
+		networks, err := r.Containers.CreateContainers(ctx, cell.ContainerResources(r.ContainerTemplates))
 		if err != nil {
 			return err
 		}
 		cell.RecordContainerNetworks(networks)
 		return nil
 	case domain.CreationStageSession:
-		resource, err := cell.ConfigureSession(r.SessionDriver, r.SessionTemplate)
-		if err != nil {
-			return err
-		}
-		return r.Session.CreateSession(ctx, resource)
+		return r.Session.CreateSession(ctx, cell.SessionResource())
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}

@@ -68,7 +68,3 @@ type SessionProviderFactory interface {
 type IDGenerator interface {
 	NewID() string
 }
-
-type CellFactory interface {
-	NewCell(id string, issue string, project string, templateName string, sources domain.Sources, containers domain.Containers, session domain.Session, notificationDriver domain.NotificationDriverType) (domain.Cell, error)
-}

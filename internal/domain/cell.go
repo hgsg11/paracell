@@ -274,30 +274,3 @@ func (c Cell) SessionResource() SessionResource {
 	}
 	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
 }
-
-func (c *Cell) ConfigureSources(driver SourceDriverType, templates []SourceTemplate, issue string) ([]SourceResource, error) {
-	sources, err := buildSources(driver, templates, issue)
-	if err != nil {
-		return nil, err
-	}
-	c.Sources = sources
-	return c.SourceResources(), nil
-}
-
-func (c *Cell) ConfigureContainers(driver ContainerDriverType, templates []ContainerTemplate) (ContainerResources, error) {
-	containers, err := buildContainers(driver, templates)
-	if err != nil {
-		return ContainerResources{}, err
-	}
-	c.Containers = containers
-	return c.ContainerResources(templates), nil
-}
-
-func (c *Cell) ConfigureSession(driver SessionDriverType, template SessionTemplate) (SessionResource, error) {
-	session, err := buildSession(driver, template)
-	if err != nil {
-		return SessionResource{}, err
-	}
-	c.Session = session
-	return c.SessionResource(), nil
-}

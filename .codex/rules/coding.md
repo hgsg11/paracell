@@ -20,6 +20,8 @@
 - 同一性判定や状態変更を、fieldごとのgetterへ分解しないこと。
 - Aggregate Root、Entity、Value ObjectからPort、database、外部serviceを呼び出さないこと。
 - Aggregate Rootは外部処理に必要な値を生成して返し、Portの呼び出しはusecaseまたはDomain Serviceが行うこと。
+- Aggregate Rootのmethodには、そのAggregate Rootと所有するEntity、Value Objectだけに閉じた処理を書くこと。
+- 別のAggregateを参照して生成や変更を行う処理は、Aggregate RootのmethodではなくDomain Serviceとして定義すること。
 
 ## Value Object
 
@@ -44,7 +46,7 @@
 - Domain Serviceでは、必要なdatabase処理や外部service処理を実行してよい。
 - Domain Serviceは1ファイルに1関数だけ定義し、ファイル名をDomain Service名に一致させること。
 - Domain ServiceをAggregate Rootのforwarding methodとして追加しないこと。
-- Application Serviceが必要なPortをFactoryから生成し、Domain Serviceには入力値、Portの必要な操作、更新対象Aggregate Rootのポインタを渡すこと。
+- Application Serviceが必要なPortをFactoryから生成すること。Domain Serviceが外部処理を必要とする場合は、そのPortの必要な操作だけを渡すこと。
 - interfaceは実装側ではなく利用側に定義し、利用側が必要とするmethodだけを含めること。
 - Portはすべてusecase packageへ定義し、domain packageへ置かないこと。
 

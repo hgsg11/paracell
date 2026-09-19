@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	celladapter "github.com/hgsg11/paracell/internal/adapter/cell"
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/id"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
@@ -77,7 +76,6 @@ var (
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
 			Cells:            cells,
-			CellFactory:      celladapter.NewFactory(),
 			SourceFactory:    source,
 			ContainerFactory: container,
 			SessionFactory:   session,
@@ -355,7 +353,6 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           configAdapter,
 			Cells:            cellsAdapter,
-			CellFactory:      celladapter.NewFactory(),
 			SourceFactory:    provider.NewFactory(runner, workdir),
 			ContainerFactory: provider.NewFactory(runner, workdir),
 			SessionFactory:   provider.NewFactory(runner, workdir),

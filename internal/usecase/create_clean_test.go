@@ -84,7 +84,7 @@ func newFakePorts() *fakePorts {
 
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
-		Config: ports, Cells: ports, CellFactory: ports, SourceFactory: ports,
+		Config: ports, Cells: ports, SourceFactory: ports,
 		ContainerFactory: ports, SessionFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
 	}
 }
@@ -142,10 +142,6 @@ func (f *fakePorts) Container(driver domain.ContainerDriverType) (ContainerPort,
 func (f *fakePorts) Session(driver domain.SessionDriverType) (SessionPort, error) {
 	f.calls = append(f.calls, "factory:session:"+string(driver))
 	return f, nil
-}
-
-func (f *fakePorts) NewCell(id string, issue string, project string, templateName string, sources domain.Sources, containers domain.Containers, session domain.Session, notificationDriver domain.NotificationDriverType) (domain.Cell, error) {
-	return domain.NewCell(id, issue, project, templateName, sources, containers, session, notificationDriver)
 }
 
 func (f *fakePorts) CreateSource(context.Context, domain.SourceResource) error {
