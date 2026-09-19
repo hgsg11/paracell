@@ -50,8 +50,10 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if ports.cells[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
 		t.Fatalf("cell = %#v", ports.cells[0])
 	}
-	if err := domain.CleanSources(context.Background(), ports.cells[0], ports); err != nil {
-		t.Fatal(err)
+	for _, resource := range ports.cells[0].SourceResources() {
+		if err := ports.CleanSource(context.Background(), resource); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleaned sources = %#v, want %#v", got, want)
@@ -127,17 +129,17 @@ func (f *fakePorts) DeleteCell(_ context.Context, target domain.Cell) error {
 	return domain.ErrNotFound
 }
 
-func (f *fakePorts) Source(driver domain.SourceDriverType) (domain.SourcePort, error) {
+func (f *fakePorts) Source(driver domain.SourceDriverType) (SourcePort, error) {
 	f.calls = append(f.calls, "factory:source:"+string(driver))
 	return f, nil
 }
 
-func (f *fakePorts) Container(driver domain.ContainerDriverType) (domain.ContainerPort, error) {
+func (f *fakePorts) Container(driver domain.ContainerDriverType) (ContainerPort, error) {
 	f.calls = append(f.calls, "factory:container:"+string(driver))
 	return f, nil
 }
 
-func (f *fakePorts) Session(driver domain.SessionDriverType) (domain.SessionPort, error) {
+func (f *fakePorts) Session(driver domain.SessionDriverType) (SessionPort, error) {
 	f.calls = append(f.calls, "factory:session:"+string(driver))
 	return f, nil
 }

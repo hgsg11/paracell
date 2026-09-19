@@ -48,7 +48,7 @@ templates:
 	if got.ProjectName != "sample" || got.ContainerDriverType != domain.Docker {
 		t.Fatalf("templates = %#v", got)
 	}
-	resolved, err := domain.ResolveTemplate(got, "feat", domain.NewTemplateVars("42", "42", "", ""))
+	resolved, err := got.Resolve("feat", domain.NewTemplateVars("42", "42", "", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ templates:
 	if got.Templates[0].Extends != "missing" || got.Templates[0].Session.Windows[0].Command != "echo {{.Command}}" {
 		t.Fatalf("template was resolved during load: %#v", got.Templates[0])
 	}
-	if _, err := domain.ResolveTemplate(got, "feat", domain.NewTemplateVars("", "", "sample", "work")); err == nil {
+	if _, err := got.Resolve("feat", domain.NewTemplateVars("", "", "sample", "work")); err == nil {
 		t.Fatal("domain resolution must reject the missing parent")
 	}
 }

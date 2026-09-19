@@ -24,3 +24,19 @@ func NewContainerTemplate(name string, mode Mode, environments []Environment, mo
 	}
 	return ContainerTemplate{Name: name, Mode: validatedMode, Environments: append([]Environment(nil), environments...), Mounts: append([]Mount(nil), mounts...)}, nil
 }
+
+func (c ContainerTemplate) render(vars TemplateVars) (ContainerTemplate, error) {
+	environments := make([]Environment, 0, len(c.Environments))
+	for _, environment := range c.Environments {
+		value, err := vars.Render(environment.Value)
+		if err != nil {
+			return ContainerTemplate{}, fmt.Errorf("render environment %q for container %q: %w", environment.Name, c.Name, err)
+		}
+		rendered, err := NewEnvironment(environment.Name, value)
+		if err != nil {
+			return ContainerTemplate{}, err
+		}
+		environments = append(environments, rendered)
+	}
+	return NewContainerTemplate(c.Name, c.Mode, environments, c.Mounts)
+}

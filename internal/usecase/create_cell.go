@@ -32,7 +32,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	}
 	id := u.IDs.NewID()
 	name := domain.NewCellName(input.Issue)
-	resolved, err := domain.ResolveTemplate(cfg, input.Template, domain.NewTemplateVars(input.Issue, name.Value, cfg.ProjectName, input.Command))
+	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, name.Value, cfg.ProjectName, input.Command))
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -101,14 +101,14 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 
 type cellCreationRunner struct {
 	Cells              CellPort
-	Source             domain.SourcePort
+	Source             SourcePort
 	SourceDriver       domain.SourceDriverType
 	SourceTemplates    []domain.SourceTemplate
 	Issue              string
-	Containers         domain.ContainerPort
+	Containers         ContainerPort
 	ContainerDriver    domain.ContainerDriverType
 	ContainerTemplates []domain.ContainerTemplate
-	Session            domain.SessionPort
+	Session            SessionPort
 	SessionDriver      domain.SessionDriverType
 	SessionTemplate    domain.SessionTemplate
 	BeforeTerminal     func() error
@@ -149,7 +149,7 @@ func (r cellCreationRunner) rollbackDependencyContainers(ctx context.Context, ce
 	if failedStage != domain.CreationStageSession || !cell.UsesDependency() {
 		return nil
 	}
-	return ignoreNotFound(domain.CleanContainers(ctx, *cell, r.Containers))
+	return ignoreNotFound(r.Containers.CleanContainers(ctx, cell.ContainerResources(nil)))
 }
 
 func (r cellCreationRunner) beforeTerminal() error {
@@ -162,11 +162,33 @@ func (r cellCreationRunner) beforeTerminal() error {
 func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		return domain.CreateSources(ctx, cell, r.SourceDriver, r.SourceTemplates, r.Issue, r.Source)
+		resources, err := cell.ConfigureSources(r.SourceDriver, r.SourceTemplates, r.Issue)
+		if err != nil {
+			return err
+		}
+		for _, resource := range resources {
+			if err := r.Source.CreateSource(ctx, resource); err != nil {
+				return err
+			}
+		}
+		return nil
 	case domain.CreationStageContainers:
-		return domain.CreateContainers(ctx, cell, r.ContainerDriver, r.ContainerTemplates, r.Containers)
+		resources, err := cell.ConfigureContainers(r.ContainerDriver, r.ContainerTemplates)
+		if err != nil {
+			return err
+		}
+		networks, err := r.Containers.CreateContainers(ctx, resources)
+		if err != nil {
+			return err
+		}
+		cell.RecordContainerNetworks(networks)
+		return nil
 	case domain.CreationStageSession:
-		return domain.CreateSession(ctx, cell, r.SessionDriver, r.SessionTemplate, r.Session)
+		resource, err := cell.ConfigureSession(r.SessionDriver, r.SessionTemplate)
+		if err != nil {
+			return err
+		}
+		return r.Session.CreateSession(ctx, resource)
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}
@@ -175,9 +197,9 @@ func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, sta
 func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, cell domain.Cell, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageContainers:
-		return ignoreNotFound(domain.CleanContainers(ctx, cell, r.Containers))
+		return ignoreNotFound(r.Containers.CleanContainers(ctx, cell.ContainerResources(nil)))
 	case domain.CreationStageSession:
-		return ignoreNotFound(domain.CleanSession(ctx, cell, r.Session))
+		return ignoreNotFound(r.Session.CleanSession(ctx, cell.SessionResource()))
 	default:
 		return nil
 	}

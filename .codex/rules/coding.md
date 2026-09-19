@@ -18,6 +18,8 @@
 - receiverを変更するmethodはポインタレシーバにし、既存instanceを更新すること。
 - 構造体を変更する処理を、値を受け取って変更後のcopyを返すfree functionとして定義しないこと。
 - 同一性判定や状態変更を、fieldごとのgetterへ分解しないこと。
+- Aggregate Root、Entity、Value ObjectからPort、database、外部serviceを呼び出さないこと。
+- Aggregate Rootは外部処理に必要な値を生成して返し、Portの呼び出しはusecaseまたはDomain Serviceが行うこと。
 
 ## Value Object
 
@@ -36,11 +38,15 @@
 
 ## Domain ServiceとPort
 
-- 単一のAggregate RootやEntityへ属さない処理だけを、独立したDomain Serviceとして定義すること。
+- Domain Serviceは、複数のAggregateにまたがるdomain logicであり、Value Object、Entity、Aggregate Rootでは表現できない場合に限って定義すること。
+- Domain Serviceを定義する前に、その処理をValue Object、Entity、Aggregate Rootのmethodとして表現できないか必ず検討すること。
+- 単一のAggregate Rootまたはその所有Entityだけに属する処理を、Domain Serviceとして定義しないこと。
+- Domain Serviceでは、必要なdatabase処理や外部service処理を実行してよい。
+- Domain Serviceは1ファイルに1関数だけ定義し、ファイル名をDomain Service名に一致させること。
 - Domain ServiceをAggregate Rootのforwarding methodとして追加しないこと。
-- Application Serviceが必要なPortをFactoryから生成し、入力値、Port、更新対象Aggregate RootのポインタをDomain Serviceへ渡すこと。
+- Application Serviceが必要なPortをFactoryから生成し、Domain Serviceには入力値、Portの必要な操作、更新対象Aggregate Rootのポインタを渡すこと。
 - interfaceは実装側ではなく利用側に定義し、利用側が必要とするmethodだけを含めること。
-- Application Serviceだけが使う永続化Portをdomain packageへ置かないこと。
+- Portはすべてusecase packageへ定義し、domain packageへ置かないこと。
 
 ## テスト
 

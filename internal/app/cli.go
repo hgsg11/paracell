@@ -65,7 +65,7 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		if err := domain.PrepareSession(ctx, cell, session); err != nil {
+		if err := session.PrepareSession(ctx, cell.SessionResource()); err != nil {
 			return nil, err
 		}
 		if os.Getenv("TMUX") != "" {
@@ -321,7 +321,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		names, err := domain.SelectableTemplateNames(loaded)
+		names, err := loaded.SelectableNames()
 		if err != nil {
 			return err
 		}

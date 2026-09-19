@@ -46,3 +46,28 @@ func NewPartialSourceTemplate(path *string, base *string, prefix *string) (Sourc
 	}
 	return value, nil
 }
+
+func (s SourceTemplate) merge(parent SourceTemplate) (SourceTemplate, error) {
+	path, base, prefix := parent.Path, parent.Base, parent.Prefix
+	pathSet, baseSet, prefixSet := parent.pathSet, parent.baseSet, parent.prefixSet
+	if s.pathSet {
+		path, pathSet = s.Path, true
+	}
+	if s.baseSet {
+		base, baseSet = s.Base, true
+	}
+	if s.prefixSet {
+		prefix, prefixSet = s.Prefix, true
+	}
+	var pathValue, baseValue, prefixValue *string
+	if pathSet {
+		pathValue = &path
+	}
+	if baseSet {
+		baseValue = &base
+	}
+	if prefixSet {
+		prefixValue = &prefix
+	}
+	return NewPartialSourceTemplate(pathValue, baseValue, prefixValue)
+}

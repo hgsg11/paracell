@@ -46,7 +46,7 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	if err != nil {
 		return updated, err
 	}
-	if err := domain.UpdateSessionStatusLabel(ctx, updated, session); err != nil {
+	if err := session.UpdateStatusLabel(ctx, updated.SessionResource()); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}

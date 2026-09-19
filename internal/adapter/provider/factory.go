@@ -21,7 +21,7 @@ func NewFactory(runner system.Runner, root string) Factory {
 	return Factory{Runner: runner, Root: root}
 }
 
-func (f Factory) Source(driver domain.SourceDriverType) (domain.SourcePort, error) {
+func (f Factory) Source(driver domain.SourceDriverType) (usecase.SourcePort, error) {
 	switch driver {
 	case domain.Git:
 		return source.NewGitSourceAdapter(f.Runner, f.Root), nil
@@ -30,7 +30,7 @@ func (f Factory) Source(driver domain.SourceDriverType) (domain.SourcePort, erro
 	}
 }
 
-func (f Factory) Container(driver domain.ContainerDriverType) (domain.ContainerPort, error) {
+func (f Factory) Container(driver domain.ContainerDriverType) (usecase.ContainerPort, error) {
 	switch driver {
 	case domain.None:
 		return container.NewNoopAdapter(), nil
@@ -41,7 +41,7 @@ func (f Factory) Container(driver domain.ContainerDriverType) (domain.ContainerP
 	}
 }
 
-func (f Factory) Session(driver domain.SessionDriverType) (domain.SessionPort, error) {
+func (f Factory) Session(driver domain.SessionDriverType) (usecase.SessionPort, error) {
 	switch driver {
 	case domain.Tmux:
 		return session.NewTmuxAdapter(f.Runner, f.Root), nil

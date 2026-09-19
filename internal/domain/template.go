@@ -11,6 +11,57 @@ type Template struct {
 	Session    *SessionTemplate
 }
 
+func (t Template) resolve(vars TemplateVars) (ResolvedTemplate, error) {
+	var sources []SourceTemplate
+	if t.Repository != nil {
+		sources = []SourceTemplate{*t.Repository}
+	}
+	var containers []ContainerTemplate
+	if t.Containers != nil {
+		containers = make([]ContainerTemplate, 0, len(*t.Containers))
+		for _, container := range *t.Containers {
+			rendered, err := container.render(vars)
+			if err != nil {
+				return ResolvedTemplate{}, err
+			}
+			containers = append(containers, rendered)
+		}
+	}
+	session := NewSessionTemplate(nil)
+	if t.Session != nil {
+		var err error
+		session, err = t.Session.render(vars)
+		if err != nil {
+			return ResolvedTemplate{}, err
+		}
+	}
+	return NewResolvedTemplate(t.Name, sources, containers, session), nil
+}
+
+func (t Template) merge(parent Template) (Template, error) {
+	repository := parent.Repository
+	if t.Repository != nil {
+		if parent.Repository == nil {
+			repository = t.Repository
+		} else {
+			merged, err := t.Repository.merge(*parent.Repository)
+			if err != nil {
+				return Template{}, err
+			}
+			repository = &merged
+		}
+	}
+	containers := parent.Containers
+	if t.Containers != nil {
+		containers = t.Containers
+	}
+	session := parent.Session
+	if t.Session != nil {
+		session = t.Session
+	}
+	return NewUnresolvedTemplate(t.Name, t.Extends, t.Abstract, repository, containers, session)
+}
+
 func NewTemplate(name string, sources []SourceTemplate, containers []ContainerTemplate, session SessionTemplate) (Template, error) {
 	if len(sources) > 1 {
 		return Template{}, fmt.Errorf("template %q defines more than one repository", name)

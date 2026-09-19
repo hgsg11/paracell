@@ -207,18 +207,6 @@ func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
 	}
 }
 
-func (c *Cell) PlanSources(sources Sources) {
-	c.Sources = sources
-}
-
-func (c *Cell) PlanContainers(containers Containers) {
-	c.Containers = containers
-}
-
-func (c *Cell) PlanSession(session Session) {
-	c.Session = session
-}
-
 func (c Cell) SessionName() string {
 	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
 }
@@ -248,7 +236,7 @@ func (c Cell) CreationStatus() CreationStatus {
 	return c.Creation.Status
 }
 
-func (c Cell) sourceResources() []SourceResource {
+func (c Cell) SourceResources() []SourceResource {
 	resources := make([]SourceResource, 0, len(c.Sources.Items))
 	for _, source := range c.Sources.Items {
 		resources = append(resources, NewSourceResource(source.Path, c.SourceWorktreePath(source), source.Base, source.Branch))
@@ -256,7 +244,7 @@ func (c Cell) sourceResources() []SourceResource {
 	return resources
 }
 
-func (c Cell) containerResources(templates []ContainerTemplate) ContainerResources {
+func (c Cell) ContainerResources(templates []ContainerTemplate) ContainerResources {
 	bySourceContainer := make(map[string]ContainerTemplate, len(templates))
 	for _, template := range templates {
 		bySourceContainer[template.Name] = template
@@ -279,10 +267,37 @@ func (c Cell) containerResources(templates []ContainerTemplate) ContainerResourc
 	return NewContainerResources(c.Name().Value, c.Project, c.ContainerNetworkName(), sourcePath, items)
 }
 
-func (c Cell) sessionResource() SessionResource {
+func (c Cell) SessionResource() SessionResource {
 	workingDirectory := ""
 	if len(c.Sources.Items) > 0 {
 		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
 	}
 	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
+}
+
+func (c *Cell) ConfigureSources(driver SourceDriverType, templates []SourceTemplate, issue string) ([]SourceResource, error) {
+	sources, err := buildSources(driver, templates, issue)
+	if err != nil {
+		return nil, err
+	}
+	c.Sources = sources
+	return c.SourceResources(), nil
+}
+
+func (c *Cell) ConfigureContainers(driver ContainerDriverType, templates []ContainerTemplate) (ContainerResources, error) {
+	containers, err := buildContainers(driver, templates)
+	if err != nil {
+		return ContainerResources{}, err
+	}
+	c.Containers = containers
+	return c.ContainerResources(templates), nil
+}
+
+func (c *Cell) ConfigureSession(driver SessionDriverType, template SessionTemplate) (SessionResource, error) {
+	session, err := buildSession(driver, template)
+	if err != nil {
+		return SessionResource{}, err
+	}
+	c.Session = session
+	return c.SessionResource(), nil
 }

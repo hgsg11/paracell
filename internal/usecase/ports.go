@@ -25,6 +25,26 @@ type CellPort interface {
 	DeleteCell(context.Context, domain.Cell) error
 }
 
+type SourcePort interface {
+	CreateSource(context.Context, domain.SourceResource) error
+	CleanSource(context.Context, domain.SourceResource) error
+}
+
+type ContainerPort interface {
+	CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error)
+	CleanContainers(context.Context, domain.ContainerResources) error
+}
+
+type SessionPort interface {
+	CreateSession(context.Context, domain.SessionResource) error
+	CleanSession(context.Context, domain.SessionResource) error
+	PrepareSession(context.Context, domain.SessionResource) error
+	UpdateStatusLabel(context.Context, domain.SessionResource) error
+	EnterSession(context.Context, domain.SessionResource) error
+	EnterRootSession(context.Context, string) error
+	ExitSession(context.Context) error
+}
+
 type Notifier interface {
 	NotifyReady(ctx context.Context, sessionName string, message string) error
 }
@@ -34,15 +54,15 @@ type NotificationProviderFactory interface {
 }
 
 type SourceProviderFactory interface {
-	Source(driver domain.SourceDriverType) (domain.SourcePort, error)
+	Source(driver domain.SourceDriverType) (SourcePort, error)
 }
 
 type ContainerProviderFactory interface {
-	Container(driver domain.ContainerDriverType) (domain.ContainerPort, error)
+	Container(driver domain.ContainerDriverType) (ContainerPort, error)
 }
 
 type SessionProviderFactory interface {
-	Session(driver domain.SessionDriverType) (domain.SessionPort, error)
+	Session(driver domain.SessionDriverType) (SessionPort, error)
 }
 
 type IDGenerator interface {

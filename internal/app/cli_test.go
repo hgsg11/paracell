@@ -36,7 +36,7 @@ type prepareSessionFactory struct {
 	session *prepareSession
 }
 
-func (f prepareSessionFactory) Session(domain.SessionDriverType) (domain.SessionPort, error) {
+func (f prepareSessionFactory) Session(domain.SessionDriverType) (usecase.SessionPort, error) {
 	return f.session, nil
 }
 
