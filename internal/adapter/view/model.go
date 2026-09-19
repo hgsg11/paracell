@@ -448,12 +448,12 @@ func renderCellsPane(m Model, width int, height int) []string {
 	} else {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
-			display := cell.Display()
+			label, templateName := cell.ListLabels()
 			done := "[ ]"
-			if display.Done {
+			if cell.EnsureCanBeCleaned() == nil {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(display.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(display.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(display.Status, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(templateName, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -557,18 +557,18 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		display := cell.Display()
-		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(display.Label, maxIssueDisplayWidth)))
-		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(display.Template, maxTemplateDisplayWidth)))
+		label, templateName := cell.ListLabels()
+		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(label, maxIssueDisplayWidth)))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(templateName, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
 }
 
-func renderCellStatus(status domain.CellStatus, frame int) string {
-	switch status {
-	case domain.Pending:
+func renderCellStatus(cell domain.Cell, frame int) string {
+	switch {
+	case cell.HasStatus(domain.Pending):
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
-	case domain.Ready:
+	case cell.HasStatus(domain.Ready):
 		return ""
 	default:
 		return "  "
@@ -766,12 +766,6 @@ type enterResultMsg struct {
 	err  error
 }
 
-func EnterProcessCmd(cell domain.Cell, cmd *exec.Cmd) tea.Cmd {
-	return tea.Exec(newCapturedExecCommand(cmd), func(err error) tea.Msg {
-		return enterResultMsg{cell: cell, err: err}
-	})
-}
-
 func EnterLoggedProcessCmd(cell domain.Cell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
 	return tea.Exec(newLoggedCapturedExecCommand(cmd, logger), func(err error) tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
@@ -785,14 +779,6 @@ type capturedExecCommand struct {
 	source string
 	mu     sync.Mutex
 	logErr error
-}
-
-func newCapturedExecCommand(cmd *exec.Cmd) *capturedExecCommand {
-	wrapped := &capturedExecCommand{cmd: cmd}
-	if wrapped.cmd.Stderr == nil {
-		wrapped.cmd.Stderr = &wrapped.stderr
-	}
-	return wrapped
 }
 
 func newLoggedCapturedExecCommand(cmd *exec.Cmd, logger *logging.Logger) *capturedExecCommand {

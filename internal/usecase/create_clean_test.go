@@ -46,9 +46,9 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if len(ports.cells) != 1 {
 		t.Fatalf("cells = %d", len(ports.cells))
 	}
-	display := ports.cells[0].Display()
-	if display.CreationStatus != domain.CreationFailed || display.FailedStage != domain.CreationStageSource {
-		t.Fatalf("display = %#v", display)
+	failedStage, _ := ports.cells[0].CreationFailure()
+	if ports.cells[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+		t.Fatalf("cell = %#v", ports.cells[0])
 	}
 	if err := domain.CleanSources(context.Background(), ports.cells[0], ports); err != nil {
 		t.Fatal(err)

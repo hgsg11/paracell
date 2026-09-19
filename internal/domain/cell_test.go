@@ -77,7 +77,7 @@ func TestCell状態変更関数はAggregateを更新する(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = cell.SetStatus(Pending)
-	if err != nil || cell.Display().Status != Pending {
+	if err != nil || !cell.HasStatus(Pending) {
 		t.Fatalf("status = %#v, %v", cell, err)
 	}
 }

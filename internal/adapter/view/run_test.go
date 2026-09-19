@@ -139,7 +139,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	if result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", result.Action, ActionNone)
 	}
-	if !got.Cells[0].Display().Done {
+	if err := got.Cells[0].EnsureCanBeCleaned(); err != nil {
 		t.Fatal("IsDone = false, want true")
 	}
 }

@@ -567,7 +567,7 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if !got.Cells[0].Display().Done {
+	if err := got.Cells[0].EnsureCanBeCleaned(); err != nil {
 		t.Fatal("IsDone = false, want true")
 	}
 	if got.Result.Action != ActionNone {
@@ -633,8 +633,8 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if got.Cells[0].Display().Status != domain.Ready {
-		t.Fatalf("Status = %q, want %q", got.Cells[0].Display().Status, domain.Ready)
+	if !got.Cells[0].HasStatus(domain.Ready) {
+		t.Fatalf("cell = %#v, want status %q", got.Cells[0], domain.Ready)
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
@@ -751,20 +751,6 @@ func TestModelViewはエラーの改行を潰して幅で切り詰める(t *test
 	got := model.View()
 	if !strings.HasSuffix(got, "error: first line se\n") {
 		t.Fatalf("view = %q, want clipped single-line error", got)
-	}
-}
-
-func TestCapturedExecCommandはStderrを端末へ直結せずエラーへ含める(t *testing.T) {
-	cmd := exec.Command("sh", "-c", "echo noisy stderr >&2; exit 7")
-	wrapped := newCapturedExecCommand(cmd)
-	wrapped.SetStderr(os.Stderr)
-
-	err := wrapped.Run()
-	if err == nil {
-		t.Fatal("Run error = nil, want error")
-	}
-	if !strings.Contains(err.Error(), "noisy stderr") {
-		t.Fatalf("error = %q, want stderr output included", err.Error())
 	}
 }
 
@@ -961,7 +947,7 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, _ := next.(Model).Update(cmd())
-	if updated.(Model).Cells[0].Display().Done {
+	if updated.(Model).Cells[0].EnsureCanBeCleaned() == nil {
 		t.Fatal("IsDone = true, want false")
 	}
 }

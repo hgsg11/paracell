@@ -317,25 +317,6 @@ func (a DockerCLIAdapter) prepareMounts(ctx context.Context, sourcePath string, 
 	return mounts, nil
 }
 
-func (a DockerCLIAdapter) cellMounts(sourcePath string, mounts []dockerMount, composeMounts *composeMountPlan) []string {
-	out := make([]string, 0, len(mounts))
-	for _, mount := range mounts {
-		if mount.Type == "volume" && mount.Name != "" {
-			out = append(out, mount.Name+":"+mount.Destination+":ro")
-			continue
-		}
-		if mount.Type != "bind" {
-			continue
-		}
-		spec, ok := a.bindMountSpec(sourcePath, mount, composeMounts)
-		if !ok {
-			continue
-		}
-		out = append(out, spec)
-	}
-	return out
-}
-
 func (a DockerCLIAdapter) copyMounts(ctx context.Context, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
@@ -690,29 +671,6 @@ type dockerNetworkSettings struct {
 
 type dockerNetwork struct {
 	Aliases []string `json:"Aliases"`
-}
-
-func portsFromBindings(bindings map[string][]dockerPortBinding) map[string]string {
-	if len(bindings) == 0 {
-		return nil
-	}
-	ports := map[string]string{}
-	for containerPort, hostBindings := range bindings {
-		for _, binding := range hostBindings {
-			if binding.HostPort == "" {
-				continue
-			}
-			host := binding.HostPort
-			if binding.HostIP != "" {
-				host = binding.HostIP + ":" + host
-			}
-			ports[host] = strings.TrimSuffix(containerPort, "/tcp")
-		}
-	}
-	if len(ports) == 0 {
-		return nil
-	}
-	return ports
 }
 
 func exposedPortsFromBindings(bindings map[string][]dockerPortBinding) []string {

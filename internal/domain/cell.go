@@ -59,8 +59,16 @@ func (c Cell) DisplayLabel() string {
 	return c.Name().Value
 }
 
-func (c Cell) Display() CellDisplay {
-	return NewCellDisplay(c.DisplayLabel(), c.Template, c.CreationStatus(), c.Status, c.Done, c.Creation.FailedStage, c.Creation.LastError)
+func (c Cell) ListLabels() (string, string) {
+	return c.DisplayLabel(), c.Template
+}
+
+func (c Cell) HasStatus(status CellStatus) bool {
+	return c.Status == status
+}
+
+func (c Cell) CreationFailure() (CreationStage, string) {
+	return c.Creation.FailedStage, c.Creation.LastError
 }
 
 func (c Cell) ResourceDrivers() CellDrivers {
