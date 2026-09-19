@@ -13,14 +13,14 @@ type CleanCellInput struct {
 }
 
 type CleanCellUseCase struct {
-	State            CellStatePort
+	Cells            CellPort
 	SourceFactory    SourceProviderFactory
 	ContainerFactory ContainerProviderFactory
 	SessionFactory   SessionProviderFactory
 }
 
 func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) error {
-	cells, err := u.State.LoadCells(ctx)
+	cells, err := u.Cells.LoadCells(ctx)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err := ignoreNotFound(domain.CleanSources(ctx, target, source)); err != nil {
 		return err
 	}
-	return u.State.DeleteCell(ctx, target)
+	return u.Cells.DeleteCell(ctx, target)
 }
 
 func ignoreNotFound(err error) error {

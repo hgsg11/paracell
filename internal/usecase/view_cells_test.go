@@ -8,7 +8,7 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestViewCellsはStateのCell一覧を返す(t *testing.T) {
+func TestViewCellsはCellsのCell一覧を返す(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{
@@ -16,7 +16,7 @@ func TestViewCellsはStateのCell一覧を返す(t *testing.T) {
 		newUsecaseTestCell(t, "cell-2", "456", "webapp"),
 	}
 
-	uc := ViewCellsUseCase{State: ports}
+	uc := ViewCellsUseCase{Cells: ports}
 	cells, err := uc.Execute(ctx)
 	if err != nil {
 		t.Fatalf("ViewCellsでエラーが返った: %v", err)

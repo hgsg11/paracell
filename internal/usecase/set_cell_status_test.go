@@ -13,7 +13,7 @@ func TestSetCellStatusはReady時に通知する(t *testing.T) {
 		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
 	}
 
-	uc := SetCellStatusUseCase{State: ports, NotificationFactory: ports}
+	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
 	cell, err := uc.Execute(context.Background(), SetCellStatusInput{Cell: "123", Status: domain.Ready})
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
@@ -32,7 +32,7 @@ func TestSetCellStatusはPending時に通知しない(t *testing.T) {
 		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
 	}
 
-	uc := SetCellStatusUseCase{State: ports, NotificationFactory: ports}
+	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
 	_, err := uc.Execute(context.Background(), SetCellStatusInput{Cell: "123", Status: domain.Pending})
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)

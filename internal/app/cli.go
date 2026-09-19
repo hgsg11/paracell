@@ -47,12 +47,12 @@ var (
 		}
 		return uc.Execute(ctx)
 	}
-	runMarkDone = func(ctx context.Context, state usecase.CellStatePort, cell domain.Cell) (domain.Cell, error) {
-		uc := usecase.MarkCellDoneUseCase{State: state}
+	runMarkDone = func(ctx context.Context, cells usecase.CellPort, cell domain.Cell) (domain.Cell, error) {
+		uc := usecase.MarkCellDoneUseCase{Cells: cells}
 		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name().Value})
 	}
-	runSetStatus = func(ctx context.Context, state usecase.CellStatePort, notifications usecase.NotificationProviderFactory, cellName string, status domain.CellStatus) (domain.Cell, error) {
-		uc := usecase.SetCellStatusUseCase{State: state, NotificationFactory: notifications}
+	runSetStatus = func(ctx context.Context, cells usecase.CellPort, notifications usecase.NotificationProviderFactory, cellName string, status domain.CellStatus) (domain.Cell, error) {
+		uc := usecase.SetCellStatusUseCase{Cells: cells, NotificationFactory: notifications}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
 	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) (*exec.Cmd, error) {
@@ -73,10 +73,10 @@ var (
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.SessionName()), nil
 	}
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
-			State:            state,
+			Cells:            cells,
 			CellFactory:      celladapter.NewFactory(),
 			SourceFactory:    source,
 			ContainerFactory: container,
@@ -87,10 +87,10 @@ var (
 	}
 )
 
-var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
 	_ = cfg
 	uc := usecase.CleanCellUseCase{
-		State:            state,
+		Cells:            cells,
 		SourceFactory:    source,
 		ContainerFactory: container,
 		SessionFactory:   session,
@@ -267,7 +267,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	runner := system.LoggingRunner{Dir: workdir, Logger: logger, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 	quietRunner := system.LoggingRunner{Dir: workdir, Logger: logger}
 	configAdapter := config.NewYAMLConfigAdapter(filepath.Join(workdir, "paracell.yaml"))
-	stateAdapter := state.NewSQLiteCellAdapter(filepath.Join(workdir, ".paracell", "state.db"))
+	cellsAdapter := state.NewSQLiteCellAdapter(filepath.Join(workdir, ".paracell", "state.db"))
 
 	switch cmd.Kind {
 	case CommandVersion:
@@ -275,18 +275,18 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	case CommandHelp:
 		return writeCLIOutput(logger, usage)
 	case CommandInit:
-		uc := usecase.InitProjectUseCase{Config: configAdapter, State: stateAdapter}
+		uc := usecase.InitProjectUseCase{Config: configAdapter, Cells: cellsAdapter}
 		_, err := uc.Execute(ctx)
 		return err
 	case CommandList:
-		uc := usecase.ListCellsUseCase{State: stateAdapter}
+		uc := usecase.ListCellsUseCase{Cells: cellsAdapter}
 		cells, err := uc.Execute(ctx)
 		if err != nil {
 			return err
 		}
 		return writeCLIOutput(logger, output.FormatCellList(cells))
 	case CommandAnnotate:
-		uc := usecase.AnnotateCellUseCase{State: stateAdapter, SessionFactory: provider.NewFactory(quietRunner, workdir)}
+		uc := usecase.AnnotateCellUseCase{Cells: cellsAdapter, SessionFactory: provider.NewFactory(quietRunner, workdir)}
 		_, err = uc.Execute(ctx, usecase.AnnotateCellInput{Cell: cmd.Cell, Note: *cmd.Note})
 		return err
 	case CommandPending:
@@ -294,14 +294,14 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, nil, cellName, domain.Pending)
+		_, err = runSetStatus(ctx, cellsAdapter, nil, cellName, domain.Pending)
 		return err
 	case CommandReady:
 		cellName, err := currentCell(invocationWorkdir)
 		if err != nil {
 			return err
 		}
-		_, err = runSetStatus(ctx, stateAdapter, provider.NewFactory(quietRunner, workdir), cellName, domain.Ready)
+		_, err = runSetStatus(ctx, cellsAdapter, provider.NewFactory(quietRunner, workdir), cellName, domain.Ready)
 		return err
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.NewFactory(runner, workdir))
@@ -316,7 +316,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		uc := usecase.ViewCellsUseCase{State: stateAdapter}
+		uc := usecase.ViewCellsUseCase{Cells: cellsAdapter}
 		cells, err := uc.Execute(ctx)
 		if err != nil {
 			return err
@@ -326,7 +326,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return err
 		}
 		_, err = runView(viewContext, cells, names, os.Getenv("PARACELL_CELL"), func() ([]domain.Cell, error) {
-			return stateAdapter.LoadCells(ctx)
+			return cellsAdapter.LoadCells(ctx)
 		}, func(cell domain.Cell) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, configAdapter, provider.NewFactory(viewRunner, workdir), cell)
 			if err != nil {
@@ -337,13 +337,13 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return runEnterRoot(ctx, configAdapter, provider.NewFactory(interactiveViewRunner, workdir))
 		}, func(cell domain.Cell) error {
 			factory := provider.NewFactory(viewRunner, workdir)
-			return runClean(ctx, configAdapter, factory, factory, factory, stateAdapter, cell)
+			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cell)
 		}, func(cell domain.Cell) (domain.Cell, error) {
-			return runMarkDone(ctx, stateAdapter, cell)
+			return runMarkDone(ctx, cellsAdapter, cell)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				factory := provider.NewFactory(viewRunner, workdir)
-				cell, err := runFork(ctx, configAdapter, factory, factory, factory, stateAdapter, issue, template, "", nil, workdir)
+				cell, err := runFork(ctx, configAdapter, factory, factory, factory, cellsAdapter, issue, template, "", nil, workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})
@@ -354,7 +354,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	case CommandFork:
 		uc := usecase.ForkCellUseCase{
 			Config:           configAdapter,
-			State:            stateAdapter,
+			Cells:            cellsAdapter,
 			CellFactory:      celladapter.NewFactory(),
 			SourceFactory:    provider.NewFactory(runner, workdir),
 			ContainerFactory: provider.NewFactory(runner, workdir),
@@ -365,7 +365,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		return err
 	case CommandClean:
 		uc := usecase.CleanCellUseCase{
-			State:            stateAdapter,
+			Cells:            cellsAdapter,
 			SourceFactory:    provider.NewFactory(runner, workdir),
 			ContainerFactory: provider.NewFactory(runner, workdir),
 			SessionFactory:   provider.NewFactory(runner, workdir),

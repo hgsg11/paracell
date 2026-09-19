@@ -17,7 +17,7 @@ func TestAnnotateCellはIDIssueNameでNoteを設定上書きする(t *testing.T)
 			cell := newUsecaseTestCell(t, "cell-1", "123", "feat")
 			_ = cell.SetNote("旧案")
 			ports.cells = []domain.Cell{cell}
-			updated, err := (AnnotateCellUseCase{State: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: selector, Note: "  API\t実装\n中 "})
+			updated, err := (AnnotateCellUseCase{Cells: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: selector, Note: "  API\t実装\n中 "})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -35,7 +35,7 @@ func TestAnnotateCellはSessionなしを成功扱いにする(t *testing.T) {
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")}
 	ports.updateStatusLabelErr = domain.ErrNotFound
-	updated, err := (AnnotateCellUseCase{State: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
+	updated, err := (AnnotateCellUseCase{Cells: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
 	if err != nil || updated.Note != "検証中" || ports.cells[0].Note != "検証中" {
 		t.Fatalf("updated = %#v, stored = %#v, error = %v", updated, ports.cells, err)
 	}
@@ -45,7 +45,7 @@ func TestAnnotateCellはStatus更新失敗時に保存済みと伝える(t *test
 	ports := newFakePorts()
 	ports.cells = []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")}
 	ports.updateStatusLabelErr = errors.New("tmux unavailable")
-	updated, err := (AnnotateCellUseCase{State: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
+	updated, err := (AnnotateCellUseCase{Cells: ports, SessionFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
 	if err == nil || !strings.Contains(err.Error(), "cell note was saved") {
 		t.Fatalf("error = %v", err)
 	}
@@ -62,7 +62,7 @@ func TestAnnotateCellは不正Noteと存在しないCellを保存しない(t *te
 	} {
 		ports := newFakePorts()
 		ports.cells = []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")}
-		_, err := (AnnotateCellUseCase{State: ports, SessionFactory: ports}).Execute(context.Background(), input)
+		_, err := (AnnotateCellUseCase{Cells: ports, SessionFactory: ports}).Execute(context.Background(), input)
 		if err == nil {
 			t.Fatalf("input %#v returned no error", input)
 		}

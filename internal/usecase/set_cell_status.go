@@ -13,13 +13,13 @@ type SetCellStatusInput struct {
 }
 
 type SetCellStatusUseCase struct {
-	State               CellStatePort
+	Cells               CellPort
 	NotificationFactory NotificationProviderFactory
 }
 
 func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.Cell, error) {
 	var updated domain.Cell
-	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
 			if cell.Matches(input.Cell) {
 				if setErr := cell.SetStatus(input.Status); setErr != nil {

@@ -12,12 +12,12 @@ type MarkCellDoneInput struct {
 }
 
 type MarkCellDoneUseCase struct {
-	State CellStatePort
+	Cells CellPort
 }
 
 func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInput) (domain.Cell, error) {
 	var updated domain.Cell
-	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
 			if cell.Matches(input.Cell) {
 				cell.ToggleDone()

@@ -14,13 +14,13 @@ type AnnotateCellInput struct {
 }
 
 type AnnotateCellUseCase struct {
-	State          CellStatePort
+	Cells          CellPort
 	SessionFactory SessionProviderFactory
 }
 
 func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.Cell, error) {
 	var updated domain.Cell
-	if err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
 			if cell.Matches(input.Cell) {
 				if err := cell.SetNote(input.Note); err != nil {

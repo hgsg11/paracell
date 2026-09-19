@@ -633,13 +633,13 @@ templates:
 		t.Fatal("enterが呼ばれた")
 		return nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
-		_ = state
+		_ = cells
 		_ = cell
 		t.Fatal("cleanが呼ばれた")
 		return nil
@@ -824,13 +824,13 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
-		_ = state
+		_ = cells
 		_ = note
 		_ = root
 		called = true
@@ -898,10 +898,10 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
 		_ = ctx
 		_ = cfg
-		_ = state
+		_ = cells
 		_ = issue
 		_ = template
 		_ = command
@@ -1183,13 +1183,13 @@ templates: {}
 		entered = cell
 		return exec.Command("true"), nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
-		_ = state
+		_ = cells
 		entered = cell
 		return nil
 	}
@@ -1253,13 +1253,13 @@ templates: {}
 		_ = cell
 		return nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, state usecase.CellStatePort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
 		_ = container
 		_ = session
-		_ = state
+		_ = cells
 		deleted = cell
 		return nil
 	}

@@ -15,12 +15,6 @@ type InitConfigPort interface {
 	SaveConfig(ctx context.Context, cfg domain.Templates) error
 }
 
-type StateInitializer interface {
-	Initialize(ctx context.Context) error
-}
-
-type CellStatePort = domain.CellStatePort
-
 type Notifier interface {
 	NotifyReady(ctx context.Context, sessionName string, message string) error
 }

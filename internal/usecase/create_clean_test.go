@@ -82,7 +82,7 @@ func newFakePorts() *fakePorts {
 
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
-		Config: ports, State: ports, CellFactory: ports, SourceFactory: ports,
+		Config: ports, Cells: ports, CellFactory: ports, SourceFactory: ports,
 		ContainerFactory: ports, SessionFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
 	}
 }

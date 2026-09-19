@@ -17,7 +17,7 @@ type ForkCellInput struct {
 
 type ForkCellUseCase struct {
 	Config           ConfigPort
-	State            CellStatePort
+	Cells            CellPort
 	CellFactory      CellFactory
 	SourceFactory    SourceProviderFactory
 	ContainerFactory ContainerProviderFactory
@@ -36,7 +36,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	existing, err := u.State.LoadCells(ctx)
+	existing, err := u.Cells.LoadCells(ctx)
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -71,7 +71,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	cell.BeginCreation()
-	if err := u.State.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
+	if err := u.Cells.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
 		if err := domain.EnsureCellUnique(latest, input.Issue, cell.Name()); err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	}
 
 	runner := cellCreationRunner{
-		State:              u.State,
+		Cells:              u.Cells,
 		Source:             source,
 		SourceDriver:       cfg.SourceDriverType,
 		SourceTemplates:    resolved.Sources,
@@ -100,7 +100,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 }
 
 type cellCreationRunner struct {
-	State              CellStatePort
+	Cells              CellPort
 	Source             domain.SourcePort
 	SourceDriver       domain.SourceDriverType
 	SourceTemplates    []domain.SourceTemplate
@@ -193,7 +193,7 @@ func (r cellCreationRunner) fail(ctx context.Context, cell *domain.Cell, stage d
 }
 
 func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
-	saved, err := replaceCell(ctx, r.State, *cell)
+	saved, err := replaceCell(ctx, r.Cells, *cell)
 	if err == nil {
 		if err := saved.AdvanceVersion(); err != nil {
 			return err
@@ -203,8 +203,8 @@ func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
 	return err
 }
 
-func replaceCell(ctx context.Context, state CellStatePort, target domain.Cell) (domain.Cell, error) {
-	err := state.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+func replaceCell(ctx context.Context, cellPort CellPort, target domain.Cell) (domain.Cell, error) {
+	err := cellPort.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for index := range cells {
 			if cells[index].SameIdentity(target) {
 				cells[index] = target

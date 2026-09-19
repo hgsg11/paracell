@@ -7,9 +7,9 @@ import (
 )
 
 type ListCellsUseCase struct {
-	State CellStatePort
+	Cells CellPort
 }
 
 func (u ListCellsUseCase) Execute(ctx context.Context) ([]domain.Cell, error) {
-	return u.State.LoadCells(ctx)
+	return u.Cells.LoadCells(ctx)
 }

@@ -8,7 +8,7 @@ import (
 
 type InitProjectUseCase struct {
 	Config InitConfigPort
-	State  StateInitializer
+	Cells  CellInitializer
 }
 
 func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, error) {
@@ -16,7 +16,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 	if err != nil {
 		return domain.Templates{}, err
 	}
-	if err := u.State.Initialize(ctx); err != nil {
+	if err := u.Cells.Initialize(ctx); err != nil {
 		return domain.Templates{}, err
 	}
 	if exists {

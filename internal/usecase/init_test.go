@@ -13,7 +13,7 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	ports := &fakeInitPorts{}
 	uc := InitProjectUseCase{
 		Config: ports,
-		State:  ports,
+		Cells:  ports,
 	}
 
 	cfg, err := uc.Execute(ctx)
@@ -57,7 +57,7 @@ func TestInitは既存設定を上書きせずStateDatabaseを初期化する(t 
 	ports := &fakeInitPorts{exists: true}
 	uc := InitProjectUseCase{
 		Config: ports,
-		State:  ports,
+		Cells:  ports,
 	}
 
 	_, err := uc.Execute(ctx)
@@ -76,7 +76,7 @@ func TestInitは既存設定を上書きせずStateDatabaseを初期化する(t 
 func TestInitはStateDatabaseを初期化できない場合に設定を保存しない(t *testing.T) {
 	ctx := context.Background()
 	ports := &fakeInitPorts{initializeErr: errors.New("migration failed")}
-	uc := InitProjectUseCase{Config: ports, State: ports}
+	uc := InitProjectUseCase{Config: ports, Cells: ports}
 
 	_, err := uc.Execute(ctx)
 
