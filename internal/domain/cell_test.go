@@ -88,7 +88,9 @@ func Test新規CellのVersionは1でPersistence成功時だけ進む(t *testing.
 		t.Fatalf("version = %d", cell.Version)
 	}
 	persisted := cell
-	persisted.AdvanceVersion()
+	if err := persisted.AdvanceVersion(); err != nil {
+		t.Fatal(err)
+	}
 	if persisted.Version != 2 || cell.Version != 1 {
 		t.Fatalf("versions = %d, %d", persisted.Version, cell.Version)
 	}

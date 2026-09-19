@@ -35,7 +35,9 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	updated.AdvanceVersion()
+	if err := updated.AdvanceVersion(); err != nil {
+		return domain.Cell{}, err
+	}
 	if input.Status == domain.Ready && u.NotificationFactory != nil {
 		notifier, err := u.NotificationFactory.Notification(updated.ResourceDrivers().Notification)
 		if err != nil {

@@ -104,7 +104,9 @@ func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([
 	for index := range cells {
 		for _, previous := range before {
 			if previous.ID == cells[index].ID && !reflect.DeepEqual(previous, cells[index]) {
-				cells[index].AdvanceVersion()
+				if err := cells[index].AdvanceVersion(); err != nil {
+					return err
+				}
 			}
 		}
 	}

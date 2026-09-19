@@ -31,6 +31,8 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	updated.AdvanceVersion()
+	if err := updated.AdvanceVersion(); err != nil {
+		return domain.Cell{}, err
+	}
 	return updated, nil
 }

@@ -10,3 +10,7 @@ func NewCellVersion(value uint64) (CellVersion, error) {
 	}
 	return CellVersion(value), nil
 }
+
+func (v CellVersion) Add() (CellVersion, error) {
+	return NewCellVersion(uint64(v) + 1)
+}

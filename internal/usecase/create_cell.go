@@ -195,7 +195,9 @@ func (r cellCreationRunner) fail(ctx context.Context, cell *domain.Cell, stage d
 func (r cellCreationRunner) save(ctx context.Context, cell *domain.Cell) error {
 	saved, err := replaceCell(ctx, r.State, *cell)
 	if err == nil {
-		saved.AdvanceVersion()
+		if err := saved.AdvanceVersion(); err != nil {
+			return err
+		}
 		*cell = saved
 	}
 	return err

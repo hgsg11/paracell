@@ -215,7 +215,9 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 			return fmt.Errorf("%w: update cell %q expected version %d, found %d", domain.ErrVersionConflict, record.ID, record.Version, storedRecord.Version)
 		}
 		persisted := cell
-		persisted.AdvanceVersion()
+		if err := persisted.AdvanceVersion(); err != nil {
+			return err
+		}
 		persistedRecord := persisted.Stored()
 		data, err := json.Marshal(persistedRecord)
 		if err != nil {

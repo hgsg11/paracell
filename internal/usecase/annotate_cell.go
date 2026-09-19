@@ -35,7 +35,9 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	}); err != nil {
 		return domain.Cell{}, err
 	}
-	updated.AdvanceVersion()
+	if err := updated.AdvanceVersion(); err != nil {
+		return domain.Cell{}, err
+	}
 
 	if u.SessionFactory == nil {
 		return updated, nil

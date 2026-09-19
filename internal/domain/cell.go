@@ -138,8 +138,13 @@ func EnsureCellUnique(existing []Cell, issue string, name CellName) error {
 	return nil
 }
 
-func (c *Cell) AdvanceVersion() {
-	c.Version++
+func (c *Cell) AdvanceVersion() error {
+	version, err := c.Version.Add()
+	if err != nil {
+		return err
+	}
+	c.Version = version
+	return nil
 }
 
 func (c Cell) Stored() StoredCell {
