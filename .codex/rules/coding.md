@@ -21,7 +21,6 @@
 
 ## AggregateとEntity
 
-- Aggregate Rootは`Cell`だけとすること。
 - Aggregate外から、Aggregate Rootまたは所有Entityのfieldを直接参照・変更しないこと。
 - Aggregateが所有するEntityの問い合わせと変更は、目的を表すAggregate Rootのmethodを通すこと。
 - Aggregate RootまたはEntity自身に属する振る舞いは、その型のmethodとして定義すること。
@@ -40,11 +39,9 @@
 
 - 単一のAggregate RootやEntityへ属さない処理だけを、独立したDomain Serviceとして定義すること。
 - Domain ServiceをAggregate Rootのforwarding methodとして追加しないこと。
-- Domain ServiceがAggregateを変更するときは、`*Cell`を受け取り、Aggregate Rootのポインタレシーバmethodを使うこと。
-- Templateは入力データとしてDomain Serviceへ渡し、TemplateからAggregate配下のEntityを直接生成・変更しないこと。
-- UsecaseがFactoryからPortを生成し、driver、Template、Port、`*Cell`をDomain Serviceへ渡すこと。
+- Application Serviceが必要なPortをFactoryから生成し、入力値、Port、更新対象Aggregate RootのポインタをDomain Serviceへ渡すこと。
 - interfaceは実装側ではなく利用側に定義し、利用側が必要とするmethodだけを含めること。
-- Usecaseだけが使う永続化Portをdomain packageへ置かないこと。
+- Application Serviceだけが使う永続化Portをdomain packageへ置かないこと。
 
 ## 変更後の確認
 
