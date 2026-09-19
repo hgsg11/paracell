@@ -10,15 +10,6 @@
 - 実装完了前に`deadcode ./...`相当の解析を行い、到達不能なproduction関数を残さないこと。
 - 未使用処理だけを検証するtestは、未使用処理と一緒に削除すること。
 
-## Constructor
-
-- user-definedな具象型には`NewXxx` constructorを定義し、その型を生成するときはconstructorを使うこと。
-- named primitive typeは、許可する値をtyped constantで定義すること。
-- named primitive typeのconstructorは入力値を検証し、外部入力を直接castしないこと。
-- defaultを持つ型は、不正値を明文化されたdefaultへ変換すること。
-- 不正値を拒否する型は、constructorからerrorを返すこと。
-- 検証済みの値を各layerで重複検証しないこと。
-
 ## AggregateとEntity
 
 - Aggregate外から、Aggregate Rootまたは所有Entityのfieldを直接参照・変更しないこと。
@@ -31,7 +22,14 @@
 ## Value Object
 
 - EntityではないValue Objectはstructとして定義すること。
+- Value Objectには`NewXxx` constructorを定義し、生成時はconstructorを使うこと。
+- Value Object以外の型には、constructorを機械的に追加しないこと。
 - Value Objectのconstructorは、同じファイルで新しいstruct値を生成して返すこと。
+- named primitive typeは、許可する値をtyped constantで定義すること。
+- named primitive typeのconstructorは入力値を検証し、外部入力を直接castしないこと。
+- defaultを持つValue Objectは、不正値を明文化されたdefaultへ変換すること。
+- 不正値を拒否するValue Objectは、constructorからerrorを返すこと。
+- 検証済みの値を各layerで重複検証しないこと。
 - Value Objectを変更する操作は値レシーバのmethodにし、元の値を変更せず、新しい値をconstructor経由で返すこと。
 - 値をそのまま返すだけのgetterや`String` methodを追加しないこと。
 
