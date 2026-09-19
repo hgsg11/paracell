@@ -30,7 +30,8 @@
 - defaultを持つValue Objectは、不正値を明文化されたdefaultへ変換すること。
 - 不正値を拒否するValue Objectは、constructorからerrorを返すこと。
 - 検証済みの値を各layerで重複検証しないこと。
-- Value Objectを変更する操作は値レシーバのmethodにし、元の値を変更せず、新しい値をconstructor経由で返すこと。
+- Value Objectの値を変更する操作は、そのValue Object自身のmethodとして定義すること。
+- Value Objectの変更methodは値レシーバにし、元のinstanceを変更せず、変更後の新しいinstanceをconstructor経由で返すこと。ポインタレシーバにしないこと。
 - 値をそのまま返すだけのgetterや`String` methodを追加しないこと。
 
 ## Domain ServiceとPort
