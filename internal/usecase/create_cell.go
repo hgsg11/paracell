@@ -105,12 +105,11 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 }
 
 type cellCreationRunner struct {
-	Cells          CellPort
-	Source         SourcePort
-	Containers     ContainerPort
-	Templates      domain.ResolvedTemplate
-	Session        SessionPort
-	BeforeTerminal func() error
+	Cells      CellPort
+	Source     SourcePort
+	Containers ContainerPort
+	Templates  domain.ResolvedTemplate
+	Session    SessionPort
 }
 
 func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell) error {
@@ -121,31 +120,16 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell) error {
 	}
 	for _, stage := range stages {
 		if err := r.runStage(ctx, cell, stage); err != nil {
-			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal()))
+			return r.fail(ctx, cell, stage, err)
 		}
 		if stage == domain.CreationStageSession {
-			if err := r.beforeTerminal(); err != nil {
-				return r.fail(ctx, cell, stage, err)
-			}
 			cell.FinishCreation()
 		}
-		saveCtx := ctx
-		if stage == domain.CreationStageSession && r.BeforeTerminal != nil {
-			saveCtx = context.WithoutCancel(ctx)
-		}
-		if err := r.save(saveCtx, cell); err != nil {
-			terminalErr := r.beforeTerminal()
-			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s stage: %w", stage, err), terminalErr))
+		if err := r.save(ctx, cell); err != nil {
+			return r.fail(ctx, cell, stage, fmt.Errorf("save %s stage: %w", stage, err))
 		}
 	}
 	return nil
-}
-
-func (r cellCreationRunner) beforeTerminal() error {
-	if r.BeforeTerminal == nil {
-		return nil
-	}
-	return r.BeforeTerminal()
 }
 
 func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, stage domain.CreationStage) error {
