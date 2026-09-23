@@ -23,7 +23,7 @@ type Cell struct {
 	Done               bool
 }
 
-func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType) (Cell, error) {
+func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType, note *string) (Cell, error) {
 	if id == "" {
 		return Cell{}, fmt.Errorf("cell id is required")
 	}
@@ -37,11 +37,17 @@ func NewCell(id string, issue string, project string, templateName string, sourc
 	if err != nil {
 		return Cell{}, err
 	}
-	return Cell{
+	cell := Cell{
 		Version: version, ID: id, Issue: issue, Project: project,
 		Template: templateName, Sources: sources, Containers: containers, Session: session, NotificationDriver: notificationDriver,
 		Creation: NewCellCreation(), Status: Ready,
-	}, nil
+	}
+	if note != nil {
+		if err := cell.SetNote(*note); err != nil {
+			return Cell{}, err
+		}
+	}
+	return cell, nil
 }
 
 func (c Cell) Name() CellName {

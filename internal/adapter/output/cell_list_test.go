@@ -11,7 +11,7 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

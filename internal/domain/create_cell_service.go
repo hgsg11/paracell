@@ -30,14 +30,6 @@ func CreateCellService(id string, issue string, project string, templateName str
 		windows = append(windows, window)
 	}
 	session := NewSession(sessionDriver, windows)
-	cell, err := NewCell(id, issue, project, templateName, sources, containers, session, notificationDriver)
-	if err != nil {
-		return Cell{}, err
-	}
-	if note != nil {
-		if err := cell.SetNote(*note); err != nil {
-			return Cell{}, err
-		}
-	}
-	return cell, nil
+
+	return NewCell(id, issue, project, templateName, sources, containers, session, notificationDriver, note)
 }

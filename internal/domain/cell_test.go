@@ -13,7 +13,7 @@ func testCell(t *testing.T) Cell {
 	}
 	sessionDriver, _ := NewSessionDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	cell, err := NewCell("id", "42", "sample", "feat", NewSources(sourceDriver, []Source{source}), NewContainers(None, nil), NewSession(sessionDriver, nil), NoNotification)
+	cell, err := NewCell("id", "42", "sample", "feat", NewSources(sourceDriver, []Source{source}), NewContainers(None, nil), NewSession(sessionDriver, nil), NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
