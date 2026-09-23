@@ -193,15 +193,6 @@ func (c Cell) ContainerResourceName(container Container) string {
 	return c.ResourcePrefix() + "-" + SafeResourceName(container.SourceContainer, "container")
 }
 
-func (c Cell) UsesDependency() bool {
-	for _, container := range c.Containers.Items {
-		if container.Mode == Dependency {
-			return true
-		}
-	}
-	return false
-}
-
 func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
 	for index := range c.Containers.Items {
 		c.Containers.Items[index].Network = append([]string(nil), networks[c.Containers.Items[index].SourceContainer]...)

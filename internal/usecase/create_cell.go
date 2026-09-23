@@ -121,8 +121,7 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell) error {
 	}
 	for _, stage := range stages {
 		if err := r.runStage(ctx, cell, stage); err != nil {
-			rollbackErr := r.rollbackDependencyContainers(context.WithoutCancel(ctx), cell, stage)
-			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal(), rollbackErr))
+			return r.fail(ctx, cell, stage, errors.Join(err, r.beforeTerminal()))
 		}
 		if stage == domain.CreationStageSession {
 			if err := r.beforeTerminal(); err != nil {
@@ -136,20 +135,10 @@ func (r cellCreationRunner) run(ctx context.Context, cell *domain.Cell) error {
 		}
 		if err := r.save(saveCtx, cell); err != nil {
 			terminalErr := r.beforeTerminal()
-			cleanupErr := r.cleanupUnpersistedStage(context.WithoutCancel(ctx), *cell, stage)
-			rollbackErr := r.rollbackDependencyContainers(context.WithoutCancel(ctx), cell, stage)
-			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s stage: %w", stage, err), terminalErr, cleanupErr, rollbackErr))
+			return r.fail(ctx, cell, stage, errors.Join(fmt.Errorf("save %s stage: %w", stage, err), terminalErr))
 		}
 	}
 	return nil
-}
-
-func (r cellCreationRunner) rollbackDependencyContainers(ctx context.Context, cell *domain.Cell, failedStage domain.CreationStage) error {
-	if failedStage != domain.CreationStageSession || !cell.UsesDependency() {
-		return nil
-	}
-	containers, dependencies := cell.ContainerCleanupTargets()
-	return ignoreNotFound(r.Containers.CleanContainers(ctx, cell.ContainerNetworkName(), containers, dependencies))
 }
 
 func (r cellCreationRunner) beforeTerminal() error {
@@ -169,18 +158,6 @@ func (r cellCreationRunner) runStage(ctx context.Context, cell *domain.Cell, sta
 		return domain.CreateSessionService(ctx, *cell, r.Templates.Session, r.Session.CreateSession)
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
-	}
-}
-
-func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, cell domain.Cell, stage domain.CreationStage) error {
-	switch stage {
-	case domain.CreationStageContainers:
-		containers, dependencies := cell.ContainerCleanupTargets()
-		return ignoreNotFound(r.Containers.CleanContainers(ctx, cell.ContainerNetworkName(), containers, dependencies))
-	case domain.CreationStageSession:
-		return ignoreNotFound(r.Session.CleanSession(ctx, cell.SessionName()))
-	default:
-		return nil
 	}
 }
 

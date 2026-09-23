@@ -328,16 +328,12 @@ func TestCleanCellは現在のTemplateなしで保存済み対象を削除する
 	}
 }
 
-func TestForkCellはSession失敗時にDependencyをRollbackする(t *testing.T) {
+func TestForkCellはSession失敗をFailedとして保存する(t *testing.T) {
 	ports := newConfiguredCreationPorts(t)
 	ports.createSessionErr = errors.New("session failed")
-	ports.cleanContainersErr = errors.New("disconnect failed")
 	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
-	if !errors.Is(err, ports.createSessionErr) || !errors.Is(err, ports.cleanContainersErr) {
+	if !errors.Is(err, ports.createSessionErr) {
 		t.Fatalf("error = %v", err)
-	}
-	if ports.cleanedNetwork != "paracell-myapp-42" || !reflect.DeepEqual(ports.cleanedContainers, []string{"paracell-myapp-42-app"}) || !reflect.DeepEqual(ports.cleanedDependencies, []string{"db"}) {
-		t.Fatalf("rollback = %#v", ports)
 	}
 	stage, _ := ports.cells[0].CreationFailure()
 	if stage != domain.CreationStageSession || ports.cells[0].CreationStatus() != domain.CreationFailed {
@@ -345,7 +341,7 @@ func TestForkCellはSession失敗時にDependencyをRollbackする(t *testing.T)
 	}
 }
 
-func TestForkCellは保存失敗時に未保存StageをCleanupする(t *testing.T) {
+func TestForkCellは保存失敗したStageをFailedとして保存する(t *testing.T) {
 	for _, stage := range []domain.CreationStage{domain.CreationStageContainers, domain.CreationStageSession} {
 		t.Run(string(stage), func(t *testing.T) {
 			ports := newConfiguredCreationPorts(t)
@@ -357,12 +353,6 @@ func TestForkCellは保存失敗時に未保存StageをCleanupする(t *testing.
 			_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
 			if !errors.Is(err, ports.saveErr) {
 				t.Fatalf("error = %v", err)
-			}
-			if ports.cleanedNetwork != "paracell-myapp-42" || !reflect.DeepEqual(ports.cleanedContainers, []string{"paracell-myapp-42-app"}) || !reflect.DeepEqual(ports.cleanedDependencies, []string{"db"}) {
-				t.Fatalf("container cleanup = %#v", ports)
-			}
-			if stage == domain.CreationStageSession && ports.cleanedSession != "myapp-42" {
-				t.Fatalf("session cleanup = %q", ports.cleanedSession)
 			}
 			failed, _ := ports.cells[0].CreationFailure()
 			if failed != stage || ports.cells[0].CreationStatus() != domain.CreationFailed {
