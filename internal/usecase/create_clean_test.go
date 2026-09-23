@@ -68,7 +68,7 @@ type fakePorts struct {
 	updateStatusLabelErr error
 	createSourceErr      error
 	cleanedSources       map[string]string
-	onCreateSource       func(domain.Source, string)
+	onCreateSource       func(string, string, string, string)
 	onCreateContainers   func([]domain.ContainerTemplate, string, string, string, string)
 	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
 	createSessionErr     error
@@ -158,10 +158,10 @@ func (f *fakePorts) Session(driver domain.SessionDriverType) (SessionPort, error
 	return f, nil
 }
 
-func (f *fakePorts) CreateSource(_ context.Context, source domain.Source, worktree string) error {
+func (f *fakePorts) CreateSource(_ context.Context, repository string, worktree string, base string, branch string) error {
 	f.calls = append(f.calls, "source:create")
 	if f.onCreateSource != nil {
-		f.onCreateSource(source, worktree)
+		f.onCreateSource(repository, worktree, base, branch)
 	}
 	return f.createSourceErr
 }
@@ -276,9 +276,9 @@ func newConfiguredCreationPorts(t *testing.T) *fakePorts {
 
 func TestForkCellは解決済みTemplateと実行時引数を渡しNetworkを保存する(t *testing.T) {
 	ports := newConfiguredCreationPorts(t)
-	ports.onCreateSource = func(source domain.Source, worktree string) {
-		if source.Path != "api" || source.Base != "develop" || worktree != ".paracell/cells/42/source/api" || source.Branch != "work/42" {
-			t.Fatalf("source = %#v, worktree = %q", source, worktree)
+	ports.onCreateSource = func(repository, worktree, base, branch string) {
+		if repository != "api" || base != "develop" || worktree != ".paracell/cells/42/source/api" || branch != "work/42" {
+			t.Fatalf("source = %q, %q, %q, %q", repository, worktree, base, branch)
 		}
 	}
 	ports.onCreateContainers = func(templates []domain.ContainerTemplate, cellName, project, network, sourcePath string) {
