@@ -29,6 +29,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 		"source:create",
 		"containers:create",
 		"session:create",
+		"session:configure",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
@@ -71,6 +72,8 @@ type fakePorts struct {
 	onCreateSource       func(string, string, string, string)
 	onCreateContainers   func([]domain.ContainerTemplate, string, string, string, string)
 	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
+	sessionWindows       []domain.Window
+	sessionWorkingDir    string
 	createSessionErr     error
 	saveCalls            int
 	failSaveAt           int
@@ -185,10 +188,30 @@ func (f *fakePorts) CleanContainers(_ context.Context, network string, container
 	f.cleanedNetwork, f.cleanedContainers, f.cleanedDependencies = network, containers, dependencies
 	return f.cleanContainersErr
 }
-func (f *fakePorts) CreateSession(_ context.Context, template domain.SessionTemplate, name string, cellName string, project string, label string, workingDirectory string) error {
+func (f *fakePorts) CreateSession(_ context.Context, name string, cellName string, firstWindow string, workingDirectory string) error {
 	f.calls = append(f.calls, "session:create")
+	f.sessionWorkingDir = workingDirectory
+	if firstWindow != "" {
+		f.sessionWindows = append(f.sessionWindows, domain.Window{Name: firstWindow})
+	}
+	return nil
+}
+func (f *fakePorts) CreateWindow(_ context.Context, session string, window string, _ string) error {
+	f.sessionWindows = append(f.sessionWindows, domain.Window{Name: window})
+	return nil
+}
+func (f *fakePorts) SendWindowCommand(_ context.Context, _ string, window string, command string) error {
+	for i := range f.sessionWindows {
+		if f.sessionWindows[i].Name == window {
+			f.sessionWindows[i].Command = command
+		}
+	}
+	return nil
+}
+func (f *fakePorts) ConfigureSession(_ context.Context, name string, cellName string, project string, label string, windows []string) error {
+	f.calls = append(f.calls, "session:configure")
 	if f.onCreateSession != nil {
-		f.onCreateSession(template, name, cellName, project, label, workingDirectory)
+		f.onCreateSession(domain.NewSessionTemplate(f.sessionWindows), name, cellName, project, label, f.sessionWorkingDir)
 	}
 	return f.createSessionErr
 }

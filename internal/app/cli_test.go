@@ -44,7 +44,12 @@ type prepareSession struct {
 	prepared string
 }
 
-func (*prepareSession) CreateSession(context.Context, domain.SessionTemplate, string, string, string, string, string) error {
+func (*prepareSession) CreateSession(context.Context, string, string, string, string) error {
+	return nil
+}
+func (*prepareSession) CreateWindow(context.Context, string, string, string) error      { return nil }
+func (*prepareSession) SendWindowCommand(context.Context, string, string, string) error { return nil }
+func (*prepareSession) ConfigureSession(context.Context, string, string, string, string, []string) error {
 	return nil
 }
 func (*prepareSession) CleanSession(context.Context, string) error { return nil }

@@ -36,7 +36,10 @@ type ContainerPort interface {
 }
 
 type SessionPort interface {
-	CreateSession(ctx context.Context, template domain.SessionTemplate, name string, cellName string, project string, label string, workingDirectory string) error
+	CreateSession(ctx context.Context, name string, cellName string, firstWindow string, workingDirectory string) error
+	CreateWindow(ctx context.Context, session string, window string, workingDirectory string) error
+	SendWindowCommand(ctx context.Context, session string, window string, command string) error
+	ConfigureSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
 	CleanSession(ctx context.Context, name string) error
 	PrepareSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
 	UpdateStatusLabel(ctx context.Context, name string, label string) error

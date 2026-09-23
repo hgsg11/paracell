@@ -189,7 +189,7 @@ func TestCreateSessionは途中失敗時に部分Sessionを削除して再試行
 	server, _ := domain.NewWindow("server", "")
 	template := domain.NewSessionTemplate([]domain.Window{editor, server})
 
-	err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source")
+	err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter)
 	if !errors.Is(err, createErr) {
 		t.Fatalf("error = %v", err)
 	}
@@ -461,7 +461,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	template := domain.NewSessionTemplate(nil)
 
-	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
+	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -497,7 +497,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	server, _ := domain.NewWindow("server", "")
 	template := domain.NewSessionTemplate([]domain.Window{editor, server})
 
-	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
+	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -537,7 +537,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 	test, _ := domain.NewWindow("test", "go test ./...")
 	template := domain.NewSessionTemplate([]domain.Window{editor, server, test})
 
-	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
+	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -578,7 +578,7 @@ func TestCreateSessionは複数IssueのPopupBindingをSessionごとに分離す�
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	for _, name := range []string{"123", "456"} {
-		if err := adapter.CreateSession(context.Background(), domain.NewSessionTemplate(nil), "paracell-myapp-"+name, name, "paracell-myapp", name, ".paracell/cells/"+name+"/source"); err != nil {
+		if err := domain.CreateSessionService(context.Background(), domain.NewSessionTemplate(nil), "paracell-myapp-"+name, name, "paracell-myapp", name, ".paracell/cells/"+name+"/source", adapter); err != nil {
 			t.Fatalf("CreateSession(%s): %v", name, err)
 		}
 	}
