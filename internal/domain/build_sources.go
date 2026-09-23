@@ -3,7 +3,7 @@ package domain
 func BuildSources(driver SourceDriverType, templates []SourceTemplate, issue string) (Sources, error) {
 	items := make([]Source, 0, len(templates))
 	for _, template := range templates {
-		source, err := NewSource(template.Path, template.Base, template.Prefix+issue)
+		source, err := template.Source(issue)
 		if err != nil {
 			return Sources{}, err
 		}

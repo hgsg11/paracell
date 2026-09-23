@@ -57,7 +57,7 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 	}
 	sources := make([]Source, 0, len(stored.Sources.Items))
 	for _, source := range stored.Sources.Items {
-		validated, err := NewSource(source.Path, source.Base, source.Branch)
+		validated, err := NewSource(source.Path, source.Worktree, source.Base, source.Branch)
 		if err != nil {
 			return Cell{}, err
 		}

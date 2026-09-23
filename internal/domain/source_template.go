@@ -29,6 +29,14 @@ func NewSourceTemplate(path string, base string, prefix string) (SourceTemplate,
 	return SourceTemplate{Path: clean, Base: base, Prefix: prefix, pathSet: true, baseSet: true, prefixSet: true}, nil
 }
 
+func (s SourceTemplate) Source(issue string) (Source, error) {
+	worktree := filepath.Join(".paracell", "cells", SafeResourceName(issue, "cell"), "source")
+	if s.Path != "." {
+		worktree = filepath.Join(worktree, s.Path)
+	}
+	return NewSource(s.Path, worktree, s.Base, s.Prefix+issue)
+}
+
 func NewPartialSourceTemplate(path *string, base *string, prefix *string) (SourceTemplate, error) {
 	value := SourceTemplate{}
 	if path != nil {

@@ -7,7 +7,7 @@ import (
 
 func testCell(t *testing.T) Cell {
 	t.Helper()
-	source, err := NewSource(".", "main", "feat/42")
+	source, err := NewSource(".", ".paracell/cells/42/source", "main", "feat/42")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +44,8 @@ func TestCellのResource名は保存せずIdentityから導出する(t *testing.
 	if cell.Name().Value != "42" {
 		t.Fatalf("name = %q", cell.Name())
 	}
-	if got := cellWorktreePath(cell.Issue, cell.Sources.Items[0].Path); got != ".paracell/cells/42/source" {
-		t.Fatalf("path = %q", got)
-	}
-	if got := cellWorktreePath("feature / 109", "."); got != ".paracell/cells/feature-109/source" {
-		t.Fatalf("path = %q", got)
+	if got := cell.WorkingDirectory(); got != ".paracell/cells/42/source" {
+		t.Fatalf("working directory = %q", got)
 	}
 	if cell.ContainerNetworkName() != "paracell-sample-42" {
 		t.Fatalf("network = %q", cell.ContainerNetworkName())

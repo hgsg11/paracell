@@ -11,7 +11,7 @@ import (
 
 func persistedTestCell(t *testing.T) domain.Cell {
 	t.Helper()
-	source, err := domain.NewSource(".", "main", "feat/42")
+	source, err := domain.NewSource(".", ".paracell/cells/42/source", "main", "feat/42")
 	if err != nil {
 		t.Fatal(err)
 	}
