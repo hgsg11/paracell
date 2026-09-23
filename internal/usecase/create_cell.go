@@ -133,7 +133,8 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := cell.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err
 	}
-	if err := domain.CreateSessionService(ctx, cell, resolved.Session, sessionPort.CreateSession); err != nil {
+	sessionName, sessionCellName, project, label, _ := cell.SessionPreparation()
+	if err := sessionPort.CreateSession(ctx, resolved.Session, sessionName, sessionCellName, project, label, cell.WorkingDirectory()); err != nil {
 		return domain.Cell{}, err
 	}
 	cell.FinishCreation()

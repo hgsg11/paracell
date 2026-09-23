@@ -15,9 +15,8 @@ func CreateSourcesService(ctx context.Context, templates []SourceTemplate, issue
 		if err != nil {
 			return nil, err
 		}
+
 		sources = append(sources, source)
-	}
-	for _, source := range sources {
 		if err := sourcePort.CreateSource(ctx, source.Path, source.Worktree, source.Base, source.Branch); err != nil {
 			return sources, err
 		}
