@@ -144,7 +144,7 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 ## Runtime State
 
 - `PARACELL_ROOT` points commands to the managed project root.
-- `PARACELL_CELL` identifies the current cell inside its tmux session.
+- `PARACELL_CELL` identifies the current cell inside its tmux session. When non-empty, perform development work directly in that cell instead of automatically dispatching again; the task issue need not match the cell identifier.
 - `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.
 - `.paracell/cells/<cell>/source` is the cell worktree.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.

@@ -1,24 +1,30 @@
 ---
 name: paracell
-description: "Prepare an issue-backed work package and dispatch development work to a Paracell cell. Use when both conditions are true: (1) the request is a development task that requires changing the system, such as source code, tests, application or infrastructure configuration, schemas, build files, or deployment behavior; and (2) the target project has a paracell.yaml in its root or an ancestor directory. Also use for explicit Paracell lifecycle or configuration operations within such a configured project. Do not trigger for a mere mention of Paracell, or for explanation, investigation, review, planning, or status requests that do not require a system change."
+description: "Prepare an issue-backed work package and dispatch development work from outside a Paracell cell. Do not auto-dispatch inside a cell; implement directly there. Use outside a cell when both conditions are true: (1) the request is a development task that requires changing the system, such as source code, tests, application or infrastructure configuration, schemas, build files, or deployment behavior; and (2) the target project has a paracell.yaml in its root or an ancestor directory. Also use for explicit Paracell lifecycle or configuration operations within such a configured project. Do not trigger for a mere mention of Paracell, or for explanation, investigation, review, planning, or status requests that do not require a system change."
 ---
 
 # Paracell
 
-Turn system-changing development work in a project configured by `paracell.yaml` into a coherent GitHub issue and hand its issue number to the most suitable existing Paracell template. Treat the issue body as the single source of truth. Do not create an issue or cell while a blocking contradiction remains.
+Outside a cell, turn system-changing development work in a project configured by `paracell.yaml` into a coherent GitHub issue and hand its issue number to the most suitable existing Paracell template. Treat the issue body as the single source of truth. Do not create an issue or cell while a blocking contradiction remains.
 
 ## Apply the Eligibility Gate First
 
-Before making the first workspace edit, apply this two-part gate:
+Check whether the current session is inside a cell before applying the dispatch gate. When `PARACELL_CELL` is non-empty, perform requested development work directly in the current cell, including implementation, verification, and PR creation when requested. Do not apply the dispatch workflow or its prohibition on direct implementation, and do not automatically create another issue or cell. Direct implementation does not require the task's issue number to match the cell identifier. Explicitly requested Paracell lifecycle or configuration operations remain available.
+
+Outside a cell, before making the first workspace edit, apply this two-part gate:
 
 1. Classify the request as system-changing development work. Include changes to source code, tests, runtime or application configuration, database schemas, infrastructure, build or packaging files, deployment behavior, plugins, and Skills.
 2. Resolve the target project from the working directory and confirm that `paracell.yaml` exists at its root or in an ancestor directory.
 
-Use this Skill only when both conditions pass. When they pass, read this entire file and do not implement the requested system change directly in the current workspace. A feature, fix, refactor, or configuration change qualifies even when the user does not mention Paracell.
+Only outside a cell, when both conditions pass, read this entire file and dispatch instead of implementing in the current workspace. This restriction never applies to implementation inside a cell. A feature, fix, refactor, or configuration change qualifies even when the user does not mention Paracell.
 
 Do not auto-trigger solely because the request contains `paracell`, asks for an explanation, investigation, review, plan, or status, or targets a project without `paracell.yaml`. Explicit Paracell configuration and lifecycle operations qualify when they target a project that passes the configuration check.
 
-## Inspect the Project
+## Outside-Cell Dispatch Workflow
+
+The following interview, issue preparation, and dispatch steps apply to the dispatcher outside a cell, not to the worker implementing inside a cell.
+
+### Inspect the Project
 
 1. Confirm the CLI with `command -v paracell` and `paracell version`.
 2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested. `paracell init` creates `paracell.yaml` and initializes `.paracell/state.db`.
@@ -99,7 +105,7 @@ Dispatch only when the eligibility gate passed and the user has confirmed the sh
 1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
 2. Check `paracell ls` for a cell with that issue number. Do not create a duplicate. If the existing cell is `failed`, report the failed stage and latest error instead of attempting automatic recovery.
 3. Generate a natural, concise note from the ticket title and body. If ticket information is unavailable, use the confirmed work objective. The note must be 1-20 Unicode characters after whitespace normalization; do not pad it to 20 characters or pack detailed requirements into it. Treat it only as a display label, never as a cell identifier or search key.
-4. Build only a short instruction such as `Read GitHub issue #123 first and treat its body as the single source of truth. Implement it, verify the acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body and worker command.
+4. Build only a short instruction such as `You are already inside a Paracell cell; implement directly here without redispatch. Read GitHub issue #123 as the single source of truth, verify its acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body and worker command.
 5. Run `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
 6. Run `paracell ls` and confirm the new cell and creation status. A successful dispatch is `ready`; a failed dispatch remains inspectable with its failed stage and latest error and can be retried after the cause is fixed. Report the issue URL or number, selected template, and dispatched objective.
 
@@ -119,3 +125,5 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 ## Maintain the Skill
 
 When Paracell commands, configuration, variables, or lifecycle behavior change, update this Skill and its configuration reference together, keep `agents/openai.yaml` aligned, and run the Skill validator.
+
+Skill edits in the project root do not automatically update existing cell worktrees or instructions already loaded by a worker. When asked to apply a skill fix to an existing cell, preserve local changes, update its local skill files, and have the worker reread them before resuming. Do not claim that a root-only edit fixed an existing worker.
