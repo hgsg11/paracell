@@ -1,15 +1,26 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"path/filepath"
+)
 
 type SourceCreationPort interface {
 	CreateSource(ctx context.Context, template SourceTemplate, worktree string, branch string) error
 }
 
-func CreateSourcesService(ctx context.Context, cell Cell, templates []SourceTemplate, sourcePort SourceCreationPort) error {
-	for i, template := range templates {
-		source := cell.Sources.Items[i]
-		if err := sourcePort.CreateSource(ctx, template, cell.SourceWorktreePath(source), source.Branch); err != nil {
+func CreateSourcesService(ctx context.Context, templates []SourceTemplate, issue string, sourcePort SourceCreationPort) error {
+	worktreeRoot := filepath.Join(".paracell", "cells", NewCellName(issue).Value, "source")
+	for _, template := range templates {
+		source, err := NewSource(template.Path, template.Base, template.Prefix+issue)
+		if err != nil {
+			return err
+		}
+		worktree := worktreeRoot
+		if source.Path != "." {
+			worktree = filepath.Join(worktree, source.Path)
+		}
+		if err := sourcePort.CreateSource(ctx, template, worktree, source.Branch); err != nil {
 			return err
 		}
 	}

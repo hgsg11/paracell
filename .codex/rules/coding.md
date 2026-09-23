@@ -44,6 +44,7 @@
 - Domain Serviceを定義する前に、その処理をValue Object、Entity、Aggregate Rootのmethodとして表現できないか必ず検討すること。
 - 単一のAggregate Rootまたはその所有Entityだけに属する処理を、Domain Serviceとして定義しないこと。
 - Domain Serviceでは、必要なdatabase処理や外部service処理を実行してよい。
+- Domain Serviceには、その処理に必要な最小限の値を渡すこと。少数の値を得るだけのためにAggregate Root全体を渡さないこと。
 - Domain ServiceはPortを呼び出してもよいが、Portを呼び出せることだけを理由に定義してはならない。Domain ServiceはValue Object、Entity、Aggregate Rootでは表現できないdomain logicを表現する場合に限って定義すること。Port呼び出しを伴わないdomain logicにも同じ規則を適用すること。
 - Domain Serviceは1ファイルに1関数だけ定義し、ファイル名をDomain Service名に一致させること。
 - Domain Service名には`Service`接尾辞を付け、ファイル名にも`service`を含めること。例: `CreateContainersService` は `create_containers_service.go` に1関数だけ定義すること。

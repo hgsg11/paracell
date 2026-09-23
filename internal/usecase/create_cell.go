@@ -90,7 +90,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 
-	if err := domain.CreateSourcesService(ctx, cell, resolved.Sources, source); err != nil {
+	if err := domain.CreateSourcesService(ctx, resolved.Sources, input.Issue, source); err != nil {
 		return domain.Cell{}, err
 	}
 	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
