@@ -57,7 +57,7 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 	}
 	sources := make([]Source, 0, len(stored.Sources.Items))
 	for _, source := range stored.Sources.Items {
-		validated, err := NewSource(source.Path, source.Base, source.Branch)
+		validated, err := NewSource(source.Path, source.Worktree, source.Base, source.Branch)
 		if err != nil {
 			return Cell{}, err
 		}
@@ -83,7 +83,7 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 	if err != nil {
 		return Cell{}, err
 	}
-	cell, err := NewCell(stored.ID, stored.Issue, stored.Project, stored.Template, NewSources(sourceDriver, sources), NewContainers(containerDriver, containers), NewSession(sessionDriver, windows), notificationDriver)
+	cell, err := NewCell(stored.ID, stored.Issue, stored.Project, stored.Template, NewSources(sourceDriver, sources), NewContainers(containerDriver, containers), NewSession(sessionDriver, windows), notificationDriver, nil)
 	if err != nil {
 		return Cell{}, err
 	}

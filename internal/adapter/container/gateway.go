@@ -33,14 +33,14 @@ type gatewayInspection struct {
 	NetworkSettings dockerNetworkSettings `json:"NetworkSettings"`
 }
 
-func gatewayLabels(resources domain.ContainerResources, containerName string, role string, bindings map[string][]dockerPortBinding) map[string]string {
+func gatewayLabels(cellName string, project string, network string, containerName string, role string, bindings map[string][]dockerPortBinding) map[string]string {
 	ports := publishedTCPPorts(bindings)
 	if len(ports) == 0 {
 		return nil
 	}
 
-	project := gatewayHostLabel(resources.Project)
-	cellName := gatewayHostLabel(resources.CellName)
+	project = gatewayHostLabel(project)
+	cellName = gatewayHostLabel(cellName)
 	serviceRole := gatewayHostLabel(domain.SafeResourceName(role, "service"))
 	if project == "" || cellName == "" || serviceRole == "" {
 		return nil
@@ -48,7 +48,7 @@ func gatewayLabels(resources domain.ContainerResources, containerName string, ro
 
 	labels := map[string]string{
 		"traefik.enable":         "true",
-		"traefik.docker.network": resources.Network,
+		"traefik.docker.network": network,
 	}
 	for _, port := range ports {
 		name := gatewayRouteName(containerName, port)

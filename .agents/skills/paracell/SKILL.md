@@ -1,6 +1,6 @@
 ---
 name: paracell
-description: "Prepare an issue-backed work package and dispatch development work from outside a Paracell cell. Do not auto-dispatch inside a cell; implement directly there. Use outside a cell when both conditions are true: (1) the request is a development task that requires changing the system, such as source code, tests, application or infrastructure configuration, schemas, build files, or deployment behavior; and (2) the target project has a paracell.yaml in its root or an ancestor directory. Also use for explicit Paracell lifecycle or configuration operations within such a configured project. Do not trigger for a mere mention of Paracell, or for explanation, investigation, review, planning, or status requests that do not require a system change."
+description: "Prepare and dispatch issue-backed development work outside a Paracell cell; inside a cell, implement issue-backed work through a pull request. Use outside a cell for system-changing development tasks in a project with paracell.yaml, and inside a cell for implementation of an identified issue. Also use for explicit Paracell lifecycle or configuration operations. Do not trigger for a mere mention of Paracell, or for explanation, investigation, review, planning, or status requests that do not require a system change."
 ---
 
 # Paracell
@@ -9,7 +9,9 @@ Outside a cell, turn system-changing development work in a project configured by
 
 ## Apply the Eligibility Gate First
 
-Check whether the current session is inside a cell before applying the dispatch gate. When `PARACELL_CELL` is non-empty, perform requested development work directly in the current cell, including implementation, verification, and PR creation when requested. Do not apply the dispatch workflow or its prohibition on direct implementation, and do not automatically create another issue or cell. Direct implementation does not require the task's issue number to match the cell identifier. Explicitly requested Paracell lifecycle or configuration operations remain available.
+Check whether the current session is inside a cell before applying the dispatch gate. When `PARACELL_CELL` is non-empty, perform requested development work directly in the current cell. Do not apply the dispatch workflow or its prohibition on direct implementation, and do not automatically create another issue or cell. Direct implementation does not require the task's issue number to match the cell identifier. Explicitly requested Paracell lifecycle or configuration operations remain available.
+
+For an identified issue's implementation inside a cell, treat a review-ready PR as the default delivery artifact, even if the user says only “implement issue #123.” After implementation and verification, commit and push the intended changes, create or update a PR against the appropriate base branch, link the issue, and report the PR URL. Do not report the issue implementation complete after tests alone. Honor an explicit request for local changes only, no PR, or another delivery artifact; if GitHub access or push is blocked, report the blocker and preserve the local work. This default does not apply to investigation, review, planning, or an unrelated change merely made inside a cell.
 
 Outside a cell, before making the first workspace edit, apply this two-part gate:
 

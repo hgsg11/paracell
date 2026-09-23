@@ -136,11 +136,10 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain.ContainerResources) (networks map[string][]string, returnErr error) {
-	networks = make(map[string][]string, len(resources.Items))
-	network := resources.Network
+func (a DockerCLIAdapter) CreateContainers(ctx context.Context, templates []domain.ContainerTemplate, cellName string, project string, network string, sourcePath string) (networks map[string][]string, returnErr error) {
+	networks = make(map[string][]string, len(templates))
 	networkCreated := false
-	createdContainers := make([]string, 0, len(resources.Items))
+	createdContainers := make([]string, 0, len(templates))
 	sharedContainers := make([]string, 0, 1)
 	defer func() {
 		if returnErr == nil {
@@ -157,8 +156,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			return nil, err
 		}
 	}
-	for _, service := range sortedContainerResources(resources.Items) {
-		source := service.SourceContainer
+	items := append([]domain.ContainerTemplate(nil), templates...)
+	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	for _, service := range items {
+		source := service.Name
+		name := network + "-" + domain.SafeResourceName(source, "container")
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return nil, err
@@ -177,7 +179,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			sharedContainers = append(sharedContainers, source)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, resources.SourcePath, service, inspection)
+		mounts, err := a.prepareMounts(ctx, sourcePath, name, service.Mounts, inspection)
 		if err != nil {
 			return nil, err
 		}
@@ -187,11 +189,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			composeProjectLabel: network,
 			composeServiceLabel: source,
 		}
-		for name, value := range gatewayLabels(resources, service.Name, source, inspection.HostConfig.PortBindings) {
-			labels[name] = value
+		for label, value := range gatewayLabels(cellName, project, network, name, source, inspection.HostConfig.PortBindings) {
+			labels[label] = value
 		}
 		args := BuildDockerRunArgs(RunSpec{
-			Name:           service.Name,
+			Name:           name,
 			Image:          inspection.Config.Image,
 			Network:        network,
 			NetworkAliases: networkAliases,
@@ -210,7 +212,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
 			return nil, err
 		}
-		createdContainers = append(createdContainers, service.Name)
+		createdContainers = append(createdContainers, name)
 	}
 	return networks, nil
 }
@@ -301,27 +303,27 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, sourcePath string, service domain.ContainerResource, inspection containerInspection) ([]string, error) {
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, sourcePath string, name string, templateMounts []domain.Mount, inspection containerInspection) ([]string, error) {
 	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
 	if err != nil {
 		return nil, err
 	}
-	mounts, err := a.copyMounts(ctx, sourcePath, service, inspection.Mounts, composeMounts)
+	mounts, err := a.copyMounts(ctx, sourcePath, name, inspection.Mounts, composeMounts)
 	if err != nil {
 		return nil, err
 	}
-	for _, mount := range service.Mounts {
+	for _, mount := range templateMounts {
 		source := filepath.Join(a.Root, sourcePath, mount.SourcePath)
 		mounts = append(mounts, source+":"+mount.TargetPath)
 	}
 	return mounts, nil
 }
 
-func (a DockerCLIAdapter) copyMounts(ctx context.Context, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, sourcePath string, name string, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
-			targetVolume := copiedVolumeName(service.Name, mount.Destination)
+			targetVolume := copiedVolumeName(name, mount.Destination)
 			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
 				return nil, err
 			}
@@ -525,28 +527,16 @@ func appendNetworkAlias(aliases []string, alias string) []string {
 	return aliases
 }
 
-func sortedContainerResources(resources []domain.ContainerResource) []domain.ContainerResource {
-	items := append([]domain.ContainerResource(nil), resources...)
-	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
-	return items
-}
-
-func (a DockerCLIAdapter) CleanContainers(ctx context.Context, resources domain.ContainerResources) error {
+func (a DockerCLIAdapter) CleanContainers(ctx context.Context, network string, containers []string, dependencies []string) error {
 	var cleanupErr error
-	for _, service := range sortedContainerResources(resources.Items) {
-		if service.Mode == domain.Dependency {
-			continue
-		}
-		if err := a.Runner.Run(ctx, "docker", "rm", "-f", service.Name); err != nil && !isMissingDockerResourceError(err) {
+	for _, name := range containers {
+		if err := a.Runner.Run(ctx, "docker", "rm", "-f", name); err != nil && !isMissingDockerResourceError(err) {
 			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
-	if network := resources.Network; network != "" {
-		for _, service := range sortedContainerResources(resources.Items) {
-			if service.Mode != domain.Dependency {
-				continue
-			}
-			if err := a.disconnectDependency(ctx, network, service.SourceContainer); err != nil {
+	if network != "" {
+		for _, source := range dependencies {
+			if err := a.disconnectDependency(ctx, network, source); err != nil {
 				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		}

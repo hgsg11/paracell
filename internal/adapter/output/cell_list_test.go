@@ -1,7 +1,6 @@
 package output
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -12,7 +11,7 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,8 +51,14 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
 	cell := outputCell(t, "123", "webapp", "")
-	cell.BeginCreation()
-	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
+	stored := cell.Stored()
+	stored.Creation.Status = domain.CreationFailed
+	stored.Creation.FailedStage = domain.CreationStageContainers
+	stored.Creation.LastError = "docker failed\nport already used\ttry another"
+	cell, err := domain.RestoreCell(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := FormatCellList([]domain.Cell{cell})
 	if !strings.Contains(got, "failed\tready\tfalse\tcontainers\tdocker failed port already used try another") {

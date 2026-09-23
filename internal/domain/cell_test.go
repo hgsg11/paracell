@@ -7,13 +7,13 @@ import (
 
 func testCell(t *testing.T) Cell {
 	t.Helper()
-	source, err := NewSource(".", "main", "feat/42")
+	source, err := NewSource(".", ".paracell/cells/42/source", "main", "feat/42")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sessionDriver, _ := NewSessionDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	cell, err := NewCell("id", "42", "sample", "feat", NewSources(sourceDriver, []Source{source}), NewContainers(None, nil), NewSession(sessionDriver, nil), NoNotification)
+	cell, err := NewCell("id", "42", "sample", "feat", NewSources(sourceDriver, []Source{source}), NewContainers(None, nil), NewSession(sessionDriver, nil), NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +44,8 @@ func TestCellのResource名は保存せずIdentityから導出する(t *testing.
 	if cell.Name().Value != "42" {
 		t.Fatalf("name = %q", cell.Name())
 	}
-	if cell.SourceWorktreePath(cell.Sources.Items[0]) != ".paracell/cells/42/source" {
-		t.Fatalf("path = %q", cell.SourceWorktreePath(cell.Sources.Items[0]))
+	if got := cell.WorkingDirectory(); got != ".paracell/cells/42/source" {
+		t.Fatalf("working directory = %q", got)
 	}
 	if cell.ContainerNetworkName() != "paracell-sample-42" {
 		t.Fatalf("network = %q", cell.ContainerNetworkName())

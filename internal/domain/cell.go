@@ -2,7 +2,7 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -23,7 +23,7 @@ type Cell struct {
 	Done               bool
 }
 
-func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType) (Cell, error) {
+func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType, note *string) (Cell, error) {
 	if id == "" {
 		return Cell{}, fmt.Errorf("cell id is required")
 	}
@@ -37,11 +37,17 @@ func NewCell(id string, issue string, project string, templateName string, sourc
 	if err != nil {
 		return Cell{}, err
 	}
-	return Cell{
+	cell := Cell{
 		Version: version, ID: id, Issue: issue, Project: project,
 		Template: templateName, Sources: sources, Containers: containers, Session: session, NotificationDriver: notificationDriver,
 		Creation: NewCellCreation(), Status: Ready,
-	}, nil
+	}
+	if note != nil {
+		if err := cell.SetNote(*note); err != nil {
+			return Cell{}, err
+		}
+	}
+	return cell, nil
 }
 
 func (c Cell) Name() CellName {
@@ -173,14 +179,6 @@ func (c Cell) Clone() Cell {
 	return c
 }
 
-func (c Cell) SourceWorktreePath(source Source) string {
-	path := filepath.Join(".paracell", "cells", c.Name().Value, "source")
-	if source.Path != "." {
-		path = filepath.Join(path, source.Path)
-	}
-	return path
-}
-
 func (c Cell) ContainerNetworkName() string {
 	return c.ResourcePrefix()
 }
@@ -190,15 +188,6 @@ func (c Cell) ContainerResourceName(container Container) string {
 		return container.SourceContainer
 	}
 	return c.ResourcePrefix() + "-" + SafeResourceName(container.SourceContainer, "container")
-}
-
-func (c Cell) UsesDependency() bool {
-	for _, container := range c.Containers.Items {
-		if container.Mode == Dependency {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
@@ -217,15 +206,6 @@ func (c *Cell) BeginCreation() {
 	c.Creation = creation
 }
 
-func (c *Cell) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
 func (c *Cell) FinishCreation() {
 	c.Creation.Status = CreationReady
 	c.Creation.FailedStage = ""
@@ -236,41 +216,38 @@ func (c Cell) CreationStatus() CreationStatus {
 	return c.Creation.Status
 }
 
-func (c Cell) SourceResources() []SourceResource {
-	resources := make([]SourceResource, 0, len(c.Sources.Items))
+// SourceCleanupTargets identifies persisted worktrees without consulting templates.
+func (c Cell) SourceCleanupTargets() (repositories []string, worktrees []string) {
 	for _, source := range c.Sources.Items {
-		resources = append(resources, NewSourceResource(source.Path, c.SourceWorktreePath(source), source.Base, source.Branch))
+		repositories = append(repositories, source.Path)
+		worktrees = append(worktrees, source.Worktree)
 	}
-	return resources
+	return repositories, worktrees
 }
 
-func (c Cell) ContainerResources(templates []ContainerTemplate) ContainerResources {
-	bySourceContainer := make(map[string]ContainerTemplate, len(templates))
-	for _, template := range templates {
-		bySourceContainer[template.Name] = template
-	}
-	items := make([]ContainerResource, 0, len(c.Containers.Items))
-	for _, container := range c.Containers.Items {
-		template := bySourceContainer[container.SourceContainer]
-		items = append(items, NewContainerResource(
-			c.ContainerResourceName(container), container.Network,
-			container.SourceContainer, container.Mode, template.Environments, template.Mounts,
-		))
-	}
-	sourcePath := ""
-	if len(c.Sources.Items) > 0 {
-		sourcePath = c.SourceWorktreePath(c.Sources.Items[0])
-		if sourcePath != "" {
-			sourcePath = filepath.Clean(sourcePath)
+func (c Cell) ContainerCleanupTargets() (containers []string, dependencies []string) {
+	items := append([]Container(nil), c.Containers.Items...)
+	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
+	for _, container := range items {
+		if container.Mode == Dependency {
+			dependencies = append(dependencies, container.SourceContainer)
+		} else {
+			containers = append(containers, c.ContainerResourceName(container))
 		}
 	}
-	return NewContainerResources(c.Name().Value, c.Project, c.ContainerNetworkName(), sourcePath, items)
+	return containers, dependencies
 }
 
-func (c Cell) SessionResource() SessionResource {
-	workingDirectory := ""
-	if len(c.Sources.Items) > 0 {
-		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
+func (c Cell) SessionPreparation() (name, cellName, project, label string, windowNames []string) {
+	for _, window := range c.Session.Windows {
+		windowNames = append(windowNames, window.Name)
 	}
-	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
+	return c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), windowNames
+}
+
+func (c Cell) WorkingDirectory() string {
+	if len(c.Sources.Items) == 0 {
+		return ""
+	}
+	return c.Sources.Items[0].Worktree
 }

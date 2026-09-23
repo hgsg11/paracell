@@ -41,17 +41,26 @@ func (f prepareSessionFactory) Session(domain.SessionDriverType) (usecase.Sessio
 }
 
 type prepareSession struct {
-	prepared domain.SessionResource
+	prepared string
 }
 
-func (*prepareSession) CreateSession(context.Context, domain.SessionResource) error { return nil }
-func (*prepareSession) CleanSession(context.Context, domain.SessionResource) error  { return nil }
-func (s *prepareSession) PrepareSession(_ context.Context, resource domain.SessionResource) error {
-	s.prepared = resource
+func (*prepareSession) CreateSession(context.Context, string, string, string, string) error {
 	return nil
 }
-func (*prepareSession) UpdateStatusLabel(context.Context, domain.SessionResource) error { return nil }
-func (*prepareSession) EnterSession(context.Context, domain.SessionResource) error      { return nil }
+func (*prepareSession) CreateWindow(context.Context, string, string, string) error      { return nil }
+func (*prepareSession) SendWindowCommand(context.Context, string, string, string) error { return nil }
+func (*prepareSession) ConfigureSession(context.Context, string, string, string, string, []string) error {
+	return nil
+}
+func (*prepareSession) CleanSession(context.Context, string) error { return nil }
+func (s *prepareSession) PrepareSession(_ context.Context, name string, cellName string, project string, label string, windows []string) error {
+	s.prepared = cellName
+	return nil
+}
+func (*prepareSession) UpdateStatusLabel(context.Context, string, string) error { return nil }
+func (*prepareSession) EnterSession(context.Context, string, string, string, string, []string) error {
+	return nil
+}
 func (*prepareSession) EnterRootSession(context.Context, string) error {
 	return nil
 }
@@ -79,7 +88,7 @@ func appTestCell(id string, issue string, templateName string) domain.Cell {
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
 	return cell
 }
 
@@ -97,7 +106,7 @@ func TestRunEnterCmdは復元設定後にSession環境を保持して切り替�
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}
-	if session.prepared.CellName != cell.Name().Value {
+	if session.prepared != cell.Name().Value {
 		t.Fatalf("prepared resource = %#v, want cell %#v", session.prepared, cell)
 	}
 }

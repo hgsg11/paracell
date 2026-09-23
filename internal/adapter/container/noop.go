@@ -10,14 +10,10 @@ type NoopAdapter struct{}
 
 func NewNoopAdapter() NoopAdapter { return NoopAdapter{} }
 
-func (a NoopAdapter) CreateContainers(ctx context.Context, resources domain.ContainerResources) (map[string][]string, error) {
-	_ = ctx
-	_ = resources
+func (a NoopAdapter) CreateContainers(_ context.Context, _ []domain.ContainerTemplate, _, _, _, _ string) (map[string][]string, error) {
 	return map[string][]string{}, nil
 }
 
-func (a NoopAdapter) CleanContainers(ctx context.Context, resources domain.ContainerResources) error {
-	_ = ctx
-	_ = resources
+func (a NoopAdapter) CleanContainers(_ context.Context, _ string, _, _ []string) error {
 	return nil
 }

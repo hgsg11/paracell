@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+func TestSourceTemplateはissueからWorktreePathとBranchNameを作る(t *testing.T) {
+	template, err := NewSourceTemplate("api", "origin/main", "feat/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got, want := template.WorktreePath("feature/109"), ".paracell/cells/feature-109/source/api"; got != want {
+		t.Fatalf("worktree path = %q, want %q", got, want)
+	}
+	if got, want := template.BranchName("feature/109"), "feat/feature/109"; got != want {
+		t.Fatalf("branch = %q, want %q", got, want)
+	}
+}
+
 func TestResolveTemplateは継承とRuntime変数展開を担当する(t *testing.T) {
 	baseSource, _ := NewSourceTemplate(".", "origin/main", "")
 	baseSession := NewSessionTemplate([]Window{{Name: "agent", Command: "codex {{.Command}}"}})

@@ -64,7 +64,8 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		if err := session.PrepareSession(ctx, cell.SessionResource()); err != nil {
+		name, cellName, project, label, windows := cell.SessionPreparation()
+		if err := session.PrepareSession(ctx, name, cellName, project, label, windows); err != nil {
 			return nil, err
 		}
 		if os.Getenv("TMUX") != "" {
