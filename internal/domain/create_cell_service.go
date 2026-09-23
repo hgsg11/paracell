@@ -10,14 +10,26 @@ func CreateCellService(id string, issue string, project string, templateName str
 		sourceItems = append(sourceItems, source)
 	}
 	sources := NewSources(sourceDriver, sourceItems)
-	containers, err := BuildContainers(containerDriver, resolved.Containers)
-	if err != nil {
-		return Cell{}, err
+
+	containerItems := make([]Container, 0, len(resolved.Containers))
+	for _, template := range resolved.Containers {
+		container, err := NewContainer(nil, template.Name, template.Mode)
+		if err != nil {
+			return Cell{}, err
+		}
+		containerItems = append(containerItems, container)
 	}
-	session, err := BuildSession(sessionDriver, resolved.Session)
-	if err != nil {
-		return Cell{}, err
+	containers := NewContainers(containerDriver, containerItems)
+
+	windows := make([]SessionWindow, 0, len(resolved.Session.Windows))
+	for _, template := range resolved.Session.Windows {
+		window, err := NewSessionWindow(template.Name, template.Command)
+		if err != nil {
+			return Cell{}, err
+		}
+		windows = append(windows, window)
 	}
+	session := NewSession(sessionDriver, windows)
 	cell, err := NewCell(id, issue, project, templateName, sources, containers, session, notificationDriver)
 	if err != nil {
 		return Cell{}, err
