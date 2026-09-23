@@ -8,15 +8,16 @@ import (
 
 type NoopAdapter struct{}
 
-func (a NoopAdapter) CreateContainers(ctx context.Context, cell domain.Cell, templates []domain.ContainerTemplate) error {
+func NewNoopAdapter() NoopAdapter { return NoopAdapter{} }
+
+func (a NoopAdapter) CreateContainers(ctx context.Context, resources domain.ContainerResources) (map[string][]string, error) {
 	_ = ctx
-	_ = cell
-	_ = templates
-	return nil
+	_ = resources
+	return map[string][]string{}, nil
 }
 
-func (a NoopAdapter) CleanContainers(ctx context.Context, cell domain.Cell) error {
+func (a NoopAdapter) CleanContainers(ctx context.Context, resources domain.ContainerResources) error {
 	_ = ctx
-	_ = cell
+	_ = resources
 	return nil
 }

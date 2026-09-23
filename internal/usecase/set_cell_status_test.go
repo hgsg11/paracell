@@ -10,18 +10,18 @@ import (
 
 func TestSetCellStatusはReady時に通知する(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: []domain.Cell{{ID: "cell-1", Issue: "123", Name: "feature-123"}},
+		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
 	}
 
-	uc := SetCellStatusUseCase{State: ports, Notifier: ports}
+	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
 	cell, err := uc.Execute(context.Background(), SetCellStatusInput{Cell: "123", Status: domain.Ready})
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
 	}
-	if got := cell.Status(); got != domain.Ready {
-		t.Fatalf("Status = %q, want %q", got, domain.Ready)
+	if !cell.HasStatus(domain.Ready) {
+		t.Fatalf("cell = %#v, want status %q", cell, domain.Ready)
 	}
-	want := []string{"save:1", "notify:feature-123:Ready: feature-123"}
+	want := []string{"save:1", "factory:notification:none", "notify:myapp-123:Ready: 123"}
 	if !reflect.DeepEqual(ports.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, want)
 	}
@@ -29,10 +29,10 @@ func TestSetCellStatusはReady時に通知する(t *testing.T) {
 
 func TestSetCellStatusはPending時に通知しない(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: []domain.Cell{{ID: "cell-1", Issue: "123", Name: "feature-123"}},
+		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
 	}
 
-	uc := SetCellStatusUseCase{State: ports, Notifier: ports}
+	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
 	_, err := uc.Execute(context.Background(), SetCellStatusInput{Cell: "123", Status: domain.Pending})
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
@@ -64,8 +64,15 @@ func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func([]doma
 	return nil
 }
 
-func (p *setStatusTestPorts) NotifyReady(ctx context.Context, cell domain.Cell, message string) error {
+func (p *setStatusTestPorts) DeleteCell(context.Context, domain.Cell) error { return nil }
+
+func (p *setStatusTestPorts) Notification(driver domain.NotificationDriverType) (Notifier, error) {
+	p.calls = append(p.calls, "factory:notification:"+string(driver))
+	return p, nil
+}
+
+func (p *setStatusTestPorts) NotifyReady(ctx context.Context, sessionName string, message string) error {
 	_ = ctx
-	p.calls = append(p.calls, "notify:"+cell.Name+":"+message)
+	p.calls = append(p.calls, "notify:"+sessionName+":"+message)
 	return nil
 }

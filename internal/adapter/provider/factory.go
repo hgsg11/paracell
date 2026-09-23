@@ -17,10 +17,14 @@ type Factory struct {
 	Root   string
 }
 
+func NewFactory(runner system.Runner, root string) Factory {
+	return Factory{Runner: runner, Root: root}
+}
+
 func (f Factory) Source(driver domain.SourceDriverType) (usecase.SourcePort, error) {
 	switch driver {
 	case domain.Git:
-		return source.GitSourceAdapter{Runner: f.Runner, Root: f.Root}, nil
+		return source.NewGitSourceAdapter(f.Runner, f.Root), nil
 	default:
 		return nil, fmt.Errorf("unsupported source driver %q", driver)
 	}
@@ -29,9 +33,9 @@ func (f Factory) Source(driver domain.SourceDriverType) (usecase.SourcePort, err
 func (f Factory) Container(driver domain.ContainerDriverType) (usecase.ContainerPort, error) {
 	switch driver {
 	case domain.None:
-		return container.NoopAdapter{}, nil
+		return container.NewNoopAdapter(), nil
 	case domain.Docker:
-		return container.DockerCLIAdapter{Runner: f.Runner, Root: f.Root}, nil
+		return container.NewDockerCLIAdapter(f.Runner, f.Root), nil
 	default:
 		return nil, fmt.Errorf("unsupported container driver %q", driver)
 	}
@@ -40,7 +44,7 @@ func (f Factory) Container(driver domain.ContainerDriverType) (usecase.Container
 func (f Factory) Session(driver domain.SessionDriverType) (usecase.SessionPort, error) {
 	switch driver {
 	case domain.Tmux:
-		return session.TmuxAdapter{Runner: f.Runner, Root: f.Root}, nil
+		return session.NewTmuxAdapter(f.Runner, f.Root), nil
 	default:
 		return nil, fmt.Errorf("unsupported session driver %q", driver)
 	}
@@ -49,9 +53,9 @@ func (f Factory) Session(driver domain.SessionDriverType) (usecase.SessionPort, 
 func (f Factory) Notification(driver domain.NotificationDriverType) (usecase.Notifier, error) {
 	switch driver {
 	case domain.NoNotification:
-		return notification.NoopNotifier{}, nil
+		return notification.NewNoopNotifier(), nil
 	case domain.TmuxNotification:
-		return notification.TmuxNotifier{Runner: f.Runner}, nil
+		return notification.NewTmuxNotifier(f.Runner), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification driver %q", driver)
 	}

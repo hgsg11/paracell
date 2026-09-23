@@ -11,14 +11,22 @@ func FormatCellList(cells []domain.Cell) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
+		label, templateName := cell.ListLabels()
+		creationStatus := cell.CreationStatus()
+		status := domain.Ready
+		if cell.HasStatus(domain.Pending) {
+			status = domain.Pending
+		}
+		done := cell.EnsureCanBeCleaned() == nil
 		failedStage := "-"
 		lastError := "-"
-		if cell.CreationStatus() == domain.CreationFailed {
-			failedStage = string(cell.Creation.FailedStage)
-			lastError = singleLine(cell.Creation.LastError, 120)
+		if creationStatus == domain.CreationFailed {
+			stage, message := cell.CreationFailure()
+			failedStage = string(stage)
+			lastError = singleLine(message, 120)
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
-			cell.DisplayLabel(), cell.Template, cell.CreationStatus(), cell.Status(), cell.IsDone(), failedStage, lastError)
+			label, templateName, creationStatus, status, done, failedStage, lastError)
 	}
 	return b.String()
 }

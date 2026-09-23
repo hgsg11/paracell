@@ -97,7 +97,7 @@ Treat a missing `gh` executable, missing GitHub authentication, or a repository 
 Dispatch only when the eligibility gate passed and the user has confirmed the shared understanding reached by the requirements interview. A qualifying system-change request counts as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package without side effects.
 
 1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
-2. Check `paracell ls` for a cell with that issue number. If its creation state is `failed`, run `paracell retry <cell>` instead of creating a duplicate. Do not retry `creating` or `ready` cells. A `retrying` cell already has an owner; do not loop or wait on `retry already in progress`.
+2. Check `paracell ls` for a cell with that issue number. Do not create a duplicate. If the existing cell is `failed`, report the failed stage and latest error instead of attempting automatic recovery.
 3. Generate a natural, concise note from the ticket title and body. If ticket information is unavailable, use the confirmed work objective. The note must be 1-20 Unicode characters after whitespace normalization; do not pad it to 20 characters or pack detailed requirements into it. Treat it only as a display label, never as a cell identifier or search key.
 4. Build only a short instruction such as `Read GitHub issue #123 first and treat its body as the single source of truth. Implement it, verify the acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body and worker command.
 5. Run `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
@@ -110,10 +110,9 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 ## Operate Safely
 
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
-- Use `paracell retry <cell>` only for a `failed` creation shown by `paracell ls`. Retry preserves completed stages and applies the latest template only to the failed and unstarted stages. Concurrent retry of the same cell fails immediately; after an abnormal exit, its lease becomes reclaimable when the last heartbeat is more than two minutes old.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set.
 - Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.
-- A cell using `database.mode: shared` owns only the source database container's attachment to that cell network. Rollback, retry, and clean must preserve its original and other cell network attachments.
+- A cell using `database.mode: shared` owns only the source database container's attachment to that cell network. Rollback and clean must preserve its original and other cell network attachments.
 - Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, sessions, containers, volumes, or networks while Paracell can manage them.
 - Do not assume `clean --force` bypasses the done guard; check the installed version.
 

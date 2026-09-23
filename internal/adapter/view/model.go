@@ -276,7 +276,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.ID == msg.cell.ID {
+			if cell.SameIdentity(msg.cell) {
 				index = i
 				break
 			}
@@ -301,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.ID == msg.cell.ID {
+			if cell.SameIdentity(msg.cell) {
 				index = i
 				break
 			}
@@ -340,14 +340,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(err.Error())
 			return m, nil
 		}
-		selectedID := ""
+		var selectedCell domain.Cell
+		hasSelectedCell := false
 		if m.Selected >= 0 && m.Selected < len(m.Cells) {
-			selectedID = m.Cells[m.Selected].ID
+			selectedCell = m.Cells[m.Selected]
+			hasSelectedCell = true
 		}
 		m.Cells = cells
-		if selectedID != "" {
+		if hasSelectedCell {
 			for i, cell := range m.Cells {
-				if cell.ID == selectedID {
+				if cell.SameIdentity(selectedCell) {
 					m.Selected = i
 					break
 				}
@@ -446,11 +448,12 @@ func renderCellsPane(m Model, width int, height int) []string {
 	} else {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
+			label, templateName := cell.ListLabels()
 			done := "[ ]"
-			if cell.IsDone() {
+			if cell.EnsureCanBeCleaned() == nil {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.DisplayLabel(), maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(templateName, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -554,17 +557,18 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(cell.DisplayLabel(), maxIssueDisplayWidth)))
-		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
+		label, templateName := cell.ListLabels()
+		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(label, maxIssueDisplayWidth)))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(templateName, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
 }
 
 func renderCellStatus(cell domain.Cell, frame int) string {
-	switch cell.Status() {
-	case domain.Pending:
+	switch {
+	case cell.HasStatus(domain.Pending):
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
-	case domain.Ready:
+	case cell.HasStatus(domain.Ready):
 		return ""
 	default:
 		return "  "
@@ -599,7 +603,7 @@ func resetForkInput(m Model) Model {
 }
 
 func currentCellMarker(cell domain.Cell, currentCell string) string {
-	if currentCell != "" && cell.Name == currentCell {
+	if currentCell != "" && cell.Name().Value == currentCell {
 		return "*"
 	}
 	return " "
@@ -762,12 +766,6 @@ type enterResultMsg struct {
 	err  error
 }
 
-func EnterProcessCmd(cell domain.Cell, cmd *exec.Cmd) tea.Cmd {
-	return tea.Exec(newCapturedExecCommand(cmd), func(err error) tea.Msg {
-		return enterResultMsg{cell: cell, err: err}
-	})
-}
-
 func EnterLoggedProcessCmd(cell domain.Cell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
 	return tea.Exec(newLoggedCapturedExecCommand(cmd, logger), func(err error) tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
@@ -781,14 +779,6 @@ type capturedExecCommand struct {
 	source string
 	mu     sync.Mutex
 	logErr error
-}
-
-func newCapturedExecCommand(cmd *exec.Cmd) *capturedExecCommand {
-	wrapped := &capturedExecCommand{cmd: cmd}
-	if wrapped.cmd.Stderr == nil {
-		wrapped.cmd.Stderr = &wrapped.stderr
-	}
-	return wrapped
 }
 
 func newLoggedCapturedExecCommand(cmd *exec.Cmd, logger *logging.Logger) *capturedExecCommand {

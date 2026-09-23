@@ -12,14 +12,14 @@ type MarkCellDoneInput struct {
 }
 
 type MarkCellDoneUseCase struct {
-	State CellStatePort
+	Cells CellPort
 }
 
 func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInput) (domain.Cell, error) {
 	var updated domain.Cell
-	err := u.State.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
-			if cell.ID == input.Cell || cell.Issue == input.Cell || cell.Name == input.Cell {
+			if cell.Matches(input.Cell) {
 				cell.ToggleDone()
 				cells[i] = cell
 				updated = cell
@@ -29,6 +29,9 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 		return nil, fmt.Errorf("cell %q not found", input.Cell)
 	})
 	if err != nil {
+		return domain.Cell{}, err
+	}
+	if err := updated.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err
 	}
 	return updated, nil

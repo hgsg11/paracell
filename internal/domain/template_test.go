@@ -1,50 +1,60 @@
 package domain
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestTemplatesは名前から各Templateを取得する(t *testing.T) {
-	mode, err := NewMode("target")
-	if err != nil {
-		t.Fatal(err)
-	}
-	container, err := NewContainerTemplate("app", mode, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	source, err := NewSourceTemplate(".", "main", "feat/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	template, err := NewTemplate("feat", []SourceTemplate{source}, []ContainerTemplate{container}, NewSessionTemplate(nil))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestResolveTemplateは継承とRuntime変数展開を担当する(t *testing.T) {
+	baseSource, _ := NewSourceTemplate(".", "origin/main", "")
+	baseSession := NewSessionTemplate([]Window{{Name: "agent", Command: "codex {{.Command}}"}})
+	base, _ := NewUnresolvedTemplate("base", "", true, &baseSource, nil, &baseSession)
+	prefix := "feat/"
+	childSource, _ := NewPartialSourceTemplate(nil, nil, &prefix)
+	environment, _ := NewEnvironment("CELL", "{{.Project}}-{{.Name}}")
+	container, _ := NewContainerTemplate("app", Target, []Environment{environment}, nil)
+	containers := []ContainerTemplate{container}
+	child, _ := NewUnresolvedTemplate("feat", "base", false, &childSource, &containers, nil)
 	sessionDriver, _ := NewSessionDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	notificationDriver, _ := NewNotificationDriverType("")
-	templates, err := NewTemplates("project", []Template{template}, sessionDriver, NewContainerDriverType("docker"), sourceDriver, notificationDriver)
+	config, _ := NewTemplates("sample", []Template{base, child}, sessionDriver, Docker, sourceDriver, NoNotification)
+
+	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "work"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	containers, err := templates.GetContainerTemplates("feat")
-	if err != nil || len(containers) != 1 || containers[0].Name != "app" {
-		t.Fatalf("containers = %#v, err = %v", containers, err)
+	if resolved.Sources[0].Base != "origin/main" || resolved.Sources[0].Prefix != "feat/" {
+		t.Fatalf("source = %#v", resolved.Sources[0])
 	}
-	if _, err := templates.GetSourceTemplates("missing"); err == nil {
-		t.Fatal("missing template must fail")
+	if resolved.Containers[0].Environments[0].Value != "sample-42" {
+		t.Fatalf("environment = %#v", resolved.Containers[0].Environments)
+	}
+	if resolved.Session.Windows[0].Command != "codex work" {
+		t.Fatalf("session = %#v", resolved.Session)
 	}
 }
 
-func TestNewContainerTemplateはDependencyの変更設定を拒否する(t *testing.T) {
-	_, err := NewContainerTemplate("db", Dependency, []Environment{{Name: "A", Value: "B"}}, nil)
-	if err == nil {
-		t.Fatal("dependency environment must fail")
+func TestResolveTemplateは不正な継承と式を拒否する(t *testing.T) {
+	sessionDriver, _ := NewSessionDriverType("tmux")
+	sourceDriver, _ := NewSourceDriverType("git")
+	a, _ := NewUnresolvedTemplate("a", "b", false, nil, nil, nil)
+	b, _ := NewUnresolvedTemplate("b", "a", false, nil, nil, nil)
+	config, _ := NewTemplates("sample", []Template{a, b}, sessionDriver, None, sourceDriver, NoNotification)
+	if _, err := config.Resolve("a", NewTemplateVars("", "", "", "")); err == nil || !strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cycle error = %v", err)
+	}
+
+	window, _ := NewWindow("agent", "{{.Missing}}")
+	bad, _ := NewTemplate("bad", nil, nil, NewSessionTemplate([]Window{window}))
+	config, _ = NewTemplates("sample", []Template{bad}, sessionDriver, None, sourceDriver, NoNotification)
+	if _, err := config.Resolve("bad", NewTemplateVars("", "", "", "")); err == nil {
+		t.Fatal("undefined variable must fail")
 	}
 }
 
 func TestDriverTypeを生成する(t *testing.T) {
-	if got := NewContainerDriverType("unknown"); got != None {
-		t.Fatalf("container driver = %q", got)
+	if NewContainerDriverType("unknown") != None {
+		t.Fatal("unknown container driver must become none")
 	}
 	if _, err := NewSessionDriverType(""); err == nil {
 		t.Fatal("empty session driver must fail")

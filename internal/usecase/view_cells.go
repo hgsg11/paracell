@@ -7,9 +7,9 @@ import (
 )
 
 type ViewCellsUseCase struct {
-	State CellStatePort
+	Cells CellPort
 }
 
 func (u ViewCellsUseCase) Execute(ctx context.Context) ([]domain.Cell, error) {
-	return u.State.LoadCells(ctx)
+	return u.Cells.LoadCells(ctx)
 }

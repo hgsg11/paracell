@@ -88,14 +88,7 @@ paracell annotate 123 --note "API実装中"
 
 `paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。template を編集して、作りたい cell の形を決めます。
 
-`fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残り、完了済み工程と branch/worktree は保持されます。原因を修正してから同じ cell を再開してください。
-
-```sh
-paracell ls
-paracell retry 123
-```
-
-`retry` は ID、Issue、Name のいずれでも cell を指定できます。同じcellのretryは一度に1実行だけで、実行中に重ねて呼ぶと待機せず `retry already in progress` エラーになります。retryプロセスが異常終了した場合は、最終heartbeatから2分を超えると保存済みcheckpointから再取得できます。最新の `paracell.yaml` で失敗工程以降を再renderし、完了済み工程は再作成しません。files工程では、worktree内に同内容のファイルがあれば再利用し、内容が異なる既存ファイルはユーザー変更を守るため上書きせず失敗します。
+`fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残ります。
 
 ```yaml
 project:
@@ -181,7 +174,7 @@ http://p<containerPort>.<service-role>.<cell>.<project>.localhost
 
 source network aliasは、copied containerから`http://backend`のようにcontainer間通信するため、cell専用networkへ引き続きコピーされます。さらにcopied containerにはservice role自身もnetwork aliasとして必ず追加されます。これらの内部通信用aliasと、外部公開するcanonical URLは別のものです。
 
-database serviceに`database.mode: shared`を指定すると、database containerだけは複製せず、source database containerをcell専用networkへ接続します。source databaseが既存networkで持つaliasをすべてコピーし、固定の`db` aliasやservice role aliasは追加しません。利用可能なaliasがない場合はcell作成を中止します。同じsource databaseを複数cellへ接続でき、rollback、retry、`paracell clean`は対象cellのnetwork接続だけを切断します。
+database serviceに`database.mode: shared`を指定すると、database containerだけは複製せず、source database containerをcell専用networkへ接続します。source databaseが既存networkで持つaliasをすべてコピーし、固定の`db` aliasやservice role aliasは追加しません。利用可能なaliasがない場合はcell作成を中止します。同じsource databaseを複数cellへ接続でき、rollbackと`paracell clean`は対象cellのnetwork接続だけを切断します。
 
 Paracellが作成するDocker resource名は、networkが`paracell-<project>-<cell>`、copied containerが`paracell-<project>-<cell>-<service-role>`です。ユーザーが起動したsource containerの名前は変更せず、このmanaged resource命名の対象にもなりません。project名自体が`paracell`なら`paracell-paracell-...`となりますが、先頭の`paracell`は管理namespace、2つ目はproject名であり、重複を省略しません。既存cellのresourceやURLは自動renameされず、修正版でcellを再作成した時点からこの規則が適用されます。
 
@@ -258,7 +251,6 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 paracell init
 paracell fork <issue> --template <template> [--command <command>] [--note <note>]
 paracell annotate <cell> --note <note>
-paracell retry <cell>
 paracell view
 paracell ls
 paracell clean <cell> [--force]
@@ -271,7 +263,6 @@ paracell --version
 
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
 - `annotate`: ID、Issue、Name のいずれかで既存 cell を指定し、note を設定・上書きする
-- `retry`: failed cellをID、Issue、Nameで指定し、cell単位の排他leaseを取得して保存済みcheckpointから作成を再開する
 - `view`: TUI で cell を操作する
 - `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
 - `clean`: cell の worktree / container / session を片付ける

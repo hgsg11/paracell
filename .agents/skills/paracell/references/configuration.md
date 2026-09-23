@@ -10,7 +10,6 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | `paracell init` | Create `paracell.yaml` and initialize `.paracell/state.db` | Keeps an existing configuration unchanged |
 | `paracell fork <issue> --template <name> [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
-| `paracell retry <cell>` | Resume a failed cell by ID, Issue, or Name | Acquires a per-cell lease, re-renders the latest template, and skips completed creation stages |
 | `paracell view` | Open the cell/template TUI | Interactive |
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
 | `paracell pending` | Set the current cell to pending | Requires `PARACELL_CELL` |
@@ -116,7 +115,7 @@ The Paracell Skill stores the complete work package in a GitHub issue before dis
 - Pass `--note` on every Skill dispatch. Derive it from the issue title and body when available, or from the confirmed work objective otherwise.
 - Keep the note natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements. It is display-only, not a dispatch identifier or search key.
 - Use `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` with each argument passed separately.
-- If issue creation succeeds but `fork` fails, retain the issue and run `paracell retry <cell>` after fixing the cause. A normal `fork` with the same Issue or Name remains a duplicate.
+- If issue creation succeeds but `fork` fails, retain the issue and report the failed cell. A normal `fork` with the same Issue or Name remains a duplicate.
 - A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
 
 ## Template Variables
@@ -139,7 +138,7 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 - `database.mode: copy` requires `volumeMode: copy`, `database.system: mysql`, and `database.copyMode: schema`. It creates a cell-specific database container and volume, then copies every non-system schema. `copyMode: data` is rejected while loading configuration because data copy is not implemented.
 - `database.mode: shared` cannot be combined with `volumeMode`, `copyMode`, or `initFiles`. It does not copy a container, volume, or schema.
 - Shared database mode attaches the source database container to each cell network with every usable alias from its existing network attachments. It adds neither a fixed `db` alias nor a service-role alias and fails when the source has no usable aliases.
-- Rollback, retry preparation, and `clean` disconnect a shared source database only from the affected cell network; its original and other cell network attachments remain intact.
+- Rollback and `clean` disconnect a shared source database only from the affected cell network; its original and other cell network attachments remain intact.
 - Database `initFiles` in copy mode must be project-root-relative and remain within the project root.
 
 ## Runtime State
@@ -151,7 +150,7 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
 - CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use ID, issue, or name—not the note—to address a cell.
 
-Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps completed resources, including its Git branch and worktree. Retry uses the latest template for the failed and unstarted stages without replacing saved identifiers or completed resources. Only one retry can own a cell: a concurrent command fails immediately with `retry already in progress`, heartbeat refreshes the lease every 10 seconds, and a lease whose last heartbeat is more than two minutes old can be reclaimed. If a retried file already exists with different content in the worktree, Paracell refuses to overwrite it.
+Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps its failure stage and latest error for inspection.
 
 ## Source-of-Truth Checks
 

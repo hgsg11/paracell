@@ -4,19 +4,14 @@ import (
 	"context"
 	"reflect"
 	"testing"
-
-	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestEnterCellはSessionにEnterを依頼する(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
-	cell := domain.Cell{ID: "cell-1", Name: "123", Template: "webapp", Session: domain.Session{Name: "paracell-myapp-123"}}
+	cell := newUsecaseTestCell(t, "cell-1", "123", "webapp")
 
-	uc := EnterCellUseCase{
-		Config:         ports,
-		SessionFactory: ports,
-	}
+	uc := EnterCellUseCase{SessionFactory: ports}
 
 	got, err := uc.Execute(ctx, EnterCellInput{Cell: cell})
 	if err != nil {

@@ -17,80 +17,77 @@ type TmuxAdapter struct {
 	Root   string
 }
 
+func NewTmuxAdapter(runner system.Runner, root string) TmuxAdapter {
+	return TmuxAdapter{Runner: runner, Root: root}
+}
+
 const (
 	paracellClockFormat        = "%H:%M %d-%b-%y"
 	paracellDefaultStatusRight = "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}" + paracellClockFormat
 )
 
-func (a TmuxAdapter) CreateSession(ctx context.Context, cell domain.Cell) (returnErr error) {
-	if len(cell.Session.Windows) == 0 {
-		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-c", cellWorkingDirectory(cell)); err != nil {
+func (a TmuxAdapter) CreateSession(ctx context.Context, resource domain.SessionResource) (returnErr error) {
+	if len(resource.Windows) == 0 {
+		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", resource.Name, "-e", "PARACELL_CELL="+resource.CellName, "-e", "PARACELL_ROOT="+a.Root, "-c", resource.WorkingDirectory); err != nil {
 			return err
 		}
-		defer a.cleanupFailedCreation(ctx, cell, &returnErr)
-		return a.configureCellSession(ctx, cell)
+		defer a.cleanupFailedCreation(ctx, resource, &returnErr)
+		return a.configureCellSession(ctx, resource)
 	}
-	first := cell.Session.Windows[0]
-	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", cell.Session.Name, "-e", "PARACELL_CELL="+cell.Name, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", cellWorkingDirectory(cell)); err != nil {
+	first := resource.Windows[0]
+	if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", resource.Name, "-e", "PARACELL_CELL="+resource.CellName, "-e", "PARACELL_ROOT="+a.Root, "-n", first.Name, "-c", resource.WorkingDirectory); err != nil {
 		return err
 	}
-	defer a.cleanupFailedCreation(ctx, cell, &returnErr)
-	if err := a.runWindowCommand(ctx, cell, first); err != nil {
+	defer a.cleanupFailedCreation(ctx, resource, &returnErr)
+	if err := a.runWindowCommand(ctx, resource, first); err != nil {
 		return err
 	}
-	for _, window := range cell.Session.Windows[1:] {
-		if err := a.Runner.Run(ctx, "tmux", "new-window", "-t", cell.Session.Name, "-n", window.Name, "-c", cellWorkingDirectory(cell)); err != nil {
+	for _, window := range resource.Windows[1:] {
+		if err := a.Runner.Run(ctx, "tmux", "new-window", "-t", resource.Name, "-n", window.Name, "-c", resource.WorkingDirectory); err != nil {
 			return err
 		}
-		if err := a.runWindowCommand(ctx, cell, window); err != nil {
+		if err := a.runWindowCommand(ctx, resource, window); err != nil {
 			return err
 		}
 	}
-	return a.configureCellSession(ctx, cell)
+	return a.configureCellSession(ctx, resource)
 }
 
-func cellWorkingDirectory(cell domain.Cell) string {
-	if len(cell.Sources) == 0 {
-		return ""
-	}
-	return cell.Sources[0].Path
-}
-
-func (a TmuxAdapter) cleanupFailedCreation(ctx context.Context, cell domain.Cell, returnErr *error) {
+func (a TmuxAdapter) cleanupFailedCreation(ctx context.Context, resource domain.SessionResource, returnErr *error) {
 	if *returnErr == nil {
 		return
 	}
-	if err := a.CleanSession(context.WithoutCancel(ctx), cell); err != nil && !errors.Is(err, domain.ErrNotFound) {
+	if err := a.CleanSession(context.WithoutCancel(ctx), resource); err != nil && !errors.Is(err, domain.ErrNotFound) {
 		*returnErr = errors.Join(*returnErr, fmt.Errorf("clean partial tmux session: %w", err))
 	}
 }
 
-func (a TmuxAdapter) runWindowCommand(ctx context.Context, cell domain.Cell, window domain.SessionWindow) error {
+func (a TmuxAdapter) runWindowCommand(ctx context.Context, resource domain.SessionResource, window domain.SessionWindow) error {
 	if window.Command == "" {
 		return nil
 	}
-	return a.Runner.Run(ctx, "tmux", "send-keys", "-t", cell.Session.Name+":"+window.Name, window.Command, "Enter")
+	return a.Runner.Run(ctx, "tmux", "send-keys", "-t", resource.Name+":"+window.Name, window.Command, "Enter")
 }
 
-func (a TmuxAdapter) configureCellSession(ctx context.Context, cell domain.Cell) error {
-	if err := a.Runner.Run(ctx, "tmux", "set-environment", "-t", cell.Session.Name, "PARACELL_CELL", cell.Name); err != nil {
+func (a TmuxAdapter) configureCellSession(ctx context.Context, resource domain.SessionResource) error {
+	if err := a.Runner.Run(ctx, "tmux", "set-environment", "-t", resource.Name, "PARACELL_CELL", resource.CellName); err != nil {
 		return err
 	}
-	if err := a.Runner.Run(ctx, "tmux", "set-environment", "-t", cell.Session.Name, "PARACELL_ROOT", a.Root); err != nil {
+	if err := a.Runner.Run(ctx, "tmux", "set-environment", "-t", resource.Name, "PARACELL_ROOT", a.Root); err != nil {
 		return err
 	}
-	windowTargets := make([]string, 0, len(cell.Session.Windows))
-	for _, window := range cell.Session.Windows {
-		windowTargets = append(windowTargets, cell.Session.Name+":"+window.Name)
+	windowTargets := make([]string, 0, len(resource.Windows))
+	for _, window := range resource.Windows {
+		windowTargets = append(windowTargets, resource.Name+":"+window.Name)
 	}
 	if len(windowTargets) == 0 {
-		windowTargets = append(windowTargets, cell.Session.Name)
+		windowTargets = append(windowTargets, resource.Name)
 	}
-	return a.configureSession(ctx, cell.Session.Name, cellProjectName(cell), cell.DisplayLabel(), windowTargets)
+	return a.configureSession(ctx, resource.Name, resource.Project, resource.DisplayLabel, windowTargets)
 }
 
-func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, cell domain.Cell) error {
-	err := a.Runner.Run(ctx, "tmux", "set-option", "-t", cell.Session.Name, "@paracell-status-label", cell.DisplayLabel())
+func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, resource domain.SessionResource) error {
+	err := a.Runner.Run(ctx, "tmux", "set-option", "-t", resource.Name, "@paracell-status-label", resource.DisplayLabel)
 	if err == nil {
 		return nil
 	}
@@ -180,8 +177,8 @@ func (a TmuxAdapter) configureSession(ctx context.Context, target string, projec
 	return a.Runner.Run(ctx, "tmux", args...)
 }
 
-func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
-	err := a.Runner.Run(ctx, "tmux", "kill-session", "-t", cell.Session.Name)
+func (a TmuxAdapter) CleanSession(ctx context.Context, resource domain.SessionResource) error {
+	err := a.Runner.Run(ctx, "tmux", "kill-session", "-t", resource.Name)
 	if err == nil {
 		return nil
 	}
@@ -191,18 +188,18 @@ func (a TmuxAdapter) CleanSession(ctx context.Context, cell domain.Cell) error {
 	return err
 }
 
-func (a TmuxAdapter) EnterSession(ctx context.Context, cell domain.Cell) error {
-	if err := a.PrepareSession(ctx, cell); err != nil {
+func (a TmuxAdapter) EnterSession(ctx context.Context, resource domain.SessionResource) error {
+	if err := a.PrepareSession(ctx, resource); err != nil {
 		return err
 	}
 	if os.Getenv("TMUX") != "" {
-		return a.Runner.Run(ctx, "tmux", "switch-client", "-E", "-t", cell.Session.Name)
+		return a.Runner.Run(ctx, "tmux", "switch-client", "-E", "-t", resource.Name)
 	}
-	return a.Runner.Run(ctx, "tmux", "attach-session", "-E", "-t", cell.Session.Name)
+	return a.Runner.Run(ctx, "tmux", "attach-session", "-E", "-t", resource.Name)
 }
 
-func (a TmuxAdapter) PrepareSession(ctx context.Context, cell domain.Cell) error {
-	return a.configureCellSession(ctx, cell)
+func (a TmuxAdapter) PrepareSession(ctx context.Context, resource domain.SessionResource) error {
+	return a.configureCellSession(ctx, resource)
 }
 
 func (a TmuxAdapter) EnterRootSession(ctx context.Context, projectName string) error {
@@ -252,14 +249,6 @@ func (a TmuxAdapter) configureRootSession(ctx context.Context, name string) erro
 		return err
 	}
 	return a.configureSession(ctx, name, strings.TrimSuffix(name, "-root"), "root", []string{name})
-}
-
-func cellProjectName(cell domain.Cell) string {
-	project := strings.TrimSuffix(cell.Session.Name, "-"+cell.Name)
-	if project == "" || project == cell.Session.Name {
-		return cell.Session.Name
-	}
-	return project
 }
 
 func rootSessionName(project string) string {
