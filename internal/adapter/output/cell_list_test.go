@@ -1,7 +1,6 @@
 package output
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
@@ -52,8 +51,14 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
 	cell := outputCell(t, "123", "webapp", "")
-	cell.BeginCreation()
-	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
+	stored := cell.Stored()
+	stored.Creation.Status = domain.CreationFailed
+	stored.Creation.FailedStage = domain.CreationStageContainers
+	stored.Creation.LastError = "docker failed\nport already used\ttry another"
+	cell, err := domain.RestoreCell(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := FormatCellList([]domain.Cell{cell})
 	if !strings.Contains(got, "failed\tready\tfalse\tcontainers\tdocker failed port already used try another") {

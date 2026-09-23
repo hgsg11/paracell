@@ -46,8 +46,7 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if len(ports.cells) != 1 {
 		t.Fatalf("cells = %d", len(ports.cells))
 	}
-	failedStage, _ := ports.cells[0].CreationFailure()
-	if ports.cells[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+	if ports.cells[0].CreationStatus() != domain.CreationCreating {
 		t.Fatalf("cell = %#v", ports.cells[0])
 	}
 	repositories, worktrees := ports.cells[0].SourceCleanupTargets()
@@ -328,20 +327,19 @@ func TestCleanCellは現在のTemplateなしで保存済み対象を削除する
 	}
 }
 
-func TestForkCellはSession失敗をFailedとして保存する(t *testing.T) {
+func TestForkCellはSession失敗を返す(t *testing.T) {
 	ports := newConfiguredCreationPorts(t)
 	ports.createSessionErr = errors.New("session failed")
 	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
 	if !errors.Is(err, ports.createSessionErr) {
 		t.Fatalf("error = %v", err)
 	}
-	stage, _ := ports.cells[0].CreationFailure()
-	if stage != domain.CreationStageSession || ports.cells[0].CreationStatus() != domain.CreationFailed {
+	if ports.cells[0].CreationStatus() != domain.CreationCreating {
 		t.Fatalf("stored = %#v", ports.cells[0])
 	}
 }
 
-func TestForkCellは保存失敗したStageをFailedとして保存する(t *testing.T) {
+func TestForkCellは保存失敗を返す(t *testing.T) {
 	for _, stage := range []domain.CreationStage{domain.CreationStageContainers, domain.CreationStageSession} {
 		t.Run(string(stage), func(t *testing.T) {
 			ports := newConfiguredCreationPorts(t)
@@ -354,8 +352,7 @@ func TestForkCellは保存失敗したStageをFailedとして保存する(t *tes
 			if !errors.Is(err, ports.saveErr) {
 				t.Fatalf("error = %v", err)
 			}
-			failed, _ := ports.cells[0].CreationFailure()
-			if failed != stage || ports.cells[0].CreationStatus() != domain.CreationFailed {
+			if ports.cells[0].CreationStatus() != domain.CreationCreating {
 				t.Fatalf("stored = %#v", ports.cells[0])
 			}
 		})

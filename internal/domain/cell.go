@@ -209,15 +209,6 @@ func (c *Cell) BeginCreation() {
 	c.Creation = creation
 }
 
-func (c *Cell) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
 func (c *Cell) FinishCreation() {
 	c.Creation.Status = CreationReady
 	c.Creation.FailedStage = ""
