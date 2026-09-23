@@ -5,7 +5,7 @@ import (
 )
 
 type SourceCreationPort interface {
-	CreateSource(ctx context.Context, repository string, worktree string, base string, branch string) error
+	CreateSource(ctx context.Context, source Source, worktree string) error
 }
 
 func CreateSourcesService(ctx context.Context, templates []SourceTemplate, issue string, sourcePort SourceCreationPort) error {
@@ -15,7 +15,7 @@ func CreateSourcesService(ctx context.Context, templates []SourceTemplate, issue
 			return err
 		}
 		worktree := cellWorktreePath(issue, source.Path)
-		if err := sourcePort.CreateSource(ctx, source.Path, worktree, source.Base, source.Branch); err != nil {
+		if err := sourcePort.CreateSource(ctx, source, worktree); err != nil {
 			return err
 		}
 	}

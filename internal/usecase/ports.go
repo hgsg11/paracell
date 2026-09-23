@@ -26,7 +26,7 @@ type CellPort interface {
 }
 
 type SourcePort interface {
-	CreateSource(ctx context.Context, repository string, worktree string, base string, branch string) error
+	CreateSource(ctx context.Context, source domain.Source, worktree string) error
 	CleanSource(ctx context.Context, repository string, worktree string) error
 }
 

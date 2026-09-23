@@ -5,14 +5,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestCreateSourceは複数RepositoryのWorktreeを作る(t *testing.T) {
 	runner := &fakeRunner{}
 	for _, path := range []string{".", "api"} {
-		base := "main"
+		source, err := domain.NewSource(path, "main", "feat/42")
+		if err != nil {
+			t.Fatal(err)
+		}
 		worktree := filepath.Join(".paracell/cells/42/source", path)
-		if err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), path, worktree, base, "feat/42"); err != nil {
+		if err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), source, worktree); err != nil {
 			t.Fatal(err)
 		}
 	}
