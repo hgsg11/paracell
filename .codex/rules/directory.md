@@ -2,7 +2,7 @@
 
 - 1つのファイルには、原則として1つの型だけを定義すること。
 - 同じ利用側packageに属する関連Portは、`ports.go`へまとめてよい。
-- Domain Serviceは、Domain Service名と一致するファイルへ1関数だけ定義すること。
+- Domain Serviceは`Service`接尾辞を付けた名前にし、対応するsnake_caseファイル（例: `CreateContainersService`なら`create_containers_service.go`）へ1関数だけ定義すること。
 - 型は、その責務が分かる名前のファイルへ置くこと。
 - constructorを定義する場合は、その型を定義したファイルへ置くこと。
 - その型だけに属するmethodは、型を定義したファイルへ置くこと。
