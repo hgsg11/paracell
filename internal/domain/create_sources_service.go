@@ -11,7 +11,7 @@ type SourceCreationPort interface {
 func CreateSourcesService(ctx context.Context, templates []SourceTemplate, issue string, sourcePort SourceCreationPort) ([]Source, error) {
 	sources := make([]Source, 0, len(templates))
 	for _, template := range templates {
-		source, err := template.Source(issue)
+		source, err := NewSource(template.Path, template.WorktreePath(issue), template.Base, template.BranchName(issue))
 		if err != nil {
 			return nil, err
 		}

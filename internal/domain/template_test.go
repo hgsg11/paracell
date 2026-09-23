@@ -1,24 +1,21 @@
 package domain
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestSourceTemplateはissueからSourceの配置先とbranchを解決する(t *testing.T) {
+func TestSourceTemplateはissueからWorktreePathとBranchNameを作る(t *testing.T) {
 	template, err := NewSourceTemplate("api", "origin/main", "feat/")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	source, err := template.Source("feature/109")
-	if err != nil {
-		t.Fatal(err)
+	if got, want := template.WorktreePath("feature/109"), ".paracell/cells/feature-109/source/api"; got != want {
+		t.Fatalf("worktree path = %q, want %q", got, want)
 	}
-	want := Source{Path: "api", Worktree: ".paracell/cells/feature-109/source/api", Base: "origin/main", Branch: "feat/feature/109"}
-	if !reflect.DeepEqual(source, want) {
-		t.Fatalf("source = %#v, want %#v", source, want)
+	if got, want := template.BranchName("feature/109"), "feat/feature/109"; got != want {
+		t.Fatalf("branch = %q, want %q", got, want)
 	}
 }
 
