@@ -44,8 +44,8 @@ func TestCellのResource名は保存せずIdentityから導出する(t *testing.
 	if cell.Name().Value != "42" {
 		t.Fatalf("name = %q", cell.Name())
 	}
-	if cell.SourceWorktreePath(cell.Sources.Items[0]) != ".paracell/cells/42/source" {
-		t.Fatalf("path = %q", cell.SourceWorktreePath(cell.Sources.Items[0]))
+	if got := NewCellWorktree(cell.Name(), cell.Sources.Items[0]).Path; got != ".paracell/cells/42/source" {
+		t.Fatalf("path = %q", got)
 	}
 	if cell.ContainerNetworkName() != "paracell-sample-42" {
 		t.Fatalf("network = %q", cell.ContainerNetworkName())

@@ -2,7 +2,6 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -174,14 +173,6 @@ func (c Cell) Clone() Cell {
 	return c
 }
 
-func (c Cell) SourceWorktreePath(source Source) string {
-	path := filepath.Join(".paracell", "cells", c.Name().Value, "source")
-	if source.Path != "." {
-		path = filepath.Join(path, source.Path)
-	}
-	return path
-}
-
 func (c Cell) ContainerNetworkName() string {
 	return c.ResourcePrefix()
 }
@@ -223,7 +214,7 @@ func (c Cell) CreationStatus() CreationStatus {
 func (c Cell) SourceCleanupTargets() (repositories []string, worktrees []string) {
 	for _, source := range c.Sources.Items {
 		repositories = append(repositories, source.Path)
-		worktrees = append(worktrees, c.SourceWorktreePath(source))
+		worktrees = append(worktrees, NewCellWorktree(c.Name(), source).Path)
 	}
 	return repositories, worktrees
 }
@@ -252,5 +243,5 @@ func (c Cell) WorkingDirectory() string {
 	if len(c.Sources.Items) == 0 {
 		return ""
 	}
-	return c.SourceWorktreePath(c.Sources.Items[0])
+	return NewCellWorktree(c.Name(), c.Sources.Items[0]).Path
 }

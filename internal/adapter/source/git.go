@@ -19,10 +19,10 @@ func NewGitSourceAdapter(runner system.Runner, root string) GitSourceAdapter {
 	return GitSourceAdapter{Runner: runner, Root: root}
 }
 
-func (a GitSourceAdapter) CreateSource(ctx context.Context, source domain.SourceTemplate, worktree string, branch string) error {
-	args := append(a.gitArgs(source.Path), "worktree", "add", a.worktreePath(worktree), "-b", branch)
-	if source.Base != "" && source.Base != "current" {
-		args = append(args, source.Base)
+func (a GitSourceAdapter) CreateSource(ctx context.Context, repository string, worktree string, base string, branch string) error {
+	args := append(a.gitArgs(repository), "worktree", "add", a.worktreePath(worktree), "-b", branch)
+	if base != "" && base != "current" {
+		args = append(args, base)
 	}
 	return a.Runner.Run(ctx, "git", args...)
 }
