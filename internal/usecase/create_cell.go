@@ -29,6 +29,17 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	id := u.IDs.NewID()
+	if id == "" {
+		return domain.Cell{}, fmt.Errorf("cell id is required")
+	}
+	if input.Issue == "" {
+		return domain.Cell{}, fmt.Errorf("issue is required")
+	}
+	if input.Note != nil {
+		if _, err := domain.NormalizeCellNote(*input.Note); err != nil {
+			return domain.Cell{}, err
+		}
+	}
 	name := domain.NewCellName(input.Issue)
 	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, name.Value, cfg.ProjectName, input.Command))
 	if err != nil {
@@ -38,8 +49,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	sources, err := domain.BuildSources(cfg.SourceDriverType, resolved.Sources, input.Issue)
-	if err != nil {
+	if err := domain.EnsureCellUnique(existing, input.Issue, name); err != nil {
 		return domain.Cell{}, err
 	}
 	containers, err := domain.BuildContainers(cfg.ContainerDriverType, resolved.Containers)
@@ -47,16 +57,6 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	session, err := domain.BuildSession(cfg.SessionDriverType, resolved.Session)
-	if err != nil {
-		return domain.Cell{}, err
-	}
-	cell, err := domain.NewCell(
-		id, input.Issue, cfg.ProjectName, input.Template,
-		sources,
-		containers,
-		session,
-		cfg.NotificationDriverType,
-	)
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -72,13 +72,22 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.Cell{}, err
 	}
+	sourceItems, sourceErr := domain.CreateSourcesService(ctx, resolved.Sources, input.Issue, source)
+	sources := domain.NewSources(cfg.SourceDriverType, sourceItems)
+	cell, err := domain.NewCell(
+		id, input.Issue, cfg.ProjectName, input.Template,
+		sources,
+		containers,
+		session,
+		cfg.NotificationDriverType,
+	)
+	if err != nil {
+		return domain.Cell{}, err
+	}
 	if input.Note != nil {
 		if err = cell.SetNote(*input.Note); err != nil {
 			return domain.Cell{}, err
 		}
-	}
-	if err := domain.EnsureCellUnique(existing, input.Issue, cell.Name()); err != nil {
-		return domain.Cell{}, err
 	}
 	cell.BeginCreation()
 	if err := u.Cells.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
@@ -90,8 +99,8 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 
-	if err := domain.CreateSourcesService(ctx, cell.Sources.Items, source); err != nil {
-		return domain.Cell{}, err
+	if sourceErr != nil {
+		return cell, sourceErr
 	}
 	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i := range cells {
