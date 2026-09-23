@@ -73,25 +73,12 @@ func appearanceCalls(target string, project string, label string, windowTargets 
 	return calls
 }
 
-func cellSessionResource(note string, windows []domain.SessionWindow) domain.SessionResource {
-	label := "123"
-	if note != "" {
-		label = note
-	}
-	return domain.NewSessionResource("paracell-myapp-123", "123", "paracell-myapp", label, ".paracell/cells/123/source", windows)
-}
-
-func namedSessionResource(name string, windows []domain.SessionWindow) domain.SessionResource {
-	return domain.NewSessionResource("paracell-myapp-"+name, name, "paracell-myapp", name, ".paracell/cells/"+name+"/source", windows)
-}
-
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := cellSessionResource("", nil)
 
-	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+	if err := adapter.EnterSession(context.Background(), "paracell-myapp-123", "123", "paracell-myapp", "123", nil); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
 	want := appearanceCalls("paracell-myapp-123", "paracell-myapp", "123", "paracell-myapp-123")
@@ -112,10 +99,9 @@ func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 }
 
 func TestUpdateStatusLabelはNoteを優先しSessionなしを識別する(t *testing.T) {
-	cell := cellSessionResource("API実装中", nil)
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	if err := adapter.UpdateStatusLabel(context.Background(), cell); err != nil {
+	if err := adapter.UpdateStatusLabel(context.Background(), "paracell-myapp-123", "API実装中"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中"}
@@ -125,7 +111,7 @@ func TestUpdateStatusLabelはNoteを優先しSessionなしを識別する(t *tes
 
 	missingCall := "tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中"
 	runner = &fakeRunner{errors: map[string]error{missingCall: errors.New("can't find session: paracell-myapp-123")}}
-	err := (TmuxAdapter{Runner: runner}).UpdateStatusLabel(context.Background(), cell)
+	err := (TmuxAdapter{Runner: runner}).UpdateStatusLabel(context.Background(), "paracell-myapp-123", "API実装中")
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
@@ -133,8 +119,7 @@ func TestUpdateStatusLabelはNoteを優先しSessionなしを識別する(t *tes
 
 func TestPrepareSessionはNoteをStatusLabelへ反映する(t *testing.T) {
 	runner := &fakeRunner{}
-	cell := cellSessionResource("API実装中", nil)
-	if err := (TmuxAdapter{Runner: runner}).PrepareSession(context.Background(), cell); err != nil {
+	if err := (TmuxAdapter{Runner: runner}).PrepareSession(context.Background(), "paracell-myapp-123", "123", "paracell-myapp", "API実装中", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !containsCall(runner.calls, "tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中") {
@@ -146,9 +131,8 @@ func TestEnterSessionはResurrect後のSession環境を再設定する(t *testin
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := cellSessionResource("", nil)
 
-	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+	if err := adapter.EnterSession(context.Background(), "paracell-myapp-123", "123", "paracell-myapp", "123", nil); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -201,11 +185,11 @@ func TestCreateSessionは途中失敗時に部分Sessionを削除して再試行
 		"tmux new-window -t paracell-myapp-123 -n server -c .paracell/cells/123/source": createErr,
 	}}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := cellSessionResource("", []domain.SessionWindow{
-		{Name: "editor"}, {Name: "server"},
-	})
+	editor, _ := domain.NewWindow("editor", "")
+	server, _ := domain.NewWindow("server", "")
+	template := domain.NewSessionTemplate([]domain.Window{editor, server})
 
-	err := adapter.CreateSession(context.Background(), cell)
+	err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source")
 	if !errors.Is(err, createErr) {
 		t.Fatalf("error = %v", err)
 	}
@@ -221,9 +205,8 @@ func TestEnterSessionはResurrectで復元された全Windowを再設定する(t
 		"tmux list-windows -t " + target + " -F #{window_id}": "%9\n%10\n",
 	}}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := cellSessionResource("", nil)
 
-	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+	if err := adapter.EnterSession(context.Background(), "paracell-myapp-123", "123", "paracell-myapp", "123", nil); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
 	for _, windowID := range []string{"%9", "%10"} {
@@ -253,9 +236,8 @@ func TestEnterSessionはTMUX内ならswitchClientを使う(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := cellSessionResource("", nil)
 
-	if err := adapter.EnterSession(context.Background(), cell); err != nil {
+	if err := adapter.EnterSession(context.Background(), "paracell-myapp-123", "123", "paracell-myapp", "123", nil); err != nil {
 		t.Fatalf("EnterSessionでエラーが返った: %v", err)
 	}
 	want := appearanceCalls("paracell-myapp-123", "paracell-myapp", "123", "paracell-myapp-123")
@@ -477,9 +459,9 @@ func TestEnterRootSessionはTMUX内なら環境を更新せずswitchClientを使
 func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := namedSessionResource("123", nil)
+	template := domain.NewSessionTemplate(nil)
 
-	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -511,12 +493,11 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := namedSessionResource("123", []domain.SessionWindow{
-		{Name: "editor"},
-		{Name: "server"},
-	})
+	editor, _ := domain.NewWindow("editor", "")
+	server, _ := domain.NewWindow("server", "")
+	template := domain.NewSessionTemplate([]domain.Window{editor, server})
 
-	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -551,13 +532,12 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cell := namedSessionResource("123", []domain.SessionWindow{
-		{Name: "editor", Command: "nvim ."},
-		{Name: "server"},
-		{Name: "test", Command: "go test ./..."},
-	})
+	editor, _ := domain.NewWindow("editor", "nvim .")
+	server, _ := domain.NewWindow("server", "")
+	test, _ := domain.NewWindow("test", "go test ./...")
+	template := domain.NewSessionTemplate([]domain.Window{editor, server, test})
 
-	if err := adapter.CreateSession(context.Background(), cell); err != nil {
+	if err := adapter.CreateSession(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source"); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -597,14 +577,9 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 func TestCreateSessionは複数IssueのPopupBindingをSessionごとに分離する(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
-	cells := []domain.SessionResource{
-		namedSessionResource("123", nil),
-		namedSessionResource("456", nil),
-	}
-
-	for _, cell := range cells {
-		if err := adapter.CreateSession(context.Background(), cell); err != nil {
-			t.Fatalf("CreateSession(%s)でエラーが返った: %v", cell.Name, err)
+	for _, name := range []string{"123", "456"} {
+		if err := adapter.CreateSession(context.Background(), domain.NewSessionTemplate(nil), "paracell-myapp-"+name, name, "paracell-myapp", name, ".paracell/cells/"+name+"/source"); err != nil {
+			t.Fatalf("CreateSession(%s): %v", name, err)
 		}
 	}
 
@@ -628,9 +603,8 @@ func TestCleanSessionは見つからないSessionをnotFound扱いにする(t *t
 		},
 	}
 	adapter := TmuxAdapter{Runner: runner}
-	cell := namedSessionResource("123", nil)
 
-	err := adapter.CleanSession(context.Background(), cell)
+	err := adapter.CleanSession(context.Background(), "paracell-myapp-123")
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Fatalf("error = %v, want domain.ErrNotFound", err)
 	}

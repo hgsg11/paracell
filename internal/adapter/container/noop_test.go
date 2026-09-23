@@ -3,12 +3,10 @@ package container
 import (
 	"context"
 	"testing"
-
-	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
-	_, err := NoopAdapter{}.CreateContainers(context.Background(), domain.ContainerResources{})
+	_, err := NoopAdapter{}.CreateContainers(context.Background(), nil, "", "", "", "")
 
 	if err != nil {
 		t.Fatalf("CreateContainers error = %v, want nil", err)
@@ -16,7 +14,7 @@ func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
 }
 
 func TestNoopAdapterはCleanContainersで何もしない(t *testing.T) {
-	err := NoopAdapter{}.CleanContainers(context.Background(), domain.ContainerResources{})
+	err := NoopAdapter{}.CleanContainers(context.Background(), "", nil, nil)
 
 	if err != nil {
 		t.Fatalf("CleanContainers error = %v, want nil", err)

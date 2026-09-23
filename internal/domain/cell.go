@@ -3,6 +3,7 @@ package domain
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -236,41 +237,38 @@ func (c Cell) CreationStatus() CreationStatus {
 	return c.Creation.Status
 }
 
-func (c Cell) SourceResources() []SourceResource {
-	resources := make([]SourceResource, 0, len(c.Sources.Items))
+// SourceCleanupTargets identifies persisted worktrees without consulting templates.
+func (c Cell) SourceCleanupTargets() (repositories []string, worktrees []string) {
 	for _, source := range c.Sources.Items {
-		resources = append(resources, NewSourceResource(source.Path, c.SourceWorktreePath(source), source.Base, source.Branch))
+		repositories = append(repositories, source.Path)
+		worktrees = append(worktrees, c.SourceWorktreePath(source))
 	}
-	return resources
+	return repositories, worktrees
 }
 
-func (c Cell) ContainerResources(templates []ContainerTemplate) ContainerResources {
-	bySourceContainer := make(map[string]ContainerTemplate, len(templates))
-	for _, template := range templates {
-		bySourceContainer[template.Name] = template
-	}
-	items := make([]ContainerResource, 0, len(c.Containers.Items))
-	for _, container := range c.Containers.Items {
-		template := bySourceContainer[container.SourceContainer]
-		items = append(items, NewContainerResource(
-			c.ContainerResourceName(container), container.Network,
-			container.SourceContainer, container.Mode, template.Environments, template.Mounts,
-		))
-	}
-	sourcePath := ""
-	if len(c.Sources.Items) > 0 {
-		sourcePath = c.SourceWorktreePath(c.Sources.Items[0])
-		if sourcePath != "" {
-			sourcePath = filepath.Clean(sourcePath)
+func (c Cell) ContainerCleanupTargets() (containers []string, dependencies []string) {
+	items := append([]Container(nil), c.Containers.Items...)
+	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
+	for _, container := range items {
+		if container.Mode == Dependency {
+			dependencies = append(dependencies, container.SourceContainer)
+		} else {
+			containers = append(containers, c.ContainerResourceName(container))
 		}
 	}
-	return NewContainerResources(c.Name().Value, c.Project, c.ContainerNetworkName(), sourcePath, items)
+	return containers, dependencies
 }
 
-func (c Cell) SessionResource() SessionResource {
-	workingDirectory := ""
-	if len(c.Sources.Items) > 0 {
-		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
+func (c Cell) SessionPreparation() (name, cellName, project, label string, windowNames []string) {
+	for _, window := range c.Session.Windows {
+		windowNames = append(windowNames, window.Name)
 	}
-	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
+	return c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), windowNames
+}
+
+func (c Cell) WorkingDirectory() string {
+	if len(c.Sources.Items) == 0 {
+		return ""
+	}
+	return c.SourceWorktreePath(c.Sources.Items[0])
 }

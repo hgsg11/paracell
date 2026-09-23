@@ -26,21 +26,21 @@ type CellPort interface {
 }
 
 type SourcePort interface {
-	CreateSource(context.Context, domain.SourceResource) error
-	CleanSource(context.Context, domain.SourceResource) error
+	CreateSource(ctx context.Context, template domain.SourceTemplate, worktree string, branch string) error
+	CleanSource(ctx context.Context, repository string, worktree string) error
 }
 
 type ContainerPort interface {
-	CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error)
-	CleanContainers(context.Context, domain.ContainerResources) error
+	CreateContainers(ctx context.Context, templates []domain.ContainerTemplate, cellName string, project string, network string, sourcePath string) (map[string][]string, error)
+	CleanContainers(ctx context.Context, network string, containers []string, dependencies []string) error
 }
 
 type SessionPort interface {
-	CreateSession(context.Context, domain.SessionResource) error
-	CleanSession(context.Context, domain.SessionResource) error
-	PrepareSession(context.Context, domain.SessionResource) error
-	UpdateStatusLabel(context.Context, domain.SessionResource) error
-	EnterSession(context.Context, domain.SessionResource) error
+	CreateSession(ctx context.Context, template domain.SessionTemplate, name string, cellName string, project string, label string, workingDirectory string) error
+	CleanSession(ctx context.Context, name string) error
+	PrepareSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
+	UpdateStatusLabel(ctx context.Context, name string, label string) error
+	EnterSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
 	EnterRootSession(context.Context, string) error
 	ExitSession(context.Context) error
 }
