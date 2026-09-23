@@ -214,7 +214,7 @@ func (c Cell) CreationStatus() CreationStatus {
 func (c Cell) SourceCleanupTargets() (repositories []string, worktrees []string) {
 	for _, source := range c.Sources.Items {
 		repositories = append(repositories, source.Path)
-		worktrees = append(worktrees, NewCellWorktree(c.Name(), source).Path)
+		worktrees = append(worktrees, cellWorktreePath(c.Issue, source.Path))
 	}
 	return repositories, worktrees
 }
@@ -243,5 +243,5 @@ func (c Cell) WorkingDirectory() string {
 	if len(c.Sources.Items) == 0 {
 		return ""
 	}
-	return NewCellWorktree(c.Name(), c.Sources.Items[0]).Path
+	return cellWorktreePath(c.Issue, c.Sources.Items[0].Path)
 }
