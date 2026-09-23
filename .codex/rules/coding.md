@@ -48,9 +48,9 @@
 - Domain Serviceは1ファイルに1関数だけ定義し、ファイル名をDomain Service名に一致させること。
 - Domain Service名には`Service`接尾辞を付け、ファイル名にも`service`を含めること。例: `CreateContainersService` は `create_containers_service.go` に1関数だけ定義すること。
 - Domain ServiceをAggregate Rootのforwarding methodとして追加しないこと。
-- Application Serviceが必要なPortをFactoryから生成すること。Domain Serviceが外部処理を必要とする場合は、そのPortの必要な操作だけを渡すこと。
+- Application Serviceが必要なPortをFactoryから生成すること。Domain Serviceが外部処理を必要とする場合は、当該Serviceと同じファイルに必要最小限のPortを宣言し、Application Serviceから渡すこと。
 - interfaceは実装側ではなく利用側に定義し、利用側が必要とするmethodだけを含めること。
-- Portはすべてusecase packageへ定義し、domain packageへ置かないこと。
+- UseCaseが使うPortはusecase packageへ定義すること。Domain Serviceが使うPortは、そのServiceと同じファイルのdomain packageへ定義すること。
 
 ## テスト
 

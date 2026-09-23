@@ -2,10 +2,14 @@ package domain
 
 import "context"
 
-func CreateSourcesService(ctx context.Context, cell Cell, templates []SourceTemplate, create func(context.Context, SourceTemplate, string, string) error) error {
+type SourceCreationPort interface {
+	CreateSource(ctx context.Context, template SourceTemplate, worktree string, branch string) error
+}
+
+func CreateSourcesService(ctx context.Context, cell Cell, templates []SourceTemplate, sourcePort SourceCreationPort) error {
 	for i, template := range templates {
 		source := cell.Sources.Items[i]
-		if err := create(ctx, template, cell.SourceWorktreePath(source), source.Branch); err != nil {
+		if err := sourcePort.CreateSource(ctx, template, cell.SourceWorktreePath(source), source.Branch); err != nil {
 			return err
 		}
 	}
