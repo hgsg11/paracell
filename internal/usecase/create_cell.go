@@ -116,9 +116,11 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := cell.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err
 	}
-	if err := domain.CreateContainersService(ctx, &cell, resolved.Containers, containerPort.CreateContainers); err != nil {
+	networks, err := containerPort.CreateContainers(ctx, resolved.Containers, cell.Name().Value, cell.Project, cell.ContainerNetworkName(), cell.WorkingDirectory())
+	if err != nil {
 		return domain.Cell{}, err
 	}
+	cell.RecordContainerNetworks(networks)
 	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i := range cells {
 			if cells[i].SameIdentity(cell) {
