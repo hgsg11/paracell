@@ -116,7 +116,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := cell.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err
 	}
-	networks, err := containerPort.CreateContainers(ctx, resolved.Containers, cell.Name().Value, cell.Project, cell.ContainerNetworkName(), cell.WorkingDirectory())
+	networks, err := domain.CreateContainersService(ctx, resolved.Containers, cell.Name().Value, cell.Project, cell.ContainerNetworkName(), cell.WorkingDirectory(), containerPort)
 	if err != nil {
 		return domain.Cell{}, err
 	}
@@ -136,7 +136,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 	sessionName, sessionCellName, project, label, _ := cell.SessionPreparation()
-	if err := sessionPort.CreateSession(ctx, resolved.Session, sessionName, sessionCellName, project, label, cell.WorkingDirectory()); err != nil {
+	if err := domain.CreateSessionService(ctx, resolved.Session, sessionName, sessionCellName, project, label, cell.WorkingDirectory(), sessionPort); err != nil {
 		return domain.Cell{}, err
 	}
 	cell.FinishCreation()
