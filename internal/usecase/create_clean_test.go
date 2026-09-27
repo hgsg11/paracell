@@ -363,21 +363,14 @@ func TestForkCellはSession失敗を返す(t *testing.T) {
 }
 
 func TestForkCellは保存失敗を返す(t *testing.T) {
-	for _, stage := range []domain.CreationStage{domain.CreationStageContainers, domain.CreationStageSession} {
-		t.Run(string(stage), func(t *testing.T) {
-			ports := newConfiguredCreationPorts(t)
-			ports.failSaveAt = 3
-			if stage == domain.CreationStageSession {
-				ports.failSaveAt = 4
-			}
-			ports.saveErr = errors.New("save failed")
-			_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
-			if !errors.Is(err, ports.saveErr) {
-				t.Fatalf("error = %v", err)
-			}
-			if ports.cells[0].CreationStatus() != domain.CreationCreating {
-				t.Fatalf("stored = %#v", ports.cells[0])
-			}
-		})
+	ports := newConfiguredCreationPorts(t)
+	ports.failSaveAt = 2
+	ports.saveErr = errors.New("save failed")
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if !errors.Is(err, ports.saveErr) {
+		t.Fatalf("error = %v", err)
+	}
+	if ports.cells[0].CreationStatus() != domain.CreationCreating {
+		t.Fatalf("stored = %#v", ports.cells[0])
 	}
 }

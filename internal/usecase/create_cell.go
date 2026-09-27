@@ -67,45 +67,8 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 
-	if err := domain.CreateSourcesService(ctx, cell.Sources.Items, source); err != nil {
+	if err := domain.CreateCellResourcesService(ctx, &cell, resolved.Containers, source, containerPort, sessionPort); err != nil {
 		return cell, err
-	}
-	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i := range cells {
-			if cells[i].SameIdentity(cell) {
-				cells[i] = cell
-				return cells, nil
-			}
-		}
-		return nil, fmt.Errorf("cell %q not found", cell.Name().Value)
-	}); err != nil {
-		return domain.Cell{}, fmt.Errorf("save source stage: %w", err)
-	}
-	if err := cell.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
-	}
-	networks, err := domain.CreateContainersService(ctx, resolved.Containers, cell.Name().Value, cell.Project, cell.ContainerNetworkName(), cell.WorkingDirectory(), containerPort)
-	if err != nil {
-		return domain.Cell{}, err
-	}
-	cell.RecordContainerNetworks(networks)
-	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i := range cells {
-			if cells[i].SameIdentity(cell) {
-				cells[i] = cell
-				return cells, nil
-			}
-		}
-		return nil, fmt.Errorf("cell %q not found", cell.Name().Value)
-	}); err != nil {
-		return domain.Cell{}, fmt.Errorf("save containers stage: %w", err)
-	}
-	if err := cell.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
-	}
-	sessionName, sessionCellName, project, label, _ := cell.SessionPreparation()
-	if err := domain.CreateSessionService(ctx, resolved.Session, sessionName, sessionCellName, project, label, cell.WorkingDirectory(), sessionPort); err != nil {
-		return domain.Cell{}, err
 	}
 	cell.FinishCreation()
 	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
@@ -117,7 +80,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		}
 		return nil, fmt.Errorf("cell %q not found", cell.Name().Value)
 	}); err != nil {
-		return domain.Cell{}, fmt.Errorf("save session stage: %w", err)
+		return domain.Cell{}, fmt.Errorf("save cell resources: %w", err)
 	}
 	if err := cell.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err

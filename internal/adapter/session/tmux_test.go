@@ -73,6 +73,42 @@ func appearanceCalls(target string, project string, label string, windowTargets 
 	return calls
 }
 
+type sessionTestSourcePort struct{}
+
+func (sessionTestSourcePort) CreateSource(context.Context, string, string, string, string) error {
+	return nil
+}
+
+type sessionTestContainerPort struct{}
+
+func (sessionTestContainerPort) CreateContainers(context.Context, []domain.ContainerTemplate, string, string, string, string) (map[string][]string, error) {
+	return nil, nil
+}
+
+func createSessionForTest(ctx context.Context, template domain.SessionTemplate, project string, issue string, workingDirectory string, port domain.CellSessionCreationPort) error {
+	sources := []domain.Source{}
+	if workingDirectory != "" {
+		source, err := domain.NewSource("repo", workingDirectory, "main", "branch")
+		if err != nil {
+			return err
+		}
+		sources = append(sources, source)
+	}
+	windows := make([]domain.SessionWindow, 0, len(template.Windows))
+	for _, item := range template.Windows {
+		window, err := domain.NewSessionWindow(item.Name, item.Command)
+		if err != nil {
+			return err
+		}
+		windows = append(windows, window)
+	}
+	cell, err := domain.NewCell(issue, issue, project, "test", domain.NewSources(domain.Git, sources), domain.NewContainers(domain.None, nil), domain.NewSession(domain.Tmux, windows), domain.NoNotification, nil)
+	if err != nil {
+		return err
+	}
+	return domain.CreateCellResourcesService(ctx, &cell, nil, sessionTestSourcePort{}, sessionTestContainerPort{}, port)
+}
+
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	t.Setenv("TMUX", "")
 	runner := &fakeRunner{}
@@ -442,7 +478,7 @@ func TestCreateSessionはWindow未指定ならSessionだけ作る(t *testing.T) 
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	template := domain.NewSessionTemplate(nil)
 
-	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
+	if err := createSessionForTest(context.Background(), template, "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -478,7 +514,7 @@ func TestCreateSessionは指定Windowを作る(t *testing.T) {
 	server, _ := domain.NewWindow("server", "")
 	template := domain.NewSessionTemplate([]domain.Window{editor, server})
 
-	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
+	if err := createSessionForTest(context.Background(), template, "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -518,7 +554,7 @@ func TestCreateSessionはWindow作成後にCommandをEnterで実行する(t *tes
 	test, _ := domain.NewWindow("test", "go test ./...")
 	template := domain.NewSessionTemplate([]domain.Window{editor, server, test})
 
-	if err := domain.CreateSessionService(context.Background(), template, "paracell-myapp-123", "123", "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
+	if err := createSessionForTest(context.Background(), template, "paracell-myapp", "123", ".paracell/cells/123/source", adapter); err != nil {
 		t.Fatalf("CreateSessionでエラーが返った: %v", err)
 	}
 	want := []string{
@@ -559,7 +595,7 @@ func TestCreateSessionは複数IssueのPopupBindingをSessionごとに分離す�
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	for _, name := range []string{"123", "456"} {
-		if err := domain.CreateSessionService(context.Background(), domain.NewSessionTemplate(nil), "paracell-myapp-"+name, name, "paracell-myapp", name, ".paracell/cells/"+name+"/source", adapter); err != nil {
+		if err := createSessionForTest(context.Background(), domain.NewSessionTemplate(nil), "paracell-myapp", name, ".paracell/cells/"+name+"/source", adapter); err != nil {
 			t.Fatalf("CreateSession(%s): %v", name, err)
 		}
 	}
