@@ -13,7 +13,7 @@ func CreateCellService(id string, issue string, project string, templateName str
 
 	containerItems := make([]Container, 0, len(resolved.Containers))
 	for _, template := range resolved.Containers {
-		container, err := NewContainer(nil, template.Name, template.Mode)
+		container, err := NewContainer(nil, template.Name, template.Mode, template.Environments, template.Mounts)
 		if err != nil {
 			return Cell{}, err
 		}

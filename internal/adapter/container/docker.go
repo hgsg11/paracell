@@ -136,10 +136,10 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, templates []domain.ContainerTemplate, cellName string, project string, network string, sourcePath string) (networks map[string][]string, returnErr error) {
-	networks = make(map[string][]string, len(templates))
+func (a DockerCLIAdapter) CreateContainers(ctx context.Context, containers []domain.Container, cellName string, project string, network string, sourcePath string) (networks map[string][]string, returnErr error) {
+	networks = make(map[string][]string, len(containers))
 	networkCreated := false
-	createdContainers := make([]string, 0, len(templates))
+	createdContainers := make([]string, 0, len(containers))
 	sharedContainers := make([]string, 0, 1)
 	defer func() {
 		if returnErr == nil {
@@ -156,10 +156,10 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, templates []doma
 			return nil, err
 		}
 	}
-	items := append([]domain.ContainerTemplate(nil), templates...)
-	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+	items := append([]domain.Container(nil), containers...)
+	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
 	for _, service := range items {
-		source := service.Name
+		source := service.SourceContainer
 		name := network + "-" + domain.SafeResourceName(source, "container")
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {

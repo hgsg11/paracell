@@ -17,7 +17,7 @@ func persistedTestCell(t *testing.T) domain.Cell {
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	container, err := domain.NewContainer([]string{"project_default"}, "db", domain.Dependency)
+	container, err := domain.NewContainer([]string{"project_default"}, "db", domain.Dependency, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

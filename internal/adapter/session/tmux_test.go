@@ -81,7 +81,7 @@ func (sessionTestSourcePort) CreateSource(context.Context, string, string, strin
 
 type sessionTestContainerPort struct{}
 
-func (sessionTestContainerPort) CreateContainers(context.Context, []domain.ContainerTemplate, string, string, string, string) (map[string][]string, error) {
+func (sessionTestContainerPort) CreateContainers(context.Context, []domain.Container, string, string, string, string) (map[string][]string, error) {
 	return nil, nil
 }
 
@@ -106,7 +106,7 @@ func createSessionForTest(ctx context.Context, template domain.SessionTemplate, 
 	if err != nil {
 		return err
 	}
-	return domain.CreateCellResourcesService(ctx, &cell, nil, sessionTestSourcePort{}, sessionTestContainerPort{}, port)
+	return domain.CreateCellResourcesService(ctx, &cell, sessionTestSourcePort{}, sessionTestContainerPort{}, port)
 }
 
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {

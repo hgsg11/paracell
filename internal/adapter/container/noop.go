@@ -10,7 +10,7 @@ type NoopAdapter struct{}
 
 func NewNoopAdapter() NoopAdapter { return NoopAdapter{} }
 
-func (a NoopAdapter) CreateContainers(_ context.Context, _ []domain.ContainerTemplate, _, _, _, _ string) (map[string][]string, error) {
+func (a NoopAdapter) CreateContainers(_ context.Context, _ []domain.Container, _, _, _, _ string) (map[string][]string, error) {
 	return map[string][]string{}, nil
 }
 

@@ -65,7 +65,7 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 	}
 	containers := make([]Container, 0, len(stored.Containers.Items))
 	for _, container := range stored.Containers.Items {
-		validated, err := NewContainer(container.Network, container.SourceContainer, container.Mode)
+		validated, err := NewContainer(container.Network, container.SourceContainer, container.Mode, container.Environments, container.Mounts)
 		if err != nil {
 			return Cell{}, err
 		}

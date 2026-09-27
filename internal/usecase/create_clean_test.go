@@ -70,7 +70,7 @@ type fakePorts struct {
 	createSourceErr      error
 	cleanedSources       map[string]string
 	onCreateSource       func(string, string, string, string)
-	onCreateContainers   func([]domain.ContainerTemplate, string, string, string, string)
+	onCreateContainers   func([]domain.Container, string, string, string, string)
 	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
 	sessionWindows       []domain.Window
 	sessionWorkingDir    string
@@ -176,10 +176,10 @@ func (f *fakePorts) CleanSource(_ context.Context, repository string, worktree s
 	f.cleanedSources[repository] = worktree
 	return nil
 }
-func (f *fakePorts) CreateContainers(_ context.Context, templates []domain.ContainerTemplate, cellName string, project string, network string, sourcePath string) (map[string][]string, error) {
+func (f *fakePorts) CreateContainers(_ context.Context, containers []domain.Container, cellName string, project string, network string, sourcePath string) (map[string][]string, error) {
 	f.calls = append(f.calls, "containers:create")
 	if f.onCreateContainers != nil {
-		f.onCreateContainers(templates, cellName, project, network, sourcePath)
+		f.onCreateContainers(containers, cellName, project, network, sourcePath)
 	}
 	return map[string][]string{"app": {"original_default"}}, nil
 }
@@ -304,12 +304,12 @@ func TestForkCellは解決済みTemplateと実行時引数を渡しNetworkを保
 			t.Fatalf("source = %q, %q, %q, %q", repository, worktree, base, branch)
 		}
 	}
-	ports.onCreateContainers = func(templates []domain.ContainerTemplate, cellName, project, network, sourcePath string) {
+	ports.onCreateContainers = func(containers []domain.Container, cellName, project, network, sourcePath string) {
 		if cellName != "42" || project != "myapp" || network != "paracell-myapp-42" || sourcePath != ".paracell/cells/42/source/api" {
 			t.Fatalf("container arguments = %q %q %q %q", cellName, project, network, sourcePath)
 		}
-		if len(templates) != 2 || templates[0].Name != "app" || templates[0].Mode != domain.Target || templates[0].Environments[0].Value != "42" || templates[0].Mounts[0].TargetPath != "/app" || templates[1].Mode != domain.Dependency {
-			t.Fatalf("templates = %#v", templates)
+		if len(containers) != 2 || containers[0].SourceContainer != "app" || containers[0].Mode != domain.Target || containers[0].Environments[0].Value != "42" || containers[0].Mounts[0].TargetPath != "/app" || containers[1].Mode != domain.Dependency {
+			t.Fatalf("containers = %#v", containers)
 		}
 	}
 	ports.onCreateSession = func(template domain.SessionTemplate, name, cellName, project, label, directory string) {

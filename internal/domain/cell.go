@@ -174,6 +174,8 @@ func (c Cell) Clone() Cell {
 	c.Containers.Items = append([]Container(nil), c.Containers.Items...)
 	for i := range c.Containers.Items {
 		c.Containers.Items[i].Network = append([]string(nil), c.Containers.Items[i].Network...)
+		c.Containers.Items[i].Environments = append([]Environment(nil), c.Containers.Items[i].Environments...)
+		c.Containers.Items[i].Mounts = append([]Mount(nil), c.Containers.Items[i].Mounts...)
 	}
 	c.Session.Windows = append([]SessionWindow(nil), c.Session.Windows...)
 	return c
