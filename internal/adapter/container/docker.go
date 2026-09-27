@@ -146,25 +146,31 @@ func (a DockerCLIAdapter) CreateContainerNetwork(ctx context.Context, network st
 	return a.ensureGateway(ctx, network)
 }
 
-func (a DockerCLIAdapter) CreateContainer(ctx context.Context, containerName string, mode domain.Mode, environments []domain.Environment, templateMounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
+func (a DockerCLIAdapter) ConnectDependency(ctx context.Context, containerName string, network string) ([]string, error) {
+	inspection, err := a.inspectContainer(ctx, containerName)
+	if err != nil {
+		return nil, err
+	}
+	networks := sortedNetworkNames(inspection.NetworkSettings.Networks)
+	aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+	if len(aliases) == 0 {
+		return nil, fmt.Errorf("dependency container %q has no usable network aliases", containerName)
+	}
+	if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
+		if err := a.connectDependency(ctx, network, containerName, aliases); err != nil {
+			return nil, err
+		}
+	}
+	return networks, nil
+}
+
+func (a DockerCLIAdapter) CreateContainer(ctx context.Context, containerName string, environments []domain.Environment, templateMounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
 	name := network + "-" + domain.SafeResourceName(containerName, "container")
 	inspection, err := a.inspectContainer(ctx, containerName)
 	if err != nil {
 		return nil, err
 	}
 	networks := sortedNetworkNames(inspection.NetworkSettings.Networks)
-	if mode == domain.Dependency {
-		aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
-		if len(aliases) == 0 {
-			return nil, fmt.Errorf("dependency container %q has no usable network aliases", containerName)
-		}
-		if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
-			if err := a.connectDependency(ctx, network, containerName, aliases); err != nil {
-				return nil, err
-			}
-		}
-		return networks, nil
-	}
 	mounts, err := a.prepareMounts(ctx, sourcePath, name, templateMounts, inspection)
 	if err != nil {
 		return nil, err

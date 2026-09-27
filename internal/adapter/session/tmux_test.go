@@ -73,21 +73,7 @@ func appearanceCalls(target string, project string, label string, windowTargets 
 	return calls
 }
 
-type sessionTestSourcePort struct{}
-
-func (sessionTestSourcePort) CreateSource(context.Context, string, string, string, string) error {
-	return nil
-}
-
-type sessionTestContainerPort struct{}
-
-func (sessionTestContainerPort) CreateContainerNetwork(context.Context, string) error { return nil }
-
-func (sessionTestContainerPort) CreateContainer(context.Context, string, domain.Mode, []domain.Environment, []domain.Mount, string, string, string, string) ([]string, error) {
-	return nil, nil
-}
-
-func createSessionForTest(ctx context.Context, template domain.SessionTemplate, project string, issue string, workingDirectory string, port domain.CellSessionCreationPort) error {
+func createSessionForTest(ctx context.Context, template domain.SessionTemplate, project string, issue string, workingDirectory string, port domain.SessionCreationPort) error {
 	sources := []domain.Source{}
 	if workingDirectory != "" {
 		source, err := domain.NewSource("repo", workingDirectory, "main", "branch")
@@ -108,7 +94,7 @@ func createSessionForTest(ctx context.Context, template domain.SessionTemplate, 
 	if err != nil {
 		return err
 	}
-	return domain.CreateCellResourcesService(ctx, &cell, sessionTestSourcePort{}, sessionTestContainerPort{}, port)
+	return domain.CreateSessionService(ctx, &cell, port)
 }
 
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {

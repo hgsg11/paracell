@@ -70,7 +70,7 @@ type fakePorts struct {
 	createSourceErr      error
 	cleanedSources       map[string]string
 	onCreateSource       func(string, string, string, string)
-	onCreateContainer    func(string, domain.Mode, []domain.Environment, []domain.Mount, string, string, string, string)
+	onCreateContainer    func(string, []domain.Environment, []domain.Mount, string, string, string, string)
 	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
 	sessionWindows       []domain.Window
 	sessionWorkingDir    string
@@ -180,10 +180,17 @@ func (f *fakePorts) CreateContainerNetwork(_ context.Context, _ string) error {
 	f.calls = append(f.calls, "containers:network")
 	return nil
 }
-func (f *fakePorts) CreateContainer(_ context.Context, name string, mode domain.Mode, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
+func (f *fakePorts) CreateContainer(_ context.Context, name string, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
 	f.calls = append(f.calls, "containers:create")
 	if f.onCreateContainer != nil {
-		f.onCreateContainer(name, mode, environments, mounts, cellName, project, network, sourcePath)
+		f.onCreateContainer(name, environments, mounts, cellName, project, network, sourcePath)
+	}
+	return []string{"original_default"}, nil
+}
+func (f *fakePorts) ConnectDependency(_ context.Context, name string, _ string) ([]string, error) {
+	f.calls = append(f.calls, "containers:dependency")
+	if name != "db" {
+		return nil, errors.New("unexpected dependency container")
 	}
 	return []string{"original_default"}, nil
 }
@@ -308,18 +315,13 @@ func TestForkCellは解決済みTemplateと実行時引数を渡しNetworkを保
 			t.Fatalf("source = %q, %q, %q, %q", repository, worktree, base, branch)
 		}
 	}
-	created := 0
-	ports.onCreateContainer = func(name string, mode domain.Mode, environments []domain.Environment, mounts []domain.Mount, cellName, project, network, sourcePath string) {
+	ports.onCreateContainer = func(name string, environments []domain.Environment, mounts []domain.Mount, cellName, project, network, sourcePath string) {
 		if cellName != "42" || project != "myapp" || network != "paracell-myapp-42" || sourcePath != ".paracell/cells/42/source/api" {
 			t.Fatalf("container arguments = %q %q %q %q", cellName, project, network, sourcePath)
 		}
-		if created == 0 && (name != "app" || mode != domain.Target || len(environments) != 1 || environments[0].Value != "42" || len(mounts) != 1 || mounts[0].TargetPath != "/app") {
-			t.Fatalf("app arguments = %q %#v %#v %#v", name, mode, environments, mounts)
+		if name != "app" || len(environments) != 1 || environments[0].Value != "42" || len(mounts) != 1 || mounts[0].TargetPath != "/app" {
+			t.Fatalf("app arguments = %q %#v %#v", name, environments, mounts)
 		}
-		if created == 1 && (name != "db" || mode != domain.Dependency || len(environments) != 0 || len(mounts) != 0) {
-			t.Fatalf("dependency arguments = %q %#v %#v %#v", name, mode, environments, mounts)
-		}
-		created++
 	}
 	ports.onCreateSession = func(template domain.SessionTemplate, name, cellName, project, label, directory string) {
 		if name != "myapp-42" || cellName != "42" || project != "myapp" || label != "作業中" || directory != ".paracell/cells/42/source/api" {

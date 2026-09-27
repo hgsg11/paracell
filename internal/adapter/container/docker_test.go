@@ -45,7 +45,13 @@ func createContainersForTest(ctx context.Context, adapter DockerCLIAdapter, cont
 	sort.Slice(containers, func(i, j int) bool { return containers[i].SourceContainer < containers[j].SourceContainer })
 	networks := make(map[string][]string, len(containers))
 	for _, item := range containers {
-		itemNetworks, err := adapter.CreateContainer(ctx, item.SourceContainer, item.Mode, item.Environments, item.Mounts, cellName, project, network, sourcePath)
+		var itemNetworks []string
+		var err error
+		if item.Mode == domain.Dependency {
+			itemNetworks, err = adapter.ConnectDependency(ctx, item.SourceContainer, network)
+		} else {
+			itemNetworks, err = adapter.CreateContainer(ctx, item.SourceContainer, item.Environments, item.Mounts, cellName, project, network, sourcePath)
+		}
 		if err != nil {
 			return nil, err
 		}

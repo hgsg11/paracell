@@ -67,7 +67,15 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.Cell{}, err
 	}
 
-	if err := domain.CreateCellResourcesService(ctx, &cell, source, containerPort, sessionPort); err != nil {
+	if err := domain.CreateSourcesService(ctx, &cell, source); err != nil {
+		return cell, err
+	}
+	networks, err := domain.CreateContainersService(ctx, &cell, containerPort)
+	if err != nil {
+		return cell, err
+	}
+	cell.RecordContainerNetworks(networks)
+	if err := domain.CreateSessionService(ctx, &cell, sessionPort); err != nil {
 		return cell, err
 	}
 	cell.FinishCreation()
