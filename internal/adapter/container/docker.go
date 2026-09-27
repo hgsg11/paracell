@@ -136,31 +136,31 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, containers []domain.Container, cellName string, project string, network string, sourcePath string) (networks map[string][]string, returnErr error) {
-	networks = make(map[string][]string, len(containers))
+func (a DockerCLIAdapter) CreateContainers(ctx context.Context, input domain.ContainerCreationInput) (networks map[string][]string, returnErr error) {
+	networks = make(map[string][]string, len(input.Containers))
 	networkCreated := false
-	createdContainers := make([]string, 0, len(containers))
+	createdContainers := make([]string, 0, len(input.Containers))
 	sharedContainers := make([]string, 0, 1)
 	defer func() {
 		if returnErr == nil {
 			return
 		}
-		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), network, createdContainers, sharedContainers, networkCreated))
+		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), input.Network, createdContainers, sharedContainers, networkCreated))
 	}()
-	if network != "" {
-		if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
+	if input.Network != "" {
+		if err := a.Runner.Run(ctx, "docker", "network", "create", input.Network); err != nil {
 			return nil, err
 		}
 		networkCreated = true
-		if err := a.ensureGateway(ctx, network); err != nil {
+		if err := a.ensureGateway(ctx, input.Network); err != nil {
 			return nil, err
 		}
 	}
-	items := append([]domain.Container(nil), containers...)
+	items := append([]domain.Container(nil), input.Containers...)
 	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
 	for _, service := range items {
 		source := service.SourceContainer
-		name := network + "-" + domain.SafeResourceName(source, "container")
+		name := input.Network + "-" + domain.SafeResourceName(source, "container")
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return nil, err
@@ -171,31 +171,31 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, containers []dom
 			if len(aliases) == 0 {
 				return nil, fmt.Errorf("dependency container %q has no usable network aliases", source)
 			}
-			if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
-				if err := a.connectDependency(ctx, network, source, aliases); err != nil {
+			if _, connected := inspection.NetworkSettings.Networks[input.Network]; !connected {
+				if err := a.connectDependency(ctx, input.Network, source, aliases); err != nil {
 					return nil, err
 				}
 			}
 			sharedContainers = append(sharedContainers, source)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, sourcePath, name, service.Mounts, inspection)
+		mounts, err := a.prepareMounts(ctx, input.SourcePath, name, service.Mounts, inspection)
 		if err != nil {
 			return nil, err
 		}
 		networkAliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
 		networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(source, "service"))
 		labels := map[string]string{
-			composeProjectLabel: network,
+			composeProjectLabel: input.Network,
 			composeServiceLabel: source,
 		}
-		for label, value := range gatewayLabels(cellName, project, network, name, source, inspection.HostConfig.PortBindings) {
+		for label, value := range gatewayLabels(input.CellName, input.Project, input.Network, name, source, inspection.HostConfig.PortBindings) {
 			labels[label] = value
 		}
 		args := BuildDockerRunArgs(RunSpec{
 			Name:           name,
 			Image:          inspection.Config.Image,
-			Network:        network,
+			Network:        input.Network,
 			NetworkAliases: networkAliases,
 			Labels:         labels,
 			Env:            mergeEnvironment(inspection.Config.Env, service.Environments),

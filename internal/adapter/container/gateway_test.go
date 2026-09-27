@@ -207,7 +207,7 @@ func TestCreateContainersはCellContainerへGatewayRouteを登録する(t *testi
 		},
 	}}
 
-	if _, err := adapter.CreateContainers(context.Background(), containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source"); err != nil {
+	if _, err := adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source")); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if len(runner.runCalls) != 4 {
@@ -241,7 +241,7 @@ func TestCreateContainersはAliasやPortがなくてもGatewayをCellNetworkへ�
 	adapter := DockerCLIAdapter{Runner: runner}
 	templates := []domain.ContainerTemplate{{Name: "web", Mode: domain.Target}}
 
-	if _, err := adapter.CreateContainers(context.Background(), containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source"); err != nil {
+	if _, err := adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source")); err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
 	if got := runner.runCalls[2]; got != "docker network connect paracell-myapp-123 paracell-gateway" {
@@ -264,7 +264,7 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
 
-	_, err := adapter.CreateContainers(context.Background(), nil, "123", "myapp", "paracell-myapp-123", "")
+	_, err := adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(nil, "123", "myapp", "paracell-myapp-123", ""))
 	if err != nil {
 		t.Fatalf("CreateContainers returned error: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 		{Name: "web", Mode: domain.Target},
 	}
 
-	_, err := adapter.CreateContainers(context.Background(), containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source")
+	_, err := adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, templates), "123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source"))
 	if err == nil || !strings.Contains(err.Error(), "container start failed") {
 		t.Fatalf("error = %v", err)
 	}

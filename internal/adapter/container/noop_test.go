@@ -3,10 +3,12 @@ package container
 import (
 	"context"
 	"testing"
+
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
-	_, err := NoopAdapter{}.CreateContainers(context.Background(), nil, "", "", "", "")
+	_, err := NoopAdapter{}.CreateContainers(context.Background(), domain.NewContainerCreationInput(nil, "", "", "", ""))
 
 	if err != nil {
 		t.Fatalf("CreateContainers error = %v, want nil", err)

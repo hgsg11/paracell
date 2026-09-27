@@ -28,7 +28,7 @@ func TestCreateContainersはTargetを作りDependencyを接続する(t *testing.
 		t.Fatal(err)
 	}
 	containers := containersFromTemplates(t, []domain.ContainerTemplate{app, db})
-	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), containers, "42", "sample", "cell-42", ".paracell/cells/42/source"); err != nil {
+	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerCreationInput(containers, "42", "sample", "cell-42", ".paracell/cells/42/source")); err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Join(runner.runCalls, "\n")
@@ -108,7 +108,7 @@ func TestCreateContainersはTemplateMountと既存MountをCellへ適用する(t 
 		t.Fatal(err)
 	}
 	adapter := NewDockerCLIAdapter(runner, "/project")
-	_, err = adapter.CreateContainers(context.Background(), containersFromTemplates(t, []domain.ContainerTemplate{template}), "42", "sample", "cell-42", ".paracell/cells/42/source")
+	_, err = adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, []domain.ContainerTemplate{template}), "42", "sample", "cell-42", ".paracell/cells/42/source"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestCreateContainersは後続失敗時にDependencyを切断する(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewDockerCLIAdapter(runner, "/project").CreateContainers(context.Background(), containersFromTemplates(t, []domain.ContainerTemplate{target, dependency}), "42", "sample", "cell-42", "")
+	_, err = NewDockerCLIAdapter(runner, "/project").CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, []domain.ContainerTemplate{target, dependency}), "42", "sample", "cell-42", ""))
 	if !errors.Is(err, failure) {
 		t.Fatalf("error = %v", err)
 	}
