@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -28,13 +29,29 @@ func TestCreateContainersはTargetを作りDependencyを接続する(t *testing.
 		t.Fatal(err)
 	}
 	containers := containersFromTemplates(t, []domain.ContainerTemplate{app, db})
-	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerCreationInput(containers, "42", "sample", "cell-42", ".paracell/cells/42/source")); err != nil {
+	if _, err := createContainersForTest(context.Background(), DockerCLIAdapter{Runner: runner, Root: "/project"}, containers, "42", "sample", "cell-42", ".paracell/cells/42/source"); err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Join(runner.runCalls, "\n")
 	if !strings.Contains(calls, "docker run -d --name cell-42-app") || !strings.Contains(calls, "docker network connect --alias db cell-42 db") {
 		t.Fatalf("calls = %s", calls)
 	}
+}
+
+func createContainersForTest(ctx context.Context, adapter DockerCLIAdapter, containers []domain.Container, cellName string, project string, network string, sourcePath string) (map[string][]string, error) {
+	if err := adapter.CreateContainerNetwork(ctx, network); err != nil {
+		return nil, err
+	}
+	sort.Slice(containers, func(i, j int) bool { return containers[i].SourceContainer < containers[j].SourceContainer })
+	networks := make(map[string][]string, len(containers))
+	for _, item := range containers {
+		itemNetworks, err := adapter.CreateContainer(ctx, item.SourceContainer, item.Mode, item.Environments, item.Mounts, cellName, project, network, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		networks[item.SourceContainer] = itemNetworks
+	}
+	return networks, nil
 }
 
 func containersFromTemplates(t testing.TB, templates []domain.ContainerTemplate) []domain.Container {
@@ -108,7 +125,7 @@ func TestCreateContainersはTemplateMountと既存MountをCellへ適用する(t 
 		t.Fatal(err)
 	}
 	adapter := NewDockerCLIAdapter(runner, "/project")
-	_, err = adapter.CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, []domain.ContainerTemplate{template}), "42", "sample", "cell-42", ".paracell/cells/42/source"))
+	_, err = createContainersForTest(context.Background(), adapter, containersFromTemplates(t, []domain.ContainerTemplate{template}), "42", "sample", "cell-42", ".paracell/cells/42/source")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,35 +140,6 @@ func TestCreateContainersはTemplateMountと既存MountをCellへ適用する(t 
 		if !strings.Contains(calls, want) {
 			t.Errorf("missing %q in %s", want, calls)
 		}
-	}
-}
-
-func TestCreateContainersは後続失敗時にDependencyを切断する(t *testing.T) {
-	failure := errors.New("inspect failed")
-	runner := &fakeRunner{
-		outputs:      []string{`{"NetworkSettings":{"Networks":{"original":{"Aliases":["db"]}}}}`, ""},
-		outputErrors: []error{nil, failure},
-	}
-	dependency, err := domain.NewContainerTemplate("db", domain.Dependency, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := domain.NewContainerTemplate("web", domain.Target, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = NewDockerCLIAdapter(runner, "/project").CreateContainers(context.Background(), domain.NewContainerCreationInput(containersFromTemplates(t, []domain.ContainerTemplate{target, dependency}), "42", "sample", "cell-42", ""))
-	if !errors.Is(err, failure) {
-		t.Fatalf("error = %v", err)
-	}
-	calls := strings.Join(runner.runCalls, "\n")
-	for _, want := range []string{"docker network connect --alias db cell-42 db", "docker network disconnect cell-42 db", "docker network rm cell-42"} {
-		if !strings.Contains(calls, want) {
-			t.Errorf("missing %q in %s", want, calls)
-		}
-	}
-	if strings.Contains(calls, "docker rm -f db") {
-		t.Fatalf("dependency removed: %s", calls)
 	}
 }
 

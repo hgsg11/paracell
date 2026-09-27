@@ -27,7 +27,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 		"factory:container:none",
 		"factory:session:tmux",
 		"source:create",
-		"containers:create",
+		"containers:network",
 		"session:create",
 		"session:configure",
 	}
@@ -70,7 +70,7 @@ type fakePorts struct {
 	createSourceErr      error
 	cleanedSources       map[string]string
 	onCreateSource       func(string, string, string, string)
-	onCreateContainers   func(domain.ContainerCreationInput)
+	onCreateContainer    func(string, domain.Mode, []domain.Environment, []domain.Mount, string, string, string, string)
 	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
 	sessionWindows       []domain.Window
 	sessionWorkingDir    string
@@ -176,12 +176,16 @@ func (f *fakePorts) CleanSource(_ context.Context, repository string, worktree s
 	f.cleanedSources[repository] = worktree
 	return nil
 }
-func (f *fakePorts) CreateContainers(_ context.Context, input domain.ContainerCreationInput) (map[string][]string, error) {
+func (f *fakePorts) CreateContainerNetwork(_ context.Context, _ string) error {
+	f.calls = append(f.calls, "containers:network")
+	return nil
+}
+func (f *fakePorts) CreateContainer(_ context.Context, name string, mode domain.Mode, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
 	f.calls = append(f.calls, "containers:create")
-	if f.onCreateContainers != nil {
-		f.onCreateContainers(input)
+	if f.onCreateContainer != nil {
+		f.onCreateContainer(name, mode, environments, mounts, cellName, project, network, sourcePath)
 	}
-	return map[string][]string{"app": {"original_default"}}, nil
+	return []string{"original_default"}, nil
 }
 func (f *fakePorts) CleanContainers(_ context.Context, network string, containers []string, dependencies []string) error {
 	f.calls = append(f.calls, "containers:clean")
@@ -304,13 +308,18 @@ func TestForkCellは解決済みTemplateと実行時引数を渡しNetworkを保
 			t.Fatalf("source = %q, %q, %q, %q", repository, worktree, base, branch)
 		}
 	}
-	ports.onCreateContainers = func(input domain.ContainerCreationInput) {
-		if input.CellName != "42" || input.Project != "myapp" || input.Network != "paracell-myapp-42" || input.SourcePath != ".paracell/cells/42/source/api" {
-			t.Fatalf("container input = %#v", input)
+	created := 0
+	ports.onCreateContainer = func(name string, mode domain.Mode, environments []domain.Environment, mounts []domain.Mount, cellName, project, network, sourcePath string) {
+		if cellName != "42" || project != "myapp" || network != "paracell-myapp-42" || sourcePath != ".paracell/cells/42/source/api" {
+			t.Fatalf("container arguments = %q %q %q %q", cellName, project, network, sourcePath)
 		}
-		if len(input.Containers) != 2 || input.Containers[0].SourceContainer != "app" || input.Containers[0].Mode != domain.Target || input.Containers[0].Environments[0].Value != "42" || input.Containers[0].Mounts[0].TargetPath != "/app" || input.Containers[1].Mode != domain.Dependency {
-			t.Fatalf("containers = %#v", input.Containers)
+		if created == 0 && (name != "app" || mode != domain.Target || len(environments) != 1 || environments[0].Value != "42" || len(mounts) != 1 || mounts[0].TargetPath != "/app") {
+			t.Fatalf("app arguments = %q %#v %#v %#v", name, mode, environments, mounts)
 		}
+		if created == 1 && (name != "db" || mode != domain.Dependency || len(environments) != 0 || len(mounts) != 0) {
+			t.Fatalf("dependency arguments = %q %#v %#v %#v", name, mode, environments, mounts)
+		}
+		created++
 	}
 	ports.onCreateSession = func(template domain.SessionTemplate, name, cellName, project, label, directory string) {
 		if name != "myapp-42" || cellName != "42" || project != "myapp" || label != "作業中" || directory != ".paracell/cells/42/source/api" {

@@ -7,7 +7,8 @@ type CellSourceCreationPort interface {
 }
 
 type CellContainerCreationPort interface {
-	CreateContainers(ctx context.Context, input ContainerCreationInput) (map[string][]string, error)
+	CreateContainerNetwork(ctx context.Context, network string) error
+	CreateContainer(ctx context.Context, containerName string, mode Mode, environments []Environment, mounts []Mount, cellName string, project string, network string, sourcePath string) ([]string, error)
 }
 
 type CellSessionCreationPort interface {
@@ -25,10 +26,17 @@ func CreateCellResourcesService(ctx context.Context, cell *Cell, sourcePort Cell
 	}
 
 	name, cellName, project, label, windowNames := cell.SessionPreparation()
-	containerInput := NewContainerCreationInput(cell.Containers.Items, cellName, project, cell.ContainerNetworkName(), cell.WorkingDirectory())
-	networks, err := containerPort.CreateContainers(ctx, containerInput)
-	if err != nil {
+	network := cell.ContainerNetworkName()
+	if err := containerPort.CreateContainerNetwork(ctx, network); err != nil {
 		return err
+	}
+	networks := make(map[string][]string, len(cell.Containers.Items))
+	for _, container := range cell.Containers.Items {
+		containerNetworks, err := containerPort.CreateContainer(ctx, container.SourceContainer, container.Mode, container.Environments, container.Mounts, cellName, project, network, cell.WorkingDirectory())
+		if err != nil {
+			return err
+		}
+		networks[container.SourceContainer] = containerNetworks
 	}
 	cell.RecordContainerNetworks(networks)
 

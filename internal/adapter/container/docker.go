@@ -136,83 +136,67 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
-func (a DockerCLIAdapter) CreateContainers(ctx context.Context, input domain.ContainerCreationInput) (networks map[string][]string, returnErr error) {
-	networks = make(map[string][]string, len(input.Containers))
-	networkCreated := false
-	createdContainers := make([]string, 0, len(input.Containers))
-	sharedContainers := make([]string, 0, 1)
-	defer func() {
-		if returnErr == nil {
-			return
-		}
-		returnErr = errors.Join(returnErr, a.rollbackContainerStage(context.WithoutCancel(ctx), input.Network, createdContainers, sharedContainers, networkCreated))
-	}()
-	if input.Network != "" {
-		if err := a.Runner.Run(ctx, "docker", "network", "create", input.Network); err != nil {
-			return nil, err
-		}
-		networkCreated = true
-		if err := a.ensureGateway(ctx, input.Network); err != nil {
-			return nil, err
-		}
+func (a DockerCLIAdapter) CreateContainerNetwork(ctx context.Context, network string) error {
+	if network == "" {
+		return nil
 	}
-	items := append([]domain.Container(nil), input.Containers...)
-	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
-	for _, service := range items {
-		source := service.SourceContainer
-		name := input.Network + "-" + domain.SafeResourceName(source, "container")
-		inspection, err := a.inspectContainer(ctx, source)
-		if err != nil {
-			return nil, err
+	if err := a.Runner.Run(ctx, "docker", "network", "create", network); err != nil {
+		return err
+	}
+	return a.ensureGateway(ctx, network)
+}
+
+func (a DockerCLIAdapter) CreateContainer(ctx context.Context, containerName string, mode domain.Mode, environments []domain.Environment, templateMounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
+	name := network + "-" + domain.SafeResourceName(containerName, "container")
+	inspection, err := a.inspectContainer(ctx, containerName)
+	if err != nil {
+		return nil, err
+	}
+	networks := sortedNetworkNames(inspection.NetworkSettings.Networks)
+	if mode == domain.Dependency {
+		aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+		if len(aliases) == 0 {
+			return nil, fmt.Errorf("dependency container %q has no usable network aliases", containerName)
 		}
-		networks[source] = sortedNetworkNames(inspection.NetworkSettings.Networks)
-		if service.Mode == domain.Dependency {
-			aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
-			if len(aliases) == 0 {
-				return nil, fmt.Errorf("dependency container %q has no usable network aliases", source)
+		if _, connected := inspection.NetworkSettings.Networks[network]; !connected {
+			if err := a.connectDependency(ctx, network, containerName, aliases); err != nil {
+				return nil, err
 			}
-			if _, connected := inspection.NetworkSettings.Networks[input.Network]; !connected {
-				if err := a.connectDependency(ctx, input.Network, source, aliases); err != nil {
-					return nil, err
-				}
-			}
-			sharedContainers = append(sharedContainers, source)
-			continue
 		}
-		mounts, err := a.prepareMounts(ctx, input.SourcePath, name, service.Mounts, inspection)
-		if err != nil {
-			return nil, err
-		}
-		networkAliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
-		networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(source, "service"))
-		labels := map[string]string{
-			composeProjectLabel: input.Network,
-			composeServiceLabel: source,
-		}
-		for label, value := range gatewayLabels(input.CellName, input.Project, input.Network, name, source, inspection.HostConfig.PortBindings) {
-			labels[label] = value
-		}
-		args := BuildDockerRunArgs(RunSpec{
-			Name:           name,
-			Image:          inspection.Config.Image,
-			Network:        input.Network,
-			NetworkAliases: networkAliases,
-			Labels:         labels,
-			Env:            mergeEnvironment(inspection.Config.Env, service.Environments),
-			Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
-			Command:        append([]string(nil), inspection.Config.Cmd...),
-			WorkDir:        inspection.Config.WorkingDir,
-			User:           inspection.Config.User,
-			Tty:            inspection.Config.Tty,
-			OpenStdin:      inspection.Config.OpenStdin,
-			Health:         inspection.Config.Healthcheck.toSpec(),
-			Mounts:         mounts,
-			ExposedPorts:   exposedPortsFromBindings(inspection.HostConfig.PortBindings),
-		})
-		if err := a.Runner.Run(ctx, "docker", args...); err != nil {
-			return nil, err
-		}
-		createdContainers = append(createdContainers, name)
+		return networks, nil
+	}
+	mounts, err := a.prepareMounts(ctx, sourcePath, name, templateMounts, inspection)
+	if err != nil {
+		return nil, err
+	}
+	networkAliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
+	networkAliases = appendNetworkAlias(networkAliases, domain.SafeResourceName(containerName, "service"))
+	labels := map[string]string{
+		composeProjectLabel: network,
+		composeServiceLabel: containerName,
+	}
+	for label, value := range gatewayLabels(cellName, project, network, name, containerName, inspection.HostConfig.PortBindings) {
+		labels[label] = value
+	}
+	args := BuildDockerRunArgs(RunSpec{
+		Name:           name,
+		Image:          inspection.Config.Image,
+		Network:        network,
+		NetworkAliases: networkAliases,
+		Labels:         labels,
+		Env:            mergeEnvironment(inspection.Config.Env, environments),
+		Entrypoint:     append([]string(nil), inspection.Config.Entrypoint...),
+		Command:        append([]string(nil), inspection.Config.Cmd...),
+		WorkDir:        inspection.Config.WorkingDir,
+		User:           inspection.Config.User,
+		Tty:            inspection.Config.Tty,
+		OpenStdin:      inspection.Config.OpenStdin,
+		Health:         inspection.Config.Healthcheck.toSpec(),
+		Mounts:         mounts,
+		ExposedPorts:   exposedPortsFromBindings(inspection.HostConfig.PortBindings),
+	})
+	if err := a.Runner.Run(ctx, "docker", args...); err != nil {
+		return nil, err
 	}
 	return networks, nil
 }
@@ -266,29 +250,6 @@ func (a DockerCLIAdapter) disconnectDependency(ctx context.Context, network stri
 		return fmt.Errorf("disconnect dependency container %q from network %q: %w", source, network, err)
 	}
 	return nil
-}
-
-func (a DockerCLIAdapter) rollbackContainerStage(ctx context.Context, network string, containers []string, sharedContainers []string, networkCreated bool) error {
-	var rollbackErr error
-	for i := len(containers) - 1; i >= 0; i-- {
-		if err := a.Runner.Run(ctx, "docker", "rm", "-f", containers[i]); err != nil && !isMissingDockerResourceError(err) {
-			rollbackErr = errors.Join(rollbackErr, err)
-		}
-	}
-	for i := len(sharedContainers) - 1; i >= 0; i-- {
-		if err := a.disconnectDependency(ctx, network, sharedContainers[i]); err != nil {
-			rollbackErr = errors.Join(rollbackErr, err)
-		}
-	}
-	if err := a.disconnectGateway(ctx, network); err != nil {
-		rollbackErr = errors.Join(rollbackErr, err)
-	}
-	if networkCreated {
-		if err := a.Runner.Run(ctx, "docker", "network", "rm", network); err != nil && !isMissingDockerResourceError(err) {
-			rollbackErr = errors.Join(rollbackErr, err)
-		}
-	}
-	return rollbackErr
 }
 
 func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (containerInspection, error) {

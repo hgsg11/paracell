@@ -81,7 +81,9 @@ func (sessionTestSourcePort) CreateSource(context.Context, string, string, strin
 
 type sessionTestContainerPort struct{}
 
-func (sessionTestContainerPort) CreateContainers(context.Context, domain.ContainerCreationInput) (map[string][]string, error) {
+func (sessionTestContainerPort) CreateContainerNetwork(context.Context, string) error { return nil }
+
+func (sessionTestContainerPort) CreateContainer(context.Context, string, domain.Mode, []domain.Environment, []domain.Mount, string, string, string, string) ([]string, error) {
 	return nil, nil
 }
 

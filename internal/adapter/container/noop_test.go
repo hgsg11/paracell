@@ -7,11 +7,13 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func TestNoopAdapterはCreateContainersで何もしない(t *testing.T) {
-	_, err := NoopAdapter{}.CreateContainers(context.Background(), domain.NewContainerCreationInput(nil, "", "", "", ""))
-
-	if err != nil {
-		t.Fatalf("CreateContainers error = %v, want nil", err)
+func TestNoopAdapterはContainer作成で何もしない(t *testing.T) {
+	adapter := NoopAdapter{}
+	if err := adapter.CreateContainerNetwork(context.Background(), ""); err != nil {
+		t.Fatalf("CreateContainerNetwork error = %v, want nil", err)
+	}
+	if _, err := adapter.CreateContainer(context.Background(), "", domain.Target, nil, nil, "", "", "", ""); err != nil {
+		t.Fatalf("CreateContainer error = %v, want nil", err)
 	}
 }
 

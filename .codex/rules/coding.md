@@ -52,7 +52,7 @@
 - Application Serviceが必要なPortをFactoryから生成すること。Domain Serviceが外部処理を必要とする場合は、当該Serviceと同じファイルに必要最小限のPortを宣言し、Application Serviceから渡すこと。
 - interfaceは実装側ではなく利用側に定義し、利用側が必要とするmethodだけを含めること。
 - UseCaseが使うPortはusecase packageへ定義すること。Domain Serviceが使うPortは、そのServiceと同じファイルのdomain packageへ定義すること。
-- 外部リソース作成用PortへCellなどのAggregate Rootを渡さないこと。Domain ServiceまたはUseCaseがAggregateから外部処理に必要なデータを取り出してまとめ、Portにはそのデータだけを渡すこと。Port/Adapterは受け取ったデータを外部呼び出し用に結合・変換する責務に限定し、Aggregateの問い合わせ・変更やdomain ruleの判断を行わないこと。
+- 外部リソース作成用PortへCellなどのAggregate Rootや所有Entityを渡さないこと。Domain ServiceまたはUseCaseで必要な項目を列挙し、各項目から外部処理に必要な値だけをPortへ渡すこと。Port/Adapterは受け取った値を外部呼び出し用に結合・変換する責務に限定し、Aggregateの問い合わせ・変更やdomain ruleの判断を行わないこと。
 
 ## テスト
 

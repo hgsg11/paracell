@@ -31,7 +31,8 @@ type SourcePort interface {
 }
 
 type ContainerPort interface {
-	CreateContainers(ctx context.Context, input domain.ContainerCreationInput) (map[string][]string, error)
+	CreateContainerNetwork(ctx context.Context, network string) error
+	CreateContainer(ctx context.Context, containerName string, mode domain.Mode, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error)
 	CleanContainers(ctx context.Context, network string, containers []string, dependencies []string) error
 }
 
