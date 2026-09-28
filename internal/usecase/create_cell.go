@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -23,75 +22,43 @@ type ForkCellUseCase struct {
 	IDs              IDGenerator
 }
 
-func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.Cell, error) {
+func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (*domain.Cell, error) {
 	cfg, err := u.Config.Load(ctx)
 	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
-	id := u.IDs.NewID()
-	name := domain.NewCellName(input.Issue)
-	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, name.Value, cfg.ProjectName, input.Command))
+	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, cfg.ProjectName, input.Command))
 	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
-	existing, err := u.Cells.LoadCells(ctx)
+	cell, err := domain.CreateCellService(ctx, u.IDs.NewID(), input.Issue, cfg.ProjectName, input.Template, resolved, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.SessionDriverType, cfg.NotificationDriverType, input.Note, u.Cells)
 	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
-	if err := domain.EnsureCellUnique(existing, input.Issue, name); err != nil {
-		return domain.Cell{}, err
-	}
-	cell, err := domain.CreateCellService(id, input.Issue, cfg.ProjectName, input.Template, resolved, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.SessionDriverType, cfg.NotificationDriverType, input.Note)
+	sourcePort, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
-		return domain.Cell{}, err
-	}
-	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
-	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
 	containerPort, err := u.ContainerFactory.Container(cfg.ContainerDriverType)
 	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
 	sessionPort, err := u.SessionFactory.Session(cfg.SessionDriverType)
 	if err != nil {
-		return domain.Cell{}, err
+		return nil, err
 	}
-	cell.BeginCreation()
-	if err := u.Cells.UpdateCells(ctx, func(latest []domain.Cell) ([]domain.Cell, error) {
-		if err := domain.EnsureCellUnique(latest, input.Issue, cell.Name()); err != nil {
-			return nil, err
-		}
-		return append(latest, cell), nil
-	}); err != nil {
-		return domain.Cell{}, err
+	if err := u.Cells.CreateCell(ctx, cell); err != nil {
+		return nil, err
 	}
 
-	if err := domain.CreateSourcesService(ctx, &cell, source); err != nil {
-		return cell, err
+	if err := domain.CreateSourcesService(ctx, &cell, sourcePort, u.Cells); err != nil {
+		return nil, err
 	}
-	networks, err := domain.CreateContainersService(ctx, &cell, containerPort)
-	if err != nil {
-		return cell, err
+	if err := domain.CreateContainersService(ctx, &cell, containerPort, u.Cells); err != nil {
+		return nil, err
 	}
-	cell.RecordContainerNetworks(networks)
-	if err := domain.CreateSessionService(ctx, &cell, sessionPort); err != nil {
-		return cell, err
+	if err := domain.CreateSessionService(ctx, &cell, sessionPort, u.Cells); err != nil {
+		return nil, err
 	}
-	cell.FinishCreation()
-	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i := range cells {
-			if cells[i].SameIdentity(cell) {
-				cells[i] = cell
-				return cells, nil
-			}
-		}
-		return nil, fmt.Errorf("cell %q not found", cell.Name().Value)
-	}); err != nil {
-		return domain.Cell{}, fmt.Errorf("save cell resources: %w", err)
-	}
-	if err := cell.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
-	}
-	return cell, nil
+	return &cell, nil
 }

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -43,9 +44,11 @@ func NewCell(id string, issue string, project string, templateName string, sourc
 		Creation: NewCellCreation(), Status: Ready,
 	}
 	if note != nil {
-		if err := cell.SetNote(*note); err != nil {
+		normalized, err := NormalizeCellNote(*note)
+		if err != nil {
 			return Cell{}, err
 		}
+		cell.Note = normalized
 	}
 	return cell, nil
 }
@@ -95,6 +98,12 @@ func (c *Cell) SetNote(note string) error {
 	if err != nil {
 		return err
 	}
+	if c.Note == normalized {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Note = normalized
 	return nil
 }
@@ -103,12 +112,19 @@ func (c *Cell) MarkDone() error {
 	if c.Done {
 		return fmt.Errorf("cell is already done")
 	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Done = true
 	return nil
 }
 
-func (c *Cell) ToggleDone() {
+func (c *Cell) ToggleDone() error {
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Done = !c.Done
+	return nil
 }
 
 func (c *Cell) SetStatus(status CellStatus) error {
@@ -116,7 +132,58 @@ func (c *Cell) SetStatus(status CellStatus) error {
 	if err != nil {
 		return err
 	}
+	if c.Status == validated {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Status = validated
+	return nil
+}
+
+func (c *Cell) SetCreationStage(stage CreationStage) error {
+	if _, err := NewCreationStage(string(stage)); err != nil {
+		return err
+	}
+	if c.Creation.Stage == stage && c.Creation.Status == CreationCreating {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationCreating
+	c.Creation.Stage = stage
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+	return nil
+}
+
+func (c *Cell) FinishCreation() error {
+	if c.Creation.Status == CreationReady && c.Creation.Stage == "" {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationReady
+	c.Creation.Stage = ""
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+	return nil
+}
+
+func (c *Cell) FailCreation(stage CreationStage, cause error) error {
+	if _, err := NewCreationStage(string(stage)); err != nil {
+		return err
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationFailed
+	c.Creation.Stage = ""
+	c.Creation.FailedStage = stage
+	c.Creation.LastError = cause.Error()
 	return nil
 }
 
@@ -156,7 +223,7 @@ func EnsureCellUnique(existing []Cell, issue string, name CellName) error {
 	return nil
 }
 
-func (c *Cell) AdvanceVersion() error {
+func (c *Cell) advanceVersion() error {
 	version, err := c.Version.Add()
 	if err != nil {
 		return err
@@ -192,26 +259,27 @@ func (c Cell) ContainerResourceName(container Container) string {
 	return c.ResourcePrefix() + "-" + SafeResourceName(container.SourceContainer, "container")
 }
 
-func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
+func (c *Cell) RecordContainerNetworks(networks map[string][]string) error {
+	changed := false
+	for index := range c.Containers.Items {
+		if !slices.Equal(c.Containers.Items[index].Network, networks[c.Containers.Items[index].SourceContainer]) {
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	for index := range c.Containers.Items {
 		c.Containers.Items[index].Network = append([]string(nil), networks[c.Containers.Items[index].SourceContainer]...)
 	}
+	return nil
 }
 
 func (c Cell) SessionName() string {
 	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
-}
-
-func (c *Cell) BeginCreation() {
-	creation := NewCellCreation()
-	creation.Status = CreationCreating
-	c.Creation = creation
-}
-
-func (c *Cell) FinishCreation() {
-	c.Creation.Status = CreationReady
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
 }
 
 func (c Cell) CreationStatus() CreationStatus {

@@ -89,6 +89,7 @@ func appTestCell(id string, issue string, templateName string) domain.Cell {
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
 	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
+	_ = cell.FinishCreation()
 	return cell
 }
 
@@ -833,7 +834,7 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (*domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -852,7 +853,8 @@ templates:
 		if command != "" {
 			t.Fatalf("command = %q, want empty", command)
 		}
-		return appTestCell("cell-1", "123", "default"), nil
+		cell := appTestCell("cell-1", "123", "default")
+		return &cell, nil
 	}
 	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
@@ -907,7 +909,7 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (*domain.Cell, error) {
 		_ = ctx
 		_ = cfg
 		_ = cells
@@ -937,7 +939,8 @@ templates:
 		if _, ok := sessionFactory.Runner.(system.LoggingRunner); !ok {
 			t.Fatalf("session runner type = %T, want system.LoggingRunner", sessionFactory.Runner)
 		}
-		return appTestCell("cell-1", "123", "default"), nil
+		cell := appTestCell("cell-1", "123", "default")
+		return &cell, nil
 	}
 	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx

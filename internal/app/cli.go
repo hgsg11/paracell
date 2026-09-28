@@ -73,7 +73,7 @@ var (
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.SessionName()), nil
 	}
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (*domain.Cell, error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
 			Cells:            cells,
@@ -343,7 +343,10 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return func() tea.Msg {
 				factory := provider.NewFactory(viewRunner, workdir)
 				cell, err := runFork(ctx, configAdapter, factory, factory, factory, cellsAdapter, issue, template, "", nil, workdir)
-				return viewadapter.ForkResultCmd(cell, err)()
+				if cell == nil {
+					return viewadapter.ForkResultCmd(domain.Cell{}, err)()
+				}
+				return viewadapter.ForkResultCmd(*cell, err)()
 			}
 		})
 		if err != nil {

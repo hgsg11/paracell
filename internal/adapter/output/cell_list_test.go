@@ -15,6 +15,9 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := cell.FinishCreation(); err != nil {
+		t.Fatal(err)
+	}
 	if note != "" {
 		err = cell.SetNote(note)
 		if err != nil {

@@ -15,13 +15,13 @@ type Templates struct {
 	NotificationDriverType NotificationDriverType
 }
 
-func (t Templates) Resolve(name string, vars TemplateVars) (ResolvedTemplate, error) {
-	item, err := t.resolveDefinition(name)
+func (t Templates) Resolve(templateName string, vars TemplateVars) (ResolvedTemplate, error) {
+	item, err := t.resolveDefinition(templateName)
 	if err != nil {
 		return ResolvedTemplate{}, err
 	}
 	if item.Abstract {
-		return ResolvedTemplate{}, fmt.Errorf("template %q is abstract", name)
+		return ResolvedTemplate{}, fmt.Errorf("template %q is abstract", templateName)
 	}
 	return item.resolve(vars)
 }
@@ -41,7 +41,7 @@ func (t Templates) SelectableNames() ([]string, error) {
 	return names, nil
 }
 
-func (t Templates) resolveDefinition(name string) (Template, error) {
+func (t Templates) resolveDefinition(templateName string) (Template, error) {
 	definitions := make(map[string]Template, len(t.Templates))
 	for _, item := range t.Templates {
 		definitions[item.Name] = item
@@ -49,34 +49,34 @@ func (t Templates) resolveDefinition(name string) (Template, error) {
 	states := make(map[string]uint8, len(definitions))
 	path := make([]string, 0, len(definitions))
 	var resolve func(string) (Template, error)
-	resolve = func(current string) (Template, error) {
-		item, exists := definitions[current]
+	resolve = func(currentTemplateName string) (Template, error) {
+		item, exists := definitions[currentTemplateName]
 		if !exists {
-			return Template{}, fmt.Errorf("template %q not found", current)
+			return Template{}, fmt.Errorf("template %q not found", currentTemplateName)
 		}
-		switch states[current] {
+		switch states[currentTemplateName] {
 		case 2:
 			return item, nil
 		case 1:
 			start := 0
 			for i, entry := range path {
-				if entry == current {
+				if entry == currentTemplateName {
 					start = i
 					break
 				}
 			}
-			cycle := append(append([]string(nil), path[start:]...), current)
+			cycle := append(append([]string(nil), path[start:]...), currentTemplateName)
 			quoted := make([]string, len(cycle))
 			for i, entry := range cycle {
 				quoted[i] = fmt.Sprintf("%q", entry)
 			}
 			return Template{}, fmt.Errorf("template inheritance cycle: %s", strings.Join(quoted, " -> "))
 		}
-		states[current] = 1
-		path = append(path, current)
+		states[currentTemplateName] = 1
+		path = append(path, currentTemplateName)
 		if item.Extends != "" {
 			if _, exists := definitions[item.Extends]; !exists {
-				return Template{}, fmt.Errorf("template %q extends unknown template %q", current, item.Extends)
+				return Template{}, fmt.Errorf("template %q extends unknown template %q", currentTemplateName, item.Extends)
 			}
 			parent, err := resolve(item.Extends)
 			if err != nil {
@@ -88,11 +88,11 @@ func (t Templates) resolveDefinition(name string) (Template, error) {
 			}
 		}
 		path = path[:len(path)-1]
-		states[current] = 2
-		definitions[current] = item
+		states[currentTemplateName] = 2
+		definitions[currentTemplateName] = item
 		return item, nil
 	}
-	return resolve(name)
+	return resolve(templateName)
 }
 
 func NewTemplates(projectName string, templates []Template, sessionDriverType SessionDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType) (Templates, error) {

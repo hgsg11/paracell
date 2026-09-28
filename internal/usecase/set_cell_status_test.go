@@ -53,6 +53,20 @@ func (p *setStatusTestPorts) LoadCells(ctx context.Context) ([]domain.Cell, erro
 	return append([]domain.Cell(nil), p.cells...), nil
 }
 
+func (p *setStatusTestPorts) CreateCell(context.Context, domain.Cell) error { return nil }
+
+func (p *setStatusTestPorts) SaveCell(ctx context.Context, cell domain.Cell) error {
+	return p.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		for i := range cells {
+			if cells[i].SameIdentity(cell) {
+				cells[i] = cell
+				return cells, nil
+			}
+		}
+		return nil, domain.ErrNotFound
+	})
+}
+
 func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
 	_ = ctx
 	cells, err := update(append([]domain.Cell(nil), p.cells...))

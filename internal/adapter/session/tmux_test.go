@@ -94,8 +94,12 @@ func createSessionForTest(ctx context.Context, template domain.SessionTemplate, 
 	if err != nil {
 		return err
 	}
-	return domain.CreateSessionService(ctx, &cell, port)
+	return domain.CreateSessionService(ctx, &cell, port, sessionCellSaver{})
 }
+
+type sessionCellSaver struct{}
+
+func (sessionCellSaver) SaveCell(context.Context, domain.Cell) error { return nil }
 
 func TestEnterSessionはTMUX外ならattachSessionを使う(t *testing.T) {
 	t.Setenv("TMUX", "")

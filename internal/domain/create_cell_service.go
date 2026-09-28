@@ -1,6 +1,20 @@
 package domain
 
-func CreateCellService(id string, issue string, project string, templateName string, resolved ResolvedTemplate, sourceDriver SourceDriverType, containerDriver ContainerDriverType, sessionDriver SessionDriverType, notificationDriver NotificationDriverType, note *string) (Cell, error) {
+import "context"
+
+type CellLookupPort interface {
+	LoadCells(ctx context.Context) ([]Cell, error)
+}
+
+func CreateCellService(ctx context.Context, id string, issue string, project string, templateName string, resolved ResolvedTemplate, sourceDriver SourceDriverType, containerDriver ContainerDriverType, sessionDriver SessionDriverType, notificationDriver NotificationDriverType, note *string, cells CellLookupPort) (Cell, error) {
+	existing, err := cells.LoadCells(ctx)
+	if err != nil {
+		return Cell{}, err
+	}
+	if err := EnsureCellUnique(existing, issue, NewCellName(issue)); err != nil {
+		return Cell{}, err
+	}
+
 	sourceItems := make([]Source, 0, len(resolved.Sources))
 	for _, template := range resolved.Sources {
 		source, err := NewSource(template.Path, template.WorktreePath(issue), template.Base, template.BranchName(issue))

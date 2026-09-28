@@ -21,6 +21,8 @@ type CellInitializer interface {
 
 type CellPort interface {
 	LoadCells(context.Context) ([]domain.Cell, error)
+	CreateCell(context.Context, domain.Cell) error
+	SaveCell(context.Context, domain.Cell) error
 	UpdateCells(context.Context, func([]domain.Cell) ([]domain.Cell, error)) error
 	DeleteCell(context.Context, domain.Cell) error
 }

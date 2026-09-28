@@ -20,7 +20,9 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
 		for i, cell := range cells {
 			if cell.Matches(input.Cell) {
-				cell.ToggleDone()
+				if err := cell.ToggleDone(); err != nil {
+					return nil, err
+				}
 				cells[i] = cell
 				updated = cell
 				return cells, nil
@@ -29,9 +31,6 @@ func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInpu
 		return nil, fmt.Errorf("cell %q not found", input.Cell)
 	})
 	if err != nil {
-		return domain.Cell{}, err
-	}
-	if err := updated.AdvanceVersion(); err != nil {
 		return domain.Cell{}, err
 	}
 	return updated, nil

@@ -41,6 +41,11 @@ func RestoreCell(stored StoredCell) (Cell, error) {
 			return Cell{}, err
 		}
 	}
+	if stored.Creation.Stage != "" {
+		if _, err := NewCreationStage(string(stored.Creation.Stage)); err != nil {
+			return Cell{}, err
+		}
+	}
 	sourceDriver, err := NewSourceDriverType(string(stored.Sources.Driver))
 	if err != nil {
 		return Cell{}, err

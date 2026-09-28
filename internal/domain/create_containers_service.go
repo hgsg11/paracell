@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 type ContainerCreationPort interface {
 	CreateContainerNetwork(ctx context.Context, network string) error
@@ -8,11 +11,30 @@ type ContainerCreationPort interface {
 	ConnectDependency(ctx context.Context, containerName string, network string) ([]string, error)
 }
 
-func CreateContainersService(ctx context.Context, cell *Cell, port ContainerCreationPort) (map[string][]string, error) {
+type ContainerCellSavePort interface {
+	SaveCell(ctx context.Context, cell Cell) error
+}
+
+func CreateContainersService(ctx context.Context, cell *Cell, port ContainerCreationPort, cells ContainerCellSavePort) error {
+	fail := func(err error) error {
+		if stateErr := cell.FailCreation(CreationStageContainers, err); stateErr != nil {
+			return fmt.Errorf("%w; record container creation failure: %v", err, stateErr)
+		}
+		if saveErr := cells.SaveCell(ctx, *cell); saveErr != nil {
+			return fmt.Errorf("%w; save container creation failure: %v", err, saveErr)
+		}
+		return err
+	}
+	if err := cell.SetCreationStage(CreationStageContainers); err != nil {
+		return err
+	}
+	if err := cells.SaveCell(ctx, *cell); err != nil {
+		return err
+	}
 	_, cellName, project, _, _ := cell.SessionPreparation()
 	network := cell.ContainerNetworkName()
 	if err := port.CreateContainerNetwork(ctx, network); err != nil {
-		return nil, err
+		return fail(err)
 	}
 
 	networks := make(map[string][]string, len(cell.Containers.Items))
@@ -25,9 +47,12 @@ func CreateContainersService(ctx context.Context, cell *Cell, port ContainerCrea
 			containerNetworks, err = port.CreateContainer(ctx, container.SourceContainer, container.Environments, container.Mounts, cellName, project, network, cell.WorkingDirectory())
 		}
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		networks[container.SourceContainer] = containerNetworks
 	}
-	return networks, nil
+	if err := cell.RecordContainerNetworks(networks); err != nil {
+		return err
+	}
+	return cells.SaveCell(ctx, *cell)
 }

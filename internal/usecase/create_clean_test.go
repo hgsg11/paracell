@@ -40,14 +40,17 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	ports := newFakePorts()
 	ports.createSourceErr = errors.New("create source")
 
-	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
 	if !errors.Is(err, ports.createSourceErr) {
 		t.Fatalf("error = %v", err)
+	}
+	if cell != nil {
+		t.Fatalf("cell = %#v, want nil on error", cell)
 	}
 	if len(ports.cells) != 1 {
 		t.Fatalf("cells = %d", len(ports.cells))
 	}
-	if ports.cells[0].CreationStatus() != domain.CreationCreating {
+	if ports.cells[0].CreationStatus() != domain.CreationFailed || ports.cells[0].Creation.FailedStage != domain.CreationStageSource {
 		t.Fatalf("cell = %#v", ports.cells[0])
 	}
 	repositories, worktrees := ports.cells[0].SourceCleanupTargets()
@@ -110,24 +113,35 @@ func (f *fakePorts) LoadCells(context.Context) ([]domain.Cell, error) {
 	return append([]domain.Cell(nil), f.cells...), nil
 }
 
+func (f *fakePorts) CreateCell(ctx context.Context, cell domain.Cell) error {
+	return f.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		if err := domain.EnsureCellUnique(cells, cell.Issue, cell.Name()); err != nil {
+			return nil, err
+		}
+		return append(cells, cell), nil
+	})
+}
+
+func (f *fakePorts) SaveCell(ctx context.Context, cell domain.Cell) error {
+	return f.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		for i := range cells {
+			if cells[i].SameIdentity(cell) {
+				cells[i] = cell
+				return cells, nil
+			}
+		}
+		return nil, domain.ErrNotFound
+	})
+}
+
 func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
 	f.saveCalls++
 	if f.saveCalls == f.failSaveAt {
 		return f.saveErr
 	}
-	before := append([]domain.Cell(nil), f.cells...)
 	cells, err := update(append([]domain.Cell(nil), f.cells...))
 	if err != nil {
 		return err
-	}
-	for index := range cells {
-		for _, previous := range before {
-			if previous.ID == cells[index].ID && !reflect.DeepEqual(previous, cells[index]) {
-				if err := cells[index].AdvanceVersion(); err != nil {
-					return err
-				}
-			}
-		}
 	}
 	f.cells = cells
 	return nil
@@ -368,7 +382,7 @@ func TestForkCellはSession失敗を返す(t *testing.T) {
 	if !errors.Is(err, ports.createSessionErr) {
 		t.Fatalf("error = %v", err)
 	}
-	if ports.cells[0].CreationStatus() != domain.CreationCreating {
+	if ports.cells[0].CreationStatus() != domain.CreationFailed || ports.cells[0].Creation.FailedStage != domain.CreationStageSession {
 		t.Fatalf("stored = %#v", ports.cells[0])
 	}
 }

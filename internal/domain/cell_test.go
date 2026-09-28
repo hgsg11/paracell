@@ -41,6 +41,9 @@ func TestCellNoteは空白を正規化してUnicode文字数で検証する(t *t
 
 func TestCellのResource名は保存せずIdentityから導出する(t *testing.T) {
 	cell := testCell(t)
+	if cell.CreationStatus() != CreationCreating || cell.Creation.Stage != CreationStageSource {
+		t.Fatalf("creation = %#v", cell.Creation)
+	}
 	if cell.Name().Value != "42" {
 		t.Fatalf("name = %q", cell.Name())
 	}
@@ -72,7 +75,9 @@ func TestCell状態変更関数はAggregateを更新する(t *testing.T) {
 	if err != nil || cell.DisplayLabel() != "実装中" {
 		t.Fatalf("note = %#v, %v", cell, err)
 	}
-	cell.ToggleDone()
+	if err := cell.ToggleDone(); err != nil {
+		t.Fatal(err)
+	}
 	if err := cell.EnsureCanBeCleaned(); err != nil {
 		t.Fatal(err)
 	}
@@ -82,16 +87,15 @@ func TestCell状態変更関数はAggregateを更新する(t *testing.T) {
 	}
 }
 
-func Test新規CellのVersionは1でPersistence成功時だけ進む(t *testing.T) {
+func TestCellの変更時にVersionが進む(t *testing.T) {
 	cell := testCell(t)
 	if cell.Version != 1 {
 		t.Fatalf("version = %d", cell.Version)
 	}
-	persisted := cell
-	if err := persisted.AdvanceVersion(); err != nil {
+	if err := cell.SetNote("実装中"); err != nil {
 		t.Fatal(err)
 	}
-	if persisted.Version != 2 || cell.Version != 1 {
-		t.Fatalf("versions = %d, %d", persisted.Version, cell.Version)
+	if cell.Version != 2 {
+		t.Fatalf("version = %d", cell.Version)
 	}
 }
