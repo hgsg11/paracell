@@ -37,6 +37,27 @@ func (a SQLiteCellAdapter) LoadCells(ctx context.Context) ([]domain.Cell, error)
 	return loadCells(ctx, db)
 }
 
+func (a SQLiteCellAdapter) CreateCell(ctx context.Context, cell domain.Cell) error {
+	return a.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		if err := domain.EnsureCellUnique(cells, cell.Issue, cell.Name()); err != nil {
+			return nil, err
+		}
+		return append(cells, cell), nil
+	})
+}
+
+func (a SQLiteCellAdapter) SaveCell(ctx context.Context, cell domain.Cell) error {
+	return a.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
+		for i := range cells {
+			if cells[i].SameIdentity(cell) {
+				cells[i] = cell
+				return cells, nil
+			}
+		}
+		return nil, fmt.Errorf("cell %q not found", cell.Name().Value)
+	})
+}
+
 func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
 	db, err := a.open(ctx)
 	if err != nil {
@@ -199,9 +220,6 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 		nextByID[record.ID] = cell
 		stored, exists := currentByID[record.ID]
 		if !exists {
-			if record.Version != 1 {
-				return fmt.Errorf("new cell %q must have version 1", record.ID)
-			}
 			if err := insertCell(ctx, execer, position, cell); err != nil {
 				return err
 			}
@@ -211,24 +229,29 @@ func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell
 		if reflect.DeepEqual(storedRecord, record) && position == cellPosition(current, record.ID) {
 			continue
 		}
-		if record.Version != storedRecord.Version {
-			return fmt.Errorf("%w: update cell %q expected version %d, found %d", domain.ErrVersionConflict, record.ID, record.Version, storedRecord.Version)
+		if reflect.DeepEqual(storedRecord, record) {
+			data, err := json.Marshal(record)
+			if err != nil {
+				return fmt.Errorf("encode cell %q: %w", record.ID, err)
+			}
+			if _, err := execer.ExecContext(ctx, "UPDATE cells SET position = ?, record = ? WHERE id = ? AND version = ?", position, data, record.ID, record.Version); err != nil {
+				return fmt.Errorf("update cell position %q: %w", record.ID, err)
+			}
+			continue
 		}
-		persisted := cell
-		if err := persisted.AdvanceVersion(); err != nil {
-			return err
+		if record.Version <= storedRecord.Version {
+			return fmt.Errorf("%w: update cell %q expected a version greater than %d, found %d", domain.ErrVersionConflict, record.ID, storedRecord.Version, record.Version)
 		}
-		persistedRecord := persisted.Stored()
-		data, err := json.Marshal(persistedRecord)
+		data, err := json.Marshal(record)
 		if err != nil {
 			return fmt.Errorf("encode cell %q: %w", record.ID, err)
 		}
 		result, err := execer.ExecContext(ctx, "UPDATE cells SET issue = ?, position = ?, version = ?, record = ? WHERE id = ? AND version = ?",
-			persistedRecord.Issue, position, persistedRecord.Version, data, persistedRecord.ID, record.Version)
+			record.Issue, position, record.Version, data, record.ID, storedRecord.Version)
 		if err != nil {
 			return fmt.Errorf("update cell %q: %w", record.ID, err)
 		}
-		if err := requireOneRow(result, "update", record.ID, record.Version); err != nil {
+		if err := requireOneRow(result, "update", record.ID, storedRecord.Version); err != nil {
 			return err
 		}
 	}

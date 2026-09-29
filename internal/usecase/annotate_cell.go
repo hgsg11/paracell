@@ -35,10 +35,6 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	}); err != nil {
 		return domain.Cell{}, err
 	}
-	if err := updated.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
-	}
-
 	if u.SessionFactory == nil {
 		return updated, nil
 	}
@@ -46,7 +42,7 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	if err != nil {
 		return updated, err
 	}
-	if err := session.UpdateStatusLabel(ctx, updated.SessionResource()); err != nil {
+	if err := session.UpdateStatusLabel(ctx, updated.SessionName(), updated.DisplayLabel()); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}

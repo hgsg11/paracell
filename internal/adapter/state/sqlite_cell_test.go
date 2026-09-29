@@ -11,17 +11,17 @@ import (
 
 func persistedTestCell(t *testing.T) domain.Cell {
 	t.Helper()
-	source, err := domain.NewSource(".", "main", "feat/42")
+	source, err := domain.NewSource(".", ".paracell/cells/42/source", "main", "feat/42")
 	if err != nil {
 		t.Fatal(err)
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	container, err := domain.NewContainer([]string{"project_default"}, "db", domain.Dependency)
+	container, err := domain.NewContainer([]string{"project_default"}, "db", domain.Dependency, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cell, err := domain.NewCell("id", "42", "sample", "feat", domain.NewSources(sourceDriver, []domain.Source{source}), domain.NewContainers(domain.Docker, []domain.Container{container}), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	cell, err := domain.NewCell("id", "42", "sample", "feat", domain.NewSources(sourceDriver, []domain.Source{source}), domain.NewContainers(domain.Docker, []domain.Container{container}), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,7 +19,8 @@ func (u EnterCellUseCase) Execute(ctx context.Context, input EnterCellInput) (do
 	if err != nil {
 		return domain.Cell{}, err
 	}
-	if err := session.EnterSession(ctx, input.Cell.SessionResource()); err != nil {
+	name, cellName, project, label, windows := input.Cell.SessionPreparation()
+	if err := session.EnterSession(ctx, name, cellName, project, label, windows); err != nil {
 		return domain.Cell{}, err
 	}
 	return input.Cell, nil

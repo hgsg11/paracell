@@ -2,7 +2,8 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -23,7 +24,7 @@ type Cell struct {
 	Done               bool
 }
 
-func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType) (Cell, error) {
+func NewCell(id string, issue string, project string, templateName string, sources Sources, containers Containers, session Session, notificationDriver NotificationDriverType, note *string) (Cell, error) {
 	if id == "" {
 		return Cell{}, fmt.Errorf("cell id is required")
 	}
@@ -37,11 +38,19 @@ func NewCell(id string, issue string, project string, templateName string, sourc
 	if err != nil {
 		return Cell{}, err
 	}
-	return Cell{
+	cell := Cell{
 		Version: version, ID: id, Issue: issue, Project: project,
 		Template: templateName, Sources: sources, Containers: containers, Session: session, NotificationDriver: notificationDriver,
 		Creation: NewCellCreation(), Status: Ready,
-	}, nil
+	}
+	if note != nil {
+		normalized, err := NormalizeCellNote(*note)
+		if err != nil {
+			return Cell{}, err
+		}
+		cell.Note = normalized
+	}
+	return cell, nil
 }
 
 func (c Cell) Name() CellName {
@@ -89,6 +98,12 @@ func (c *Cell) SetNote(note string) error {
 	if err != nil {
 		return err
 	}
+	if c.Note == normalized {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Note = normalized
 	return nil
 }
@@ -97,12 +112,19 @@ func (c *Cell) MarkDone() error {
 	if c.Done {
 		return fmt.Errorf("cell is already done")
 	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Done = true
 	return nil
 }
 
-func (c *Cell) ToggleDone() {
+func (c *Cell) ToggleDone() error {
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Done = !c.Done
+	return nil
 }
 
 func (c *Cell) SetStatus(status CellStatus) error {
@@ -110,7 +132,58 @@ func (c *Cell) SetStatus(status CellStatus) error {
 	if err != nil {
 		return err
 	}
+	if c.Status == validated {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	c.Status = validated
+	return nil
+}
+
+func (c *Cell) SetCreationStage(stage CreationStage) error {
+	if _, err := NewCreationStage(string(stage)); err != nil {
+		return err
+	}
+	if c.Creation.Stage == stage && c.Creation.Status == CreationCreating {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationCreating
+	c.Creation.Stage = stage
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+	return nil
+}
+
+func (c *Cell) FinishCreation() error {
+	if c.Creation.Status == CreationReady && c.Creation.Stage == "" {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationReady
+	c.Creation.Stage = ""
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+	return nil
+}
+
+func (c *Cell) FailCreation(stage CreationStage, cause error) error {
+	if _, err := NewCreationStage(string(stage)); err != nil {
+		return err
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
+	c.Creation.Status = CreationFailed
+	c.Creation.Stage = ""
+	c.Creation.FailedStage = stage
+	c.Creation.LastError = cause.Error()
 	return nil
 }
 
@@ -150,7 +223,7 @@ func EnsureCellUnique(existing []Cell, issue string, name CellName) error {
 	return nil
 }
 
-func (c *Cell) AdvanceVersion() error {
+func (c *Cell) advanceVersion() error {
 	version, err := c.Version.Add()
 	if err != nil {
 		return err
@@ -168,17 +241,11 @@ func (c Cell) Clone() Cell {
 	c.Containers.Items = append([]Container(nil), c.Containers.Items...)
 	for i := range c.Containers.Items {
 		c.Containers.Items[i].Network = append([]string(nil), c.Containers.Items[i].Network...)
+		c.Containers.Items[i].Environments = append([]Environment(nil), c.Containers.Items[i].Environments...)
+		c.Containers.Items[i].Mounts = append([]Mount(nil), c.Containers.Items[i].Mounts...)
 	}
 	c.Session.Windows = append([]SessionWindow(nil), c.Session.Windows...)
 	return c
-}
-
-func (c Cell) SourceWorktreePath(source Source) string {
-	path := filepath.Join(".paracell", "cells", c.Name().Value, "source")
-	if source.Path != "." {
-		path = filepath.Join(path, source.Path)
-	}
-	return path
 }
 
 func (c Cell) ContainerNetworkName() string {
@@ -192,85 +259,65 @@ func (c Cell) ContainerResourceName(container Container) string {
 	return c.ResourcePrefix() + "-" + SafeResourceName(container.SourceContainer, "container")
 }
 
-func (c Cell) UsesDependency() bool {
-	for _, container := range c.Containers.Items {
-		if container.Mode == Dependency {
-			return true
+func (c *Cell) RecordContainerNetworks(networks map[string][]string) error {
+	changed := false
+	for index := range c.Containers.Items {
+		if !slices.Equal(c.Containers.Items[index].Network, networks[c.Containers.Items[index].SourceContainer]) {
+			changed = true
 		}
 	}
-	return false
-}
-
-func (c *Cell) RecordContainerNetworks(networks map[string][]string) {
+	if !changed {
+		return nil
+	}
+	if err := c.advanceVersion(); err != nil {
+		return err
+	}
 	for index := range c.Containers.Items {
 		c.Containers.Items[index].Network = append([]string(nil), networks[c.Containers.Items[index].SourceContainer]...)
 	}
+	return nil
 }
 
 func (c Cell) SessionName() string {
 	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
 }
 
-func (c *Cell) BeginCreation() {
-	creation := NewCellCreation()
-	creation.Status = CreationCreating
-	c.Creation = creation
-}
-
-func (c *Cell) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
-func (c *Cell) FinishCreation() {
-	c.Creation.Status = CreationReady
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
-}
-
 func (c Cell) CreationStatus() CreationStatus {
 	return c.Creation.Status
 }
 
-func (c Cell) SourceResources() []SourceResource {
-	resources := make([]SourceResource, 0, len(c.Sources.Items))
+// SourceCleanupTargets identifies persisted worktrees without consulting templates.
+func (c Cell) SourceCleanupTargets() (repositories []string, worktrees []string) {
 	for _, source := range c.Sources.Items {
-		resources = append(resources, NewSourceResource(source.Path, c.SourceWorktreePath(source), source.Base, source.Branch))
+		repositories = append(repositories, source.Path)
+		worktrees = append(worktrees, source.Worktree)
 	}
-	return resources
+	return repositories, worktrees
 }
 
-func (c Cell) ContainerResources(templates []ContainerTemplate) ContainerResources {
-	bySourceContainer := make(map[string]ContainerTemplate, len(templates))
-	for _, template := range templates {
-		bySourceContainer[template.Name] = template
-	}
-	items := make([]ContainerResource, 0, len(c.Containers.Items))
-	for _, container := range c.Containers.Items {
-		template := bySourceContainer[container.SourceContainer]
-		items = append(items, NewContainerResource(
-			c.ContainerResourceName(container), container.Network,
-			container.SourceContainer, container.Mode, template.Environments, template.Mounts,
-		))
-	}
-	sourcePath := ""
-	if len(c.Sources.Items) > 0 {
-		sourcePath = c.SourceWorktreePath(c.Sources.Items[0])
-		if sourcePath != "" {
-			sourcePath = filepath.Clean(sourcePath)
+func (c Cell) ContainerCleanupTargets() (containers []string, dependencies []string) {
+	items := append([]Container(nil), c.Containers.Items...)
+	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
+	for _, container := range items {
+		if container.Mode == Dependency {
+			dependencies = append(dependencies, container.SourceContainer)
+		} else {
+			containers = append(containers, c.ContainerResourceName(container))
 		}
 	}
-	return NewContainerResources(c.Name().Value, c.Project, c.ContainerNetworkName(), sourcePath, items)
+	return containers, dependencies
 }
 
-func (c Cell) SessionResource() SessionResource {
-	workingDirectory := ""
-	if len(c.Sources.Items) > 0 {
-		workingDirectory = c.SourceWorktreePath(c.Sources.Items[0])
+func (c Cell) SessionPreparation() (name, cellName, project, label string, windowNames []string) {
+	for _, window := range c.Session.Windows {
+		windowNames = append(windowNames, window.Name)
 	}
-	return NewSessionResource(c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, c.Session.Windows)
+	return c.SessionName(), c.Name().Value, c.Project, c.DisplayLabel(), windowNames
+}
+
+func (c Cell) WorkingDirectory() string {
+	if len(c.Sources.Items) == 0 {
+		return ""
+	}
+	return c.Sources.Items[0].Worktree
 }

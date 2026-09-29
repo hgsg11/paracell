@@ -21,26 +21,33 @@ type CellInitializer interface {
 
 type CellPort interface {
 	LoadCells(context.Context) ([]domain.Cell, error)
+	CreateCell(context.Context, domain.Cell) error
+	SaveCell(context.Context, domain.Cell) error
 	UpdateCells(context.Context, func([]domain.Cell) ([]domain.Cell, error)) error
 	DeleteCell(context.Context, domain.Cell) error
 }
 
 type SourcePort interface {
-	CreateSource(context.Context, domain.SourceResource) error
-	CleanSource(context.Context, domain.SourceResource) error
+	CreateSource(ctx context.Context, repository string, worktree string, base string, branch string) error
+	CleanSource(ctx context.Context, repository string, worktree string) error
 }
 
 type ContainerPort interface {
-	CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error)
-	CleanContainers(context.Context, domain.ContainerResources) error
+	CreateContainerNetwork(ctx context.Context, network string) error
+	CreateContainer(ctx context.Context, containerName string, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error)
+	ConnectDependency(ctx context.Context, containerName string, network string) ([]string, error)
+	CleanContainers(ctx context.Context, network string, containers []string, dependencies []string) error
 }
 
 type SessionPort interface {
-	CreateSession(context.Context, domain.SessionResource) error
-	CleanSession(context.Context, domain.SessionResource) error
-	PrepareSession(context.Context, domain.SessionResource) error
-	UpdateStatusLabel(context.Context, domain.SessionResource) error
-	EnterSession(context.Context, domain.SessionResource) error
+	CreateSession(ctx context.Context, name string, cellName string, firstWindow string, workingDirectory string) error
+	CreateWindow(ctx context.Context, session string, window string, workingDirectory string) error
+	SendWindowCommand(ctx context.Context, session string, window string, command string) error
+	ConfigureSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
+	CleanSession(ctx context.Context, name string) error
+	PrepareSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
+	UpdateStatusLabel(ctx context.Context, name string, label string) error
+	EnterSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
 	EnterRootSession(context.Context, string) error
 	ExitSession(context.Context) error
 }

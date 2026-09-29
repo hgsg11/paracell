@@ -44,14 +44,16 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err != nil {
 		return err
 	}
-	if err := ignoreNotFound(session.CleanSession(ctx, target.SessionResource())); err != nil {
+	if err := ignoreNotFound(session.CleanSession(ctx, target.SessionName())); err != nil {
 		return err
 	}
-	if err := ignoreNotFound(containers.CleanContainers(ctx, target.ContainerResources(nil))); err != nil {
+	names, dependencies := target.ContainerCleanupTargets()
+	if err := ignoreNotFound(containers.CleanContainers(ctx, target.ContainerNetworkName(), names, dependencies)); err != nil {
 		return err
 	}
-	for _, resource := range target.SourceResources() {
-		if err := ignoreNotFound(source.CleanSource(ctx, resource)); err != nil {
+	repositories, worktrees := target.SourceCleanupTargets()
+	for i, repository := range repositories {
+		if err := ignoreNotFound(source.CleanSource(ctx, repository, worktrees[i])); err != nil {
 			return err
 		}
 	}

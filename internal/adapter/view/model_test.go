@@ -24,7 +24,7 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 func viewTestCell(id string, issue string, templateName string) domain.Cell {
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
 	return cell
 }
 
