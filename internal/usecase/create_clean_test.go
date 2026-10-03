@@ -16,7 +16,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.Template != "feat" || len(cell.Sources.Items) != 1 || cell.CreationStatus() != domain.CreationReady {
+	if cell.Template != "feat" || len(cell.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
 	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
@@ -25,11 +25,10 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	wantCalls := []string{
 		"factory:source:git",
 		"factory:container:none",
-		"factory:session:tmux",
+		"factory:workspace:tmux",
 		"source:create",
-		"containers:network",
-		"session:create",
-		"session:configure",
+		"containers:create",
+		"workspace:create",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
@@ -40,26 +39,23 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	ports := newFakePorts()
 	ports.createSourceErr = errors.New("create source")
 
-	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
 	if !errors.Is(err, ports.createSourceErr) {
 		t.Fatalf("error = %v", err)
 	}
-	if cell != nil {
-		t.Fatalf("cell = %#v, want nil on error", cell)
+	if len(ports.cells.Commanders) != 1 {
+		t.Fatalf("commanders = %d", len(ports.cells.Commanders))
 	}
-	if len(ports.cells) != 1 {
-		t.Fatalf("cells = %d", len(ports.cells))
+	failedStage, _ := ports.cells.Commanders[0].CreationFailure()
+	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
-	if ports.cells[0].CreationStatus() != domain.CreationFailed || ports.cells[0].Creation.FailedStage != domain.CreationStageSource {
-		t.Fatalf("cell = %#v", ports.cells[0])
-	}
-	repositories, worktrees := ports.cells[0].SourceCleanupTargets()
-	for i, repository := range repositories {
-		if err := ports.CleanSource(context.Background(), repository, worktrees[i]); err != nil {
+	for _, resource := range ports.cells.Commanders[0].SourceResources(ports.cells.Targets) {
+		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got, want := ports.cleanedSources, map[string]string{".": ".paracell/cells/42/source"}; !reflect.DeepEqual(got, want) {
+	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/repository/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleaned sources = %#v, want %#v", got, want)
 	}
 }
@@ -67,41 +63,31 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 type fakePorts struct {
 	config               domain.Templates
 	configErr            error
-	cells                []domain.Cell
+	cells                CellSet
 	calls                []string
 	updateStatusLabelErr error
 	createSourceErr      error
-	cleanedSources       map[string]string
-	onCreateSource       func(string, string, string, string)
-	onCreateContainer    func(string, []domain.Environment, []domain.Mount, string, string, string, string)
-	onCreateSession      func(domain.SessionTemplate, string, string, string, string, string)
-	sessionWindows       []domain.Window
-	sessionWorkingDir    string
-	createSessionErr     error
-	saveCalls            int
-	failSaveAt           int
-	saveErr              error
-	cleanedNetwork       string
-	cleanedContainers    []string
-	cleanedDependencies  []string
-	cleanedSession       string
-	cleanContainersErr   error
+	cleanedSources       []domain.SourceResource
+	containerResources   domain.ContainerResources
+	workspaceResource    domain.WorkspaceResource
 }
 
 func newFakePorts() *fakePorts {
 	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
-	template, _ := domain.NewTemplate("feat", []domain.SourceTemplate{source}, nil, domain.NewSessionTemplate(nil))
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	target, _ := domain.NewTargetCellSpec("repository", &source, nil, nil)
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{target}, nil)
+	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander)
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
-	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
 	return &fakePorts{config: templates}
 }
 
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
 		Config: ports, Cells: ports, SourceFactory: ports,
-		ContainerFactory: ports, SessionFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
+		ContainerFactory: ports, WorkspaceFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
 	}
 }
 
@@ -109,55 +95,27 @@ func (f *fakePorts) Load(context.Context) (domain.Templates, error) {
 	return f.config, f.configErr
 }
 
-func (f *fakePorts) LoadCells(context.Context) ([]domain.Cell, error) {
-	return append([]domain.Cell(nil), f.cells...), nil
+func (f *fakePorts) LoadCells(context.Context) (CellSet, error) {
+	return NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies), nil
 }
 
-func (f *fakePorts) CreateCell(ctx context.Context, cell domain.Cell) error {
-	return f.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		if err := domain.EnsureCellUnique(cells, cell.Issue, cell.Name()); err != nil {
-			return nil, err
-		}
-		return append(cells, cell), nil
-	})
-}
-
-func (f *fakePorts) SaveCell(ctx context.Context, cell domain.Cell) error {
-	return f.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i := range cells {
-			if cells[i].SameIdentity(cell) {
-				cells[i] = cell
-				return cells, nil
-			}
-		}
-		return nil, domain.ErrNotFound
-	})
-}
-
-func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
-	f.saveCalls++
-	if f.saveCalls == f.failSaveAt {
-		return f.saveErr
-	}
-	cells, err := update(append([]domain.Cell(nil), f.cells...))
+func (f *fakePorts) UpdateCells(_ context.Context, update func(CellSet) (CellSet, error)) error {
+	before := NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies)
+	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies))
 	if err != nil {
 		return err
 	}
-	f.cells = cells
-	return nil
-}
-
-func (f *fakePorts) DeleteCell(_ context.Context, target domain.Cell) error {
-	for index, cell := range f.cells {
-		if cell.ID == target.ID {
-			if cell.Version != target.Version {
-				return domain.ErrVersionConflict
+	for index := range cells.Commanders {
+		for _, previous := range before.Commanders {
+			if previous.ID == cells.Commanders[index].ID && !reflect.DeepEqual(previous, cells.Commanders[index]) {
+				if err := cells.Commanders[index].AdvanceVersion(); err != nil {
+					return err
+				}
 			}
-			f.cells = append(f.cells[:index], f.cells[index+1:]...)
-			return nil
 		}
 	}
-	return domain.ErrNotFound
+	f.cells = cells
+	return nil
 }
 
 func (f *fakePorts) Source(driver domain.SourceDriverType) (SourcePort, error) {
@@ -170,98 +128,53 @@ func (f *fakePorts) Container(driver domain.ContainerDriverType) (ContainerPort,
 	return f, nil
 }
 
-func (f *fakePorts) Session(driver domain.SessionDriverType) (SessionPort, error) {
-	f.calls = append(f.calls, "factory:session:"+string(driver))
+func (f *fakePorts) Workspace(driver domain.WorkspaceDriverType) (WorkspacePort, error) {
+	f.calls = append(f.calls, "factory:workspace:"+string(driver))
 	return f, nil
 }
 
-func (f *fakePorts) CreateSource(_ context.Context, repository string, worktree string, base string, branch string) error {
+func (f *fakePorts) CreateSource(context.Context, domain.SourceResource) error {
 	f.calls = append(f.calls, "source:create")
-	if f.onCreateSource != nil {
-		f.onCreateSource(repository, worktree, base, branch)
-	}
 	return f.createSourceErr
 }
-func (f *fakePorts) CleanSource(_ context.Context, repository string, worktree string) error {
+func (f *fakePorts) CleanSource(_ context.Context, resource domain.SourceResource) error {
 	f.calls = append(f.calls, "source:clean")
-	if f.cleanedSources == nil {
-		f.cleanedSources = make(map[string]string)
-	}
-	f.cleanedSources[repository] = worktree
+	f.cleanedSources = append(f.cleanedSources, resource)
 	return nil
 }
-func (f *fakePorts) CreateContainerNetwork(_ context.Context, _ string) error {
-	f.calls = append(f.calls, "containers:network")
-	return nil
-}
-func (f *fakePorts) CreateContainer(_ context.Context, name string, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error) {
+func (f *fakePorts) CreateContainers(_ context.Context, resources domain.ContainerResources) (map[string][]string, error) {
 	f.calls = append(f.calls, "containers:create")
-	if f.onCreateContainer != nil {
-		f.onCreateContainer(name, environments, mounts, cellName, project, network, sourcePath)
-	}
-	return []string{"original_default"}, nil
+	f.containerResources = resources
+	return map[string][]string{"app": {"original_default"}}, nil
 }
-func (f *fakePorts) ConnectDependency(_ context.Context, name string, _ string) ([]string, error) {
-	f.calls = append(f.calls, "containers:dependency")
-	if name != "db" {
-		return nil, errors.New("unexpected dependency container")
-	}
-	return []string{"original_default"}, nil
-}
-func (f *fakePorts) CleanContainers(_ context.Context, network string, containers []string, dependencies []string) error {
+func (f *fakePorts) CleanContainers(context.Context, domain.ContainerResources) error {
 	f.calls = append(f.calls, "containers:clean")
-	f.cleanedNetwork, f.cleanedContainers, f.cleanedDependencies = network, containers, dependencies
-	return f.cleanContainersErr
-}
-func (f *fakePorts) CreateSession(_ context.Context, name string, cellName string, firstWindow string, workingDirectory string) error {
-	f.calls = append(f.calls, "session:create")
-	f.sessionWorkingDir = workingDirectory
-	if firstWindow != "" {
-		f.sessionWindows = append(f.sessionWindows, domain.Window{Name: firstWindow})
-	}
 	return nil
 }
-func (f *fakePorts) CreateWindow(_ context.Context, session string, window string, _ string) error {
-	f.sessionWindows = append(f.sessionWindows, domain.Window{Name: window})
+func (f *fakePorts) CreateWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:create")
+	f.workspaceResource = resource
 	return nil
 }
-func (f *fakePorts) SendWindowCommand(_ context.Context, _ string, window string, command string) error {
-	for i := range f.sessionWindows {
-		if f.sessionWindows[i].Name == window {
-			f.sessionWindows[i].Command = command
-		}
-	}
+func (f *fakePorts) CleanWorkspace(context.Context, domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:clean")
 	return nil
 }
-func (f *fakePorts) ConfigureSession(_ context.Context, name string, cellName string, project string, label string, windows []string) error {
-	f.calls = append(f.calls, "session:configure")
-	if f.onCreateSession != nil {
-		f.onCreateSession(domain.NewSessionTemplate(f.sessionWindows), name, cellName, project, label, f.sessionWorkingDir)
-	}
-	return f.createSessionErr
-}
-func (f *fakePorts) CleanSession(_ context.Context, name string) error {
-	f.calls = append(f.calls, "session:clean")
-	f.cleanedSession = name
-	return nil
-}
-func (f *fakePorts) PrepareSession(context.Context, string, string, string, string, []string) error {
-	return nil
-}
-func (f *fakePorts) UpdateStatusLabel(_ context.Context, name string, label string) error {
-	f.calls = append(f.calls, "session:label:"+label)
+func (f *fakePorts) PrepareWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
+func (f *fakePorts) UpdateStatusLabel(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:label:"+resource.DisplayLabel)
 	return f.updateStatusLabelErr
 }
-func (f *fakePorts) EnterSession(_ context.Context, name string, cellName string, project string, label string, windows []string) error {
-	f.calls = append(f.calls, "session:enter:"+cellName)
+func (f *fakePorts) EnterWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:enter:"+resource.CellName)
 	return nil
 }
-func (f *fakePorts) EnterRootSession(_ context.Context, projectName string) error {
-	f.calls = append(f.calls, "session:enter-root:"+projectName)
+func (f *fakePorts) EnterRootWorkspace(_ context.Context, projectName string) error {
+	f.calls = append(f.calls, "workspace:enter-root:"+projectName)
 	return nil
 }
-func (f *fakePorts) ExitSession(context.Context) error {
-	f.calls = append(f.calls, "session:exit")
+func (f *fakePorts) ExitWorkspace(context.Context) error {
+	f.calls = append(f.calls, "workspace:exit")
 	return nil
 }
 
@@ -269,133 +182,13 @@ type fixedIDGenerator struct{ id string }
 
 func (g fixedIDGenerator) NewID() string { return g.id }
 
-func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) domain.Cell {
+func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) domain.CommanderCell {
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, err := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
+	cell, err := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return cell
-}
-
-func newConfiguredCreationPorts(t *testing.T) *fakePorts {
-	t.Helper()
-	ports := newFakePorts()
-	source, err := domain.NewSourceTemplate("api", "develop", "work/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	environment, err := domain.NewEnvironment("ISSUE", "{{.Issue}}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	mount, err := domain.NewMount("/app", ".")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app, err := domain.NewContainerTemplate("app", domain.Target, []domain.Environment{environment}, []domain.Mount{mount})
-	if err != nil {
-		t.Fatal(err)
-	}
-	db, err := domain.NewContainerTemplate("db", domain.Dependency, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	window, err := domain.NewWindow("editor", "echo {{.Issue}}")
-	if err != nil {
-		t.Fatal(err)
-	}
-	parent, err := domain.NewTemplate("base", []domain.SourceTemplate{source}, []domain.ContainerTemplate{app, db}, domain.NewSessionTemplate([]domain.Window{window}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	child, err := domain.NewUnresolvedTemplate("feat", "base", false, nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ports.config, err = domain.NewTemplates("myapp", []domain.Template{parent, child}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ports
-}
-
-func TestForkCellは解決済みTemplateと実行時引数を渡しNetworkを保存する(t *testing.T) {
-	ports := newConfiguredCreationPorts(t)
-	ports.onCreateSource = func(repository, worktree, base, branch string) {
-		if repository != "api" || base != "develop" || worktree != ".paracell/cells/42/source/api" || branch != "work/42" {
-			t.Fatalf("source = %q, %q, %q, %q", repository, worktree, base, branch)
-		}
-	}
-	ports.onCreateContainer = func(name string, environments []domain.Environment, mounts []domain.Mount, cellName, project, network, sourcePath string) {
-		if cellName != "42" || project != "myapp" || network != "paracell-myapp-42" || sourcePath != ".paracell/cells/42/source/api" {
-			t.Fatalf("container arguments = %q %q %q %q", cellName, project, network, sourcePath)
-		}
-		if name != "app" || len(environments) != 1 || environments[0].Value != "42" || len(mounts) != 1 || mounts[0].TargetPath != "/app" {
-			t.Fatalf("app arguments = %q %#v %#v", name, environments, mounts)
-		}
-	}
-	ports.onCreateSession = func(template domain.SessionTemplate, name, cellName, project, label, directory string) {
-		if name != "myapp-42" || cellName != "42" || project != "myapp" || label != "作業中" || directory != ".paracell/cells/42/source/api" {
-			t.Fatalf("session arguments = %q %q %q %q %q", name, cellName, project, label, directory)
-		}
-		if len(template.Windows) != 1 || template.Windows[0].Name != "editor" || template.Windows[0].Command != "echo 42" {
-			t.Fatalf("session template = %#v", template)
-		}
-	}
-	note := "作業中"
-	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat", Note: &note})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := ports.cells[0].Containers.Items[0].Network; !reflect.DeepEqual(got, []string{"original_default"}) {
-		t.Fatalf("saved networks = %v", got)
-	}
-}
-
-func TestCleanCellは現在のTemplateなしで保存済み対象を削除する(t *testing.T) {
-	ports := newConfiguredCreationPorts(t)
-	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ports.cells[0].MarkDone(); err != nil {
-		t.Fatal(err)
-	}
-	ports.configErr = errors.New("configuration no longer exists")
-	ports.cleanContainersErr = domain.ErrNotFound
-	err = (CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, SessionFactory: ports}).Execute(context.Background(), CleanCellInput{Cell: "42"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ports.cleanedSession != "myapp-42" || ports.cleanedNetwork != "paracell-myapp-42" || !reflect.DeepEqual(ports.cleanedContainers, []string{"paracell-myapp-42-app"}) || !reflect.DeepEqual(ports.cleanedDependencies, []string{"db"}) || !reflect.DeepEqual(ports.cleanedSources, map[string]string{"api": ".paracell/cells/42/source/api"}) || len(ports.cells) != 0 {
-		t.Fatalf("cleanup = %#v", ports)
-	}
-}
-
-func TestForkCellはSession失敗を返す(t *testing.T) {
-	ports := newConfiguredCreationPorts(t)
-	ports.createSessionErr = errors.New("session failed")
-	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
-	if !errors.Is(err, ports.createSessionErr) {
-		t.Fatalf("error = %v", err)
-	}
-	if ports.cells[0].CreationStatus() != domain.CreationFailed || ports.cells[0].Creation.FailedStage != domain.CreationStageSession {
-		t.Fatalf("stored = %#v", ports.cells[0])
-	}
-}
-
-func TestForkCellは保存失敗を返す(t *testing.T) {
-	ports := newConfiguredCreationPorts(t)
-	ports.failSaveAt = 2
-	ports.saveErr = errors.New("save failed")
-	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
-	if !errors.Is(err, ports.saveErr) {
-		t.Fatalf("error = %v", err)
-	}
-	if ports.cells[0].CreationStatus() != domain.CreationCreating {
-		t.Fatalf("stored = %#v", ports.cells[0])
-	}
 }

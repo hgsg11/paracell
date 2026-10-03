@@ -2,6 +2,8 @@ package usecase
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -18,47 +20,290 @@ type ForkCellUseCase struct {
 	Cells            CellPort
 	SourceFactory    SourceProviderFactory
 	ContainerFactory ContainerProviderFactory
-	SessionFactory   SessionProviderFactory
+	WorkspaceFactory WorkspaceProviderFactory
 	IDs              IDGenerator
 }
 
-func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (*domain.Cell, error) {
+func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.CommanderCell, error) {
 	cfg, err := u.Config.Load(ctx)
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, cfg.ProjectName, input.Command))
+	commanderID := u.IDs.NewID()
+	name := domain.NewCellName(input.Issue)
+	resolved, err := cfg.Resolve(input.Template, domain.NewTemplateVars(input.Issue, name.Value, cfg.ProjectName, input.Command))
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	cell, err := domain.CreateCellService(ctx, u.IDs.NewID(), input.Issue, cfg.ProjectName, input.Template, resolved, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.SessionDriverType, cfg.NotificationDriverType, input.Note, u.Cells)
+	if resolved.Commander == nil {
+		return domain.CommanderCell{}, fmt.Errorf("template %q does not define a CommanderCell", input.Template)
+	}
+	current, err := u.Cells.LoadCells(ctx)
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	sourcePort, err := u.SourceFactory.Source(cfg.SourceDriverType)
+	if err := domain.EnsureCommanderCellUnique(current.Commanders, input.Issue, name); err != nil {
+		return domain.CommanderCell{}, err
+	}
+	commander, targets, dependencies, err := instantiateCommander(cfg, resolved, input.Issue, commanderID, u.IDs)
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	containerPort, err := u.ContainerFactory.Container(cfg.ContainerDriverType)
+	if input.Note != nil {
+		if err := commander.SetNote(*input.Note); err != nil {
+			return domain.CommanderCell{}, err
+		}
+	}
+	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	sessionPort, err := u.SessionFactory.Session(cfg.SessionDriverType)
+	containers, err := u.ContainerFactory.Container(cfg.ContainerDriverType)
 	if err != nil {
-		return nil, err
+		return domain.CommanderCell{}, err
 	}
-	if err := u.Cells.CreateCell(ctx, cell); err != nil {
-		return nil, err
+	workspace, err := u.WorkspaceFactory.Workspace(cfg.WorkspaceDriverType)
+	if err != nil {
+		return domain.CommanderCell{}, err
 	}
+	commander.BeginCreation()
+	cellSet := NewCellSet(append(current.Commanders, commander), append(current.Targets, targets...), append(current.Dependencies, dependencies...))
+	if err := u.Cells.UpdateCells(ctx, func(latest CellSet) (CellSet, error) {
+		if err := domain.EnsureCommanderCellUnique(latest.Commanders, input.Issue, name); err != nil {
+			return CellSet{}, err
+		}
+		return NewCellSet(append(latest.Commanders, commander), append(latest.Targets, targets...), append(latest.Dependencies, dependencies...)), nil
+	}); err != nil {
+		return domain.CommanderCell{}, err
+	}
+	runner := cellCreationRunner{
+		Cells: u.Cells, Source: source, Containers: containers, Workspace: workspace,
+		Commander: &commander, Targets: targets, Dependencies: dependencies,
+		ContainerTemplates: containerTemplates(*resolved.Commander),
+	}
+	if err := runner.run(ctx, &cellSet); err != nil {
+		return domain.CommanderCell{}, err
+	}
+	return commander, nil
+}
 
-	if err := domain.CreateSourcesService(ctx, &cell, sourcePort, u.Cells); err != nil {
-		return nil, err
+func instantiateCommander(cfg domain.Templates, resolved domain.ResolvedTemplate, issue, commanderID string, ids IDGenerator) (domain.CommanderCell, []domain.TargetCell, []domain.DependencyCell, error) {
+	spec := *resolved.Commander
+	dependencyIDs := make(map[string]string, len(spec.Dependencies))
+	dependencies := make([]domain.DependencyCell, 0, len(spec.Dependencies))
+	for _, dependencySpec := range spec.Dependencies {
+		id := ids.NewID()
+		container, err := domain.NewContainer(nil, dependencySpec.Container.Name, dependencySpec.Container.Mode)
+		if err != nil {
+			return domain.CommanderCell{}, nil, nil, err
+		}
+		dependency, err := domain.NewDependencyCell(id, commanderID, dependencySpec.Name, container)
+		if err != nil {
+			return domain.CommanderCell{}, nil, nil, err
+		}
+		dependencyIDs[dependencySpec.Name] = id
+		dependencies = append(dependencies, dependency)
 	}
-	if err := domain.CreateContainersService(ctx, &cell, containerPort, u.Cells); err != nil {
-		return nil, err
+	targets := make([]domain.TargetCell, 0, len(spec.Targets))
+	targetIDs := make([]string, 0, len(spec.Targets))
+	for _, targetSpec := range spec.Targets {
+		id := ids.NewID()
+		var source *domain.Source
+		if targetSpec.Source != nil {
+			value, err := domain.BuildSource(*targetSpec.Source, issue)
+			if err != nil {
+				return domain.CommanderCell{}, nil, nil, err
+			}
+			source = &value
+		}
+		var container *domain.Container
+		if targetSpec.Container != nil {
+			value, err := domain.NewContainer(nil, targetSpec.Container.Name, targetSpec.Container.Mode)
+			if err != nil {
+				return domain.CommanderCell{}, nil, nil, err
+			}
+			container = &value
+		}
+		dependencies := make([]string, 0, len(targetSpec.Dependencies))
+		for _, dependencyName := range targetSpec.Dependencies {
+			dependencies = append(dependencies, dependencyIDs[dependencyName])
+		}
+		target, err := domain.NewTargetCell(id, commanderID, targetSpec.Name, source, container, dependencies)
+		if err != nil {
+			return domain.CommanderCell{}, nil, nil, err
+		}
+		targetIDs = append(targetIDs, id)
+		targets = append(targets, target)
 	}
-	if err := domain.CreateSessionService(ctx, &cell, sessionPort, u.Cells); err != nil {
-		return nil, err
+	dependencyReferences := make([]string, 0, len(dependencies))
+	for _, dependency := range dependencies {
+		dependencyReferences = append(dependencyReferences, dependency.ID)
 	}
-	return &cell, nil
+	windows := make([]domain.WorkspaceWindow, 0, len(spec.Workspace.Windows))
+	for _, item := range spec.Workspace.Windows {
+		window, err := domain.NewWorkspaceWindow(item.Name, item.Command)
+		if err != nil {
+			return domain.CommanderCell{}, nil, nil, err
+		}
+		windows = append(windows, window)
+	}
+	workspace := domain.NewWorkspace(cfg.WorkspaceDriverType, windows)
+	commander, err := domain.NewCommanderCell(commanderID, issue, cfg.ProjectName, resolved.Name, workspace, targetIDs, dependencyReferences, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
+	if err != nil {
+		return domain.CommanderCell{}, nil, nil, err
+	}
+	return commander, targets, dependencies, nil
+}
+
+func containerTemplates(spec domain.CommanderCellSpec) map[string]domain.ContainerTemplate {
+	templates := make(map[string]domain.ContainerTemplate, len(spec.Targets)+len(spec.Dependencies))
+	for _, target := range spec.Targets {
+		if target.Container != nil {
+			templates[target.Container.Name] = *target.Container
+		}
+	}
+	for _, dependency := range spec.Dependencies {
+		templates[dependency.Container.Name] = dependency.Container
+	}
+	return templates
+}
+
+type cellCreationRunner struct {
+	Cells              CellPort
+	Source             SourcePort
+	Containers         ContainerPort
+	Workspace          WorkspacePort
+	Commander          *domain.CommanderCell
+	Targets            []domain.TargetCell
+	Dependencies       []domain.DependencyCell
+	ContainerTemplates map[string]domain.ContainerTemplate
+	BeforeTerminal     func() error
+}
+
+func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
+	stages := []domain.CreationStage{domain.CreationStageSource, domain.CreationStageContainers, domain.CreationStageWorkspace}
+	for _, stage := range stages {
+		if err := r.runStage(ctx, stage); err != nil {
+			rollbackErr := r.rollbackContainers(context.WithoutCancel(ctx), stage)
+			return r.fail(ctx, cells, stage, errors.Join(err, rollbackErr))
+		}
+		if stage == domain.CreationStageWorkspace {
+			if r.BeforeTerminal != nil {
+				if err := r.BeforeTerminal(); err != nil {
+					return r.fail(ctx, cells, stage, err)
+				}
+			}
+			r.Commander.FinishCreation()
+		}
+		saveCtx := ctx
+		if stage == domain.CreationStageWorkspace && r.BeforeTerminal != nil {
+			saveCtx = context.WithoutCancel(ctx)
+		}
+		if err := r.save(saveCtx, cells); err != nil {
+			cleanupErr := r.cleanupUnpersistedStage(context.WithoutCancel(ctx), stage)
+			rollbackErr := r.rollbackContainers(context.WithoutCancel(ctx), stage)
+			return r.fail(ctx, cells, stage, errors.Join(fmt.Errorf("save %s stage: %w", stage, err), cleanupErr, rollbackErr))
+		}
+	}
+	return nil
+}
+
+func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationStage) error {
+	switch stage {
+	case domain.CreationStageSource:
+		for _, resource := range r.Commander.SourceResources(r.Targets) {
+			if err := r.Source.CreateSource(ctx, resource); err != nil {
+				return err
+			}
+		}
+		return nil
+	case domain.CreationStageContainers:
+		resources := commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
+		networks, err := r.Containers.CreateContainers(ctx, resources)
+		if err != nil {
+			return err
+		}
+		for i := range r.Targets {
+			if r.Targets[i].Container != nil {
+				r.Targets[i].Container.Network = append([]string(nil), networks[r.Targets[i].Container.SourceContainer]...)
+			}
+		}
+		for i := range r.Dependencies {
+			r.Dependencies[i].Container.Network = append([]string(nil), networks[r.Dependencies[i].Container.SourceContainer]...)
+		}
+		return nil
+	case domain.CreationStageWorkspace:
+		return r.Workspace.CreateWorkspace(ctx, r.Commander.WorkspaceResource())
+	default:
+		return fmt.Errorf("unsupported creation stage %q", stage)
+	}
+}
+
+func (r cellCreationRunner) rollbackContainers(ctx context.Context, failedStage domain.CreationStage) error {
+	if failedStage != domain.CreationStageWorkspace || r.Commander.ContainerDriver != domain.Docker {
+		return nil
+	}
+	return ignoreNotFound(r.Containers.CleanContainers(ctx, commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, nil)))
+}
+
+func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage domain.CreationStage) error {
+	if stage == domain.CreationStageWorkspace {
+		return ignoreNotFound(r.Workspace.CleanWorkspace(ctx, r.Commander.WorkspaceResource()))
+	}
+	if stage == domain.CreationStageContainers {
+		return ignoreNotFound(r.Containers.CleanContainers(ctx, commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, nil)))
+	}
+	return nil
+}
+
+func (r cellCreationRunner) fail(ctx context.Context, cells *CellSet, stage domain.CreationStage, createErr error) error {
+	r.Commander.FailCreation(stage, createErr)
+	if err := r.save(context.WithoutCancel(ctx), cells); err != nil {
+		return errors.Join(createErr, fmt.Errorf("save failed CommanderCell: %w", err))
+	}
+	return createErr
+}
+
+func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
+	if err := r.Cells.UpdateCells(ctx, func(latest CellSet) (CellSet, error) {
+		for index := range latest.Commanders {
+			if latest.Commanders[index].ID == r.Commander.ID {
+				latest.Commanders[index] = r.Commander.Clone()
+				for childIndex := range latest.Targets {
+					if latest.Targets[childIndex].CommanderID == r.Commander.ID {
+						latest.Targets[childIndex] = targetByID(r.Targets, latest.Targets[childIndex].ID)
+					}
+				}
+				for childIndex := range latest.Dependencies {
+					if latest.Dependencies[childIndex].CommanderID == r.Commander.ID {
+						latest.Dependencies[childIndex] = dependencyByID(r.Dependencies, latest.Dependencies[childIndex].ID)
+					}
+				}
+				*cells = NewCellSet(latest.Commanders, latest.Targets, latest.Dependencies)
+				return latest, nil
+			}
+		}
+		return CellSet{}, fmt.Errorf("CommanderCell %q not found", r.Commander.Name().Value)
+	}); err != nil {
+		return err
+	}
+	return r.Commander.AdvanceVersion()
+}
+
+func targetByID(targets []domain.TargetCell, id string) domain.TargetCell {
+	for _, target := range targets {
+		if target.ID == id {
+			return target
+		}
+	}
+	return domain.TargetCell{}
+}
+
+func dependencyByID(dependencies []domain.DependencyCell, id string) domain.DependencyCell {
+	for _, dependency := range dependencies {
+		if dependency.ID == id {
+			return dependency
+		}
+	}
+	return domain.DependencyCell{}
 }

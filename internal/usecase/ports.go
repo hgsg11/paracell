@@ -20,36 +20,40 @@ type CellInitializer interface {
 }
 
 type CellPort interface {
-	LoadCells(context.Context) ([]domain.Cell, error)
-	CreateCell(context.Context, domain.Cell) error
-	SaveCell(context.Context, domain.Cell) error
-	UpdateCells(context.Context, func([]domain.Cell) ([]domain.Cell, error)) error
-	DeleteCell(context.Context, domain.Cell) error
+	LoadCells(context.Context) (CellSet, error)
+	UpdateCells(context.Context, func(CellSet) (CellSet, error)) error
+}
+
+// CellSet is a state snapshot of independent runtime Cells; the CommanderCell's
+// ID references, rather than embeds, its targets and dependencies.
+type CellSet struct {
+	Commanders   []domain.CommanderCell
+	Targets      []domain.TargetCell
+	Dependencies []domain.DependencyCell
+}
+
+func NewCellSet(commanders []domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) CellSet {
+	return CellSet{Commanders: append([]domain.CommanderCell(nil), commanders...), Targets: append([]domain.TargetCell(nil), targets...), Dependencies: append([]domain.DependencyCell(nil), dependencies...)}
 }
 
 type SourcePort interface {
-	CreateSource(ctx context.Context, repository string, worktree string, base string, branch string) error
-	CleanSource(ctx context.Context, repository string, worktree string) error
+	CreateSource(context.Context, domain.SourceResource) error
+	CleanSource(context.Context, domain.SourceResource) error
 }
 
 type ContainerPort interface {
-	CreateContainerNetwork(ctx context.Context, network string) error
-	CreateContainer(ctx context.Context, containerName string, environments []domain.Environment, mounts []domain.Mount, cellName string, project string, network string, sourcePath string) ([]string, error)
-	ConnectDependency(ctx context.Context, containerName string, network string) ([]string, error)
-	CleanContainers(ctx context.Context, network string, containers []string, dependencies []string) error
+	CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error)
+	CleanContainers(context.Context, domain.ContainerResources) error
 }
 
-type SessionPort interface {
-	CreateSession(ctx context.Context, name string, cellName string, firstWindow string, workingDirectory string) error
-	CreateWindow(ctx context.Context, session string, window string, workingDirectory string) error
-	SendWindowCommand(ctx context.Context, session string, window string, command string) error
-	ConfigureSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
-	CleanSession(ctx context.Context, name string) error
-	PrepareSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
-	UpdateStatusLabel(ctx context.Context, name string, label string) error
-	EnterSession(ctx context.Context, name string, cellName string, project string, label string, windowNames []string) error
-	EnterRootSession(context.Context, string) error
-	ExitSession(context.Context) error
+type WorkspacePort interface {
+	CreateWorkspace(context.Context, domain.WorkspaceResource) error
+	CleanWorkspace(context.Context, domain.WorkspaceResource) error
+	PrepareWorkspace(context.Context, domain.WorkspaceResource) error
+	UpdateStatusLabel(context.Context, domain.WorkspaceResource) error
+	EnterWorkspace(context.Context, domain.WorkspaceResource) error
+	EnterRootWorkspace(context.Context, string) error
+	ExitWorkspace(context.Context) error
 }
 
 type Notifier interface {
@@ -68,8 +72,8 @@ type ContainerProviderFactory interface {
 	Container(driver domain.ContainerDriverType) (ContainerPort, error)
 }
 
-type SessionProviderFactory interface {
-	Session(driver domain.SessionDriverType) (SessionPort, error)
+type WorkspaceProviderFactory interface {
+	Workspace(driver domain.WorkspaceDriverType) (WorkspacePort, error)
 }
 
 type IDGenerator interface {

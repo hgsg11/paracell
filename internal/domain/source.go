@@ -5,13 +5,12 @@ import (
 )
 
 type Source struct {
-	Path     string
-	Worktree string
-	Base     string
-	Branch   string
+	Path   string
+	Base   string
+	Branch string
 }
 
-func NewSource(path string, worktree string, base string, branch string) (Source, error) {
+func NewSource(path string, base string, branch string) (Source, error) {
 	template, err := NewSourceTemplate(path, base, "")
 	if err != nil {
 		return Source{}, err
@@ -19,5 +18,5 @@ func NewSource(path string, worktree string, base string, branch string) (Source
 	if branch == "" {
 		return Source{}, fmt.Errorf("source branch is required")
 	}
-	return Source{Path: template.Path, Worktree: worktree, Base: base, Branch: branch}, nil
+	return Source{Path: template.Path, Base: base, Branch: branch}, nil
 }

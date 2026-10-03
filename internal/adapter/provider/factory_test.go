@@ -22,7 +22,7 @@ func TestFactoryはDriverTypeからAdapterを作る(t *testing.T) {
 	} else if _, ok := got.(container.DockerCLIAdapter); !ok {
 		t.Fatalf("container = %T", got)
 	}
-	if got, err := factory.Session(domain.Tmux); err != nil {
+	if got, err := factory.Workspace(domain.Tmux); err != nil {
 		t.Fatal(err)
 	} else if _, ok := got.(session.TmuxAdapter); !ok {
 		t.Fatalf("session = %T", got)

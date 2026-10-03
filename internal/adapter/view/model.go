@@ -34,16 +34,16 @@ const (
 
 type Result struct {
 	Action Action
-	Cell   domain.Cell
+	Cell   domain.CommanderCell
 }
 
 type forkResultMsg struct {
-	cell domain.Cell
+	cell domain.CommanderCell
 	err  error
 }
 
 type Model struct {
-	Cells            []domain.Cell
+	Cells            []domain.CommanderCell
 	Templates        []string
 	CurrentCell      string
 	Focus            FocusArea
@@ -62,17 +62,17 @@ type Model struct {
 	Width            int
 	Height           int
 	Result           Result
-	Enter            func(domain.Cell) tea.Cmd
+	Enter            func(domain.CommanderCell) tea.Cmd
 	Fork             func(issue string, template string) tea.Cmd
-	Delete           func(domain.Cell) error
-	MarkDone         func(domain.Cell) (domain.Cell, error)
-	Reload           func() ([]domain.Cell, error)
+	Delete           func(domain.CommanderCell) error
+	MarkDone         func(domain.CommanderCell) (domain.CommanderCell, error)
+	Reload           func() ([]domain.CommanderCell, error)
 	Logger           *logging.Logger
 }
 
-func NewModel(cells []domain.Cell, templates ...[]string) Model {
+func NewModel(cells []domain.CommanderCell, templates ...[]string) Model {
 	model := Model{
-		Cells: append([]domain.Cell(nil), cells...),
+		Cells: append([]domain.CommanderCell(nil), cells...),
 		Focus: FocusCells,
 	}
 	if len(templates) > 0 {
@@ -284,7 +284,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if index < 0 {
 			return m, nil
 		}
-		m.Cells = append(append([]domain.Cell{}, m.Cells[:index]...), m.Cells[index+1:]...)
+		m.Cells = append(append([]domain.CommanderCell{}, m.Cells[:index]...), m.Cells[index+1:]...)
 		if m.Selected >= len(m.Cells) && m.Selected > 0 {
 			m.Selected--
 		}
@@ -340,7 +340,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(err.Error())
 			return m, nil
 		}
-		var selectedCell domain.Cell
+		var selectedCell domain.CommanderCell
 		hasSelectedCell := false
 		if m.Selected >= 0 && m.Selected < len(m.Cells) {
 			selectedCell = m.Cells[m.Selected]
@@ -553,7 +553,7 @@ func maxLineWidth(lines []string) int {
 	return width
 }
 
-func cellWidths(cells []domain.Cell) (int, int) {
+func cellWidths(cells []domain.CommanderCell) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
@@ -564,7 +564,7 @@ func cellWidths(cells []domain.Cell) (int, int) {
 	return nameWidth, templateWidth
 }
 
-func renderCellStatus(cell domain.Cell, frame int) string {
+func renderCellStatus(cell domain.CommanderCell, frame int) string {
 	switch {
 	case cell.HasStatus(domain.Pending):
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
@@ -602,7 +602,7 @@ func resetForkInput(m Model) Model {
 	return m
 }
 
-func currentCellMarker(cell domain.Cell, currentCell string) string {
+func currentCellMarker(cell domain.CommanderCell, currentCell string) string {
 	if currentCell != "" && cell.Name().Value == currentCell {
 		return "*"
 	}
@@ -762,11 +762,11 @@ func (m Model) waitLogCmd() tea.Cmd {
 }
 
 type enterResultMsg struct {
-	cell domain.Cell
+	cell domain.CommanderCell
 	err  error
 }
 
-func EnterLoggedProcessCmd(cell domain.Cell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
+func EnterLoggedProcessCmd(cell domain.CommanderCell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
 	return tea.Exec(newLoggedCapturedExecCommand(cmd, logger), func(err error) tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
 	})
@@ -889,25 +889,25 @@ func (w logChunkWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func EnterFailureCmd(cell domain.Cell, err error) tea.Cmd {
+func EnterFailureCmd(cell domain.CommanderCell, err error) tea.Cmd {
 	return func() tea.Msg {
 		return enterResultMsg{cell: cell, err: err}
 	}
 }
 
-func ForkResultCmd(cell domain.Cell, err error) tea.Cmd {
+func ForkResultCmd(cell domain.CommanderCell, err error) tea.Cmd {
 	return func() tea.Msg {
 		return forkResultMsg{cell: cell, err: err}
 	}
 }
 
 type deleteResultMsg struct {
-	cell domain.Cell
+	cell domain.CommanderCell
 	err  error
 }
 
 type markDoneResultMsg struct {
-	cell domain.Cell
+	cell domain.CommanderCell
 	err  error
 }
 

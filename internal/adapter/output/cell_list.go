@@ -7,7 +7,7 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func FormatCellList(cells []domain.Cell) string {
+func FormatCellList(cells []domain.CommanderCell) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {

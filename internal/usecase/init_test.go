@@ -36,8 +36,8 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.ContainerDriverType != domain.None {
 		t.Fatalf("providers.container = %q, want none", cfg.ContainerDriverType)
 	}
-	if cfg.SessionDriverType != domain.Tmux {
-		t.Fatalf("providers.session = %q, want %q", cfg.SessionDriverType, domain.Tmux)
+	if cfg.WorkspaceDriverType != domain.Tmux {
+		t.Fatalf("providers.workspace = %q, want %q", cfg.WorkspaceDriverType, domain.Tmux)
 	}
 	if cfg.NotificationDriverType != domain.TmuxNotification {
 		t.Fatalf("providers.notifications = %q, want %q", cfg.NotificationDriverType, domain.TmuxNotification)
@@ -46,7 +46,7 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
 	}
 	for _, template := range cfg.Templates {
-		if template.Repository == nil || template.Repository.Base != "main" || template.Repository.Prefix != template.Name+"/" {
+		if template.Commander == nil || len(template.Commander.Targets) != 1 || template.Commander.Targets[0].Source == nil || template.Commander.Targets[0].Source.Base != "main" || template.Commander.Targets[0].Source.Prefix != template.Name+"/" {
 			t.Fatalf("template = %#v", template)
 		}
 	}
