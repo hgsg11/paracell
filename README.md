@@ -95,45 +95,35 @@ project:
   name: ""
 providers:
   source: git
-  session: tmux
+  workspace: tmux
   notifications: tmux
 templates:
   base:
     abstract: true
-    repository:
-      base: main
-      branchMode: create
-    session:
-      windows:
-        - name: agent
-          command: 'codex "{{.Command}}"'
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: agent
+            command: 'codex "{{.Command}}"'
+      targets:
+        repository:
+          source:
+            base: main
+            branchMode: create
   feat:
     extends: base
-    repository:
-      branchPrefix: feat/
-  update:
-    extends: base
-    repository:
-      branchPrefix: update/
-  fix:
-    extends: base
-    repository:
-      branchPrefix: fix/
-  review:
-    extends: base
-    repository:
-      branchPrefix: review/
 ```
 
 template は `extends` で一つの親を継承できます。親自身も別のtemplateを継承できます。共通設定だけを持つtemplateには `abstract: true` を付けます。abstract templateは継承元には使えますが、`fork --template` とTUIの選択肢には表示されません。
 
-継承では、子で未指定のscalarとstruct fieldは親の値を維持し、子で指定した値は空文字を含めて上書きします。`files`、`session.windows`、`containers.services`のようなslice/mapは、子で指定するとcollection全体を置換します。親子の要素はappend/deep mergeされません。`[]`または`{}`を指定すると明示的に空へ置換できます。
+子templateで `commanderCell` を省略すると親の定義を引き継ぎます。指定した場合はCommanderCell定義全体を置き換えます。ターゲットや依存セルは各CommanderCell内で定義します。
 
 存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
 
 ## Container gateway
 
-Docker provider でcontainer serviceを使うすべてのcellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各cell専用networkへ接続され、`paracell.yaml` の `containers.services` map key（service role）と公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
+Docker provider でcontainerを使うCommanderCellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各CommanderCell専用networkへ接続され、公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
 
 Traefik dashboard はデフォルトで有効になり、次の URL から利用できます。末尾の `/` は必須です。dashboard と API は専用の管理 port や `api.insecure` を使わず、既存の loopback-only web entrypoint を通じて `gateway.paracell.localhost` にだけ route されます。
 
@@ -296,19 +286,21 @@ tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます�
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
 ```yaml
-containers:
-  services:
-    web:
-      sourceContainer: myapp-web
-      environment:
-        PARACELL_ISSUE: "{{.issue}}"
-        PARACELL_CELL: "{{.name}}"
-        PARACELL_PROJECT: "{{.project}}"
-        OPTIONAL_VALUE: ""
-    db:
-      sourceContainer: myapp-db
-      database:
-        mode: shared
+templates:
+  feat:
+  commanderCell:
+    targets:
+      web:
+        container:
+          sourceContainer: myapp-web
+          environment:
+            PARACELL_ISSUE: "{{.issue}}"
+            PARACELL_CELL: "{{.name}}"
+            PARACELL_PROJECT: "{{.project}}"
+            OPTIONAL_VALUE: ""
+      db:
+        container:
+          sourceContainer: myapp-db
 ```
 
 ## ファイル

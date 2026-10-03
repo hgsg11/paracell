@@ -5,61 +5,57 @@ import (
 	"testing"
 )
 
-func TestResolveTemplateは継承とRuntime変数展開を担当する(t *testing.T) {
-	baseSource, _ := NewSourceTemplate(".", "origin/main", "")
-	baseSession := NewSessionTemplate([]Window{{Name: "agent", Command: "codex {{.Command}}"}})
-	base, _ := NewUnresolvedTemplate("base", "", true, &baseSource, nil, &baseSession)
-	prefix := "feat/"
-	childSource, _ := NewPartialSourceTemplate(nil, nil, &prefix)
+func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t *testing.T) {
+	source, _ := NewSourceTemplate("services/api", "origin/main", "feat/")
+	mode, _ := NewMode("target")
 	environment, _ := NewEnvironment("CELL", "{{.Project}}-{{.Name}}")
-	container, _ := NewContainerTemplate("app", Target, []Environment{environment}, nil)
-	containers := []ContainerTemplate{container}
-	child, _ := NewUnresolvedTemplate("feat", "base", false, &childSource, &containers, nil)
-	sessionDriver, _ := NewSessionDriverType("tmux")
-	sourceDriver, _ := NewSourceDriverType("git")
-	config, _ := NewTemplates("sample", []Template{base, child}, sessionDriver, Docker, sourceDriver, NoNotification)
-
-	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "work"))
+	container, _ := NewContainerTemplate("api", mode, []Environment{environment}, nil)
+	target, _ := NewTargetCellSpec("api", &source, &container, []string{"db"})
+	dependencyContainer, _ := NewContainerTemplate("postgres", Dependency, nil, nil)
+	dependency, _ := NewDependencyCellSpec("db", dependencyContainer)
+	commander, err := NewCommanderCellSpec("workspace", NewWorkspaceTemplate([]Window{{Name: "agent", Command: "codex {{.Command}}"}}), []TargetCellSpec{target}, []DependencyCellSpec{dependency})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolved.Sources[0].Base != "origin/main" || resolved.Sources[0].Prefix != "feat/" {
-		t.Fatalf("source = %#v", resolved.Sources[0])
+	base, _ := NewUnresolvedTemplate("base", "", true, &commander)
+	child, _ := NewUnresolvedTemplate("feat", "base", false, nil)
+	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
+	sourceDriver, _ := NewSourceDriverType("git")
+	config, _ := NewTemplates("sample", []Template{base, child}, workspaceDriver, Docker, sourceDriver, NoNotification)
+
+	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "make test"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resolved.Containers[0].Environments[0].Value != "sample-42" {
-		t.Fatalf("environment = %#v", resolved.Containers[0].Environments)
+	if resolved.Commander == nil || resolved.Commander.Name != "workspace" || resolved.Commander.Workspace.Windows[0].Command != "codex make test" {
+		t.Fatalf("resolved CommanderCell = %#v", resolved.Commander)
 	}
-	if resolved.Session.Windows[0].Command != "codex work" {
-		t.Fatalf("session = %#v", resolved.Session)
+	api := resolved.Commander.Targets[0]
+	if api.Source == nil || api.Source.Path != "services/api" || api.Container == nil || api.Container.Environments[0].Value != "sample-42" {
+		t.Fatalf("resolved TargetCellSpec = %#v", api)
+	}
+	if api.Dependencies[0] != "db" || resolved.Commander.Dependencies[0].Container.Name != "postgres" {
+		t.Fatalf("Cell references = %#v / %#v", api.Dependencies, resolved.Commander.Dependencies)
 	}
 }
 
-func TestResolveTemplateは不正な継承と式を拒否する(t *testing.T) {
-	sessionDriver, _ := NewSessionDriverType("tmux")
+func TestResolveTemplateはInheritanceCycleとAbstractTemplateを拒否する(t *testing.T) {
+	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	a, _ := NewUnresolvedTemplate("a", "b", false, nil, nil, nil)
-	b, _ := NewUnresolvedTemplate("b", "a", false, nil, nil, nil)
-	config, _ := NewTemplates("sample", []Template{a, b}, sessionDriver, None, sourceDriver, NoNotification)
+	a, _ := NewUnresolvedTemplate("a", "b", false, nil)
+	b, _ := NewUnresolvedTemplate("b", "a", false, nil)
+	config, _ := NewTemplates("sample", []Template{a, b}, workspaceDriver, None, sourceDriver, NoNotification)
 	if _, err := config.Resolve("a", NewTemplateVars("", "", "", "")); err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("cycle error = %v", err)
 	}
-
-	window, _ := NewWindow("agent", "{{.Missing}}")
-	bad, _ := NewTemplate("bad", nil, nil, NewSessionTemplate([]Window{window}))
-	config, _ = NewTemplates("sample", []Template{bad}, sessionDriver, None, sourceDriver, NoNotification)
-	if _, err := config.Resolve("bad", NewTemplateVars("", "", "", "")); err == nil {
-		t.Fatal("undefined variable must fail")
+	window, _ := NewWindow("agent", "")
+	commander, _ := NewCommanderCellSpec("workspace", NewWorkspaceTemplate([]Window{window}), nil, nil)
+	base, _ := NewUnresolvedTemplate("base", "", true, &commander)
+	config, _ = NewTemplates("sample", []Template{base}, workspaceDriver, None, sourceDriver, NoNotification)
+	if _, err := config.Resolve("base", NewTemplateVars("", "", "", "")); err == nil {
+		t.Fatal("abstract template must not be selectable")
 	}
-}
-
-func TestDriverTypeを生成する(t *testing.T) {
-	if NewContainerDriverType("unknown") != None {
-		t.Fatal("unknown container driver must become none")
-	}
-	if _, err := NewSessionDriverType(""); err == nil {
-		t.Fatal("empty session driver must fail")
-	}
-	if _, err := NewSourceDriverType(""); err == nil {
-		t.Fatal("empty source driver must fail")
+	if _, err := config.Resolve("missing", NewTemplateVars("", "", "", "")); err == nil {
+		t.Fatal("missing template must be rejected")
 	}
 }

@@ -20,9 +20,20 @@ type CellInitializer interface {
 }
 
 type CellPort interface {
-	LoadCells(context.Context) ([]domain.Cell, error)
-	UpdateCells(context.Context, func([]domain.Cell) ([]domain.Cell, error)) error
-	DeleteCell(context.Context, domain.Cell) error
+	LoadCells(context.Context) (CellSet, error)
+	UpdateCells(context.Context, func(CellSet) (CellSet, error)) error
+}
+
+// CellSet is a state snapshot of independent runtime Cells; the CommanderCell's
+// ID references, rather than embeds, its targets and dependencies.
+type CellSet struct {
+	Commanders   []domain.CommanderCell
+	Targets      []domain.TargetCell
+	Dependencies []domain.DependencyCell
+}
+
+func NewCellSet(commanders []domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) CellSet {
+	return CellSet{Commanders: append([]domain.CommanderCell(nil), commanders...), Targets: append([]domain.TargetCell(nil), targets...), Dependencies: append([]domain.DependencyCell(nil), dependencies...)}
 }
 
 type SourcePort interface {
@@ -35,14 +46,14 @@ type ContainerPort interface {
 	CleanContainers(context.Context, domain.ContainerResources) error
 }
 
-type SessionPort interface {
-	CreateSession(context.Context, domain.SessionResource) error
-	CleanSession(context.Context, domain.SessionResource) error
-	PrepareSession(context.Context, domain.SessionResource) error
-	UpdateStatusLabel(context.Context, domain.SessionResource) error
-	EnterSession(context.Context, domain.SessionResource) error
-	EnterRootSession(context.Context, string) error
-	ExitSession(context.Context) error
+type WorkspacePort interface {
+	CreateWorkspace(context.Context, domain.WorkspaceResource) error
+	CleanWorkspace(context.Context, domain.WorkspaceResource) error
+	PrepareWorkspace(context.Context, domain.WorkspaceResource) error
+	UpdateStatusLabel(context.Context, domain.WorkspaceResource) error
+	EnterWorkspace(context.Context, domain.WorkspaceResource) error
+	EnterRootWorkspace(context.Context, string) error
+	ExitWorkspace(context.Context) error
 }
 
 type Notifier interface {
@@ -61,8 +72,8 @@ type ContainerProviderFactory interface {
 	Container(driver domain.ContainerDriverType) (ContainerPort, error)
 }
 
-type SessionProviderFactory interface {
-	Session(driver domain.SessionDriverType) (SessionPort, error)
+type WorkspaceProviderFactory interface {
+	Workspace(driver domain.WorkspaceDriverType) (WorkspacePort, error)
 }
 
 type IDGenerator interface {

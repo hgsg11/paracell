@@ -11,6 +11,7 @@ import (
 	"reflect"
 
 	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 	_ "modernc.org/sqlite"
 )
 
@@ -28,16 +29,16 @@ func (a SQLiteCellAdapter) Initialize(ctx context.Context) error {
 	return db.Close()
 }
 
-func (a SQLiteCellAdapter) LoadCells(ctx context.Context) ([]domain.Cell, error) {
+func (a SQLiteCellAdapter) LoadCells(ctx context.Context) (usecase.CellSet, error) {
 	db, err := a.open(ctx)
 	if err != nil {
-		return nil, err
+		return usecase.CellSet{}, err
 	}
 	defer db.Close()
 	return loadCells(ctx, db)
 }
 
-func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
+func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func(usecase.CellSet) (usecase.CellSet, error)) error {
 	db, err := a.open(ctx)
 	if err != nil {
 		return err
@@ -61,8 +62,15 @@ func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func([]domain
 	if err != nil {
 		return err
 	}
-	next, err := update(cloneCells(current))
+	cloned, err := cloneCellSet(current)
 	if err != nil {
+		return err
+	}
+	next, err := update(cloned)
+	if err != nil {
+		return err
+	}
+	if err := validateCellSet(next); err != nil {
 		return err
 	}
 	if err := applyChanges(ctx, conn, current, next); err != nil {
@@ -75,30 +83,9 @@ func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func([]domain
 	return nil
 }
 
-func (a SQLiteCellAdapter) DeleteCell(ctx context.Context, cell domain.Cell) error {
-	record := cell.Stored()
-	db, err := a.open(ctx)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	result, err := db.ExecContext(ctx, "DELETE FROM cells WHERE id = ? AND version = ?", record.ID, record.Version)
-	if err != nil {
-		return fmt.Errorf("delete cell %q: %w", record.ID, err)
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect deleted cell %q: %w", record.ID, err)
-	}
-	if affected != 1 {
-		return fmt.Errorf("%w: delete cell %q expected version %d", domain.ErrVersionConflict, record.ID, record.Version)
-	}
-	return nil
-}
-
-func (a SQLiteCellAdapter) SaveCells(ctx context.Context, cells []domain.Cell) error {
-	return a.UpdateCells(ctx, func([]domain.Cell) ([]domain.Cell, error) {
-		return cloneCells(cells), nil
+func (a SQLiteCellAdapter) SaveCells(ctx context.Context, commanders []domain.CommanderCell) error {
+	return a.UpdateCells(ctx, func(usecase.CellSet) (usecase.CellSet, error) {
+		return usecase.NewCellSet(commanders, nil, nil), nil
 	})
 }
 
@@ -147,116 +134,244 @@ type stateQueryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func loadCells(ctx context.Context, queryer stateQueryer) ([]domain.Cell, error) {
+type stateCellRecord struct {
+	Commander    domain.StoredCommanderCell `json:"commander"`
+	Targets      []domain.TargetCell        `json:"targets"`
+	Dependencies []domain.DependencyCell    `json:"dependencies"`
+}
+
+func newStateCellRecord(commander domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) stateCellRecord {
+	return stateCellRecord{Commander: commander.Stored(), Targets: append([]domain.TargetCell(nil), targets...), Dependencies: append([]domain.DependencyCell(nil), dependencies...)}
+}
+
+func loadCells(ctx context.Context, queryer stateQueryer) (usecase.CellSet, error) {
 	rows, err := queryer.QueryContext(ctx, "SELECT id, version, record FROM cells ORDER BY position")
 	if err != nil {
-		return nil, fmt.Errorf("query cells: %w", err)
+		return usecase.CellSet{}, fmt.Errorf("query cells: %w", err)
 	}
 	defer rows.Close()
-	cells := []domain.Cell{}
+	set := usecase.NewCellSet(nil, nil, nil)
 	for rows.Next() {
 		var id string
 		var version uint64
 		var data []byte
 		if err := rows.Scan(&id, &version, &data); err != nil {
-			return nil, fmt.Errorf("scan cell: %w", err)
+			return usecase.CellSet{}, fmt.Errorf("scan CommanderCell: %w", err)
 		}
-		var stored domain.StoredCell
-		if err := json.Unmarshal(data, &stored); err != nil {
-			return nil, fmt.Errorf("decode cell %q: %w", id, err)
+		var record stateCellRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			return usecase.CellSet{}, fmt.Errorf("decode CommanderCell %q: %w", id, err)
 		}
-		if stored.ID != id || stored.Version != version {
-			return nil, fmt.Errorf("cell %q identity or version does not match its state row", id)
+		if record.Commander.ID != id || record.Commander.Version != version {
+			return usecase.CellSet{}, fmt.Errorf("CommanderCell %q identity or version does not match its state row", id)
 		}
-		cell, err := domain.RestoreCell(stored)
+		commander, err := domain.RestoreCommanderCell(record.Commander)
 		if err != nil {
-			return nil, fmt.Errorf("restore cell %q: %w", id, err)
+			return usecase.CellSet{}, fmt.Errorf("restore CommanderCell %q: %w", id, err)
 		}
-		cells = append(cells, cell)
+		set.Commanders = append(set.Commanders, commander)
+		for _, stored := range record.Targets {
+			target, err := domain.RestoreTargetCell(stored)
+			if err != nil {
+				return usecase.CellSet{}, fmt.Errorf("restore TargetCell %q: %w", stored.ID, err)
+			}
+			set.Targets = append(set.Targets, target)
+		}
+		for _, stored := range record.Dependencies {
+			dependency, err := domain.RestoreDependencyCell(stored)
+			if err != nil {
+				return usecase.CellSet{}, fmt.Errorf("restore DependencyCell %q: %w", stored.ID, err)
+			}
+			set.Dependencies = append(set.Dependencies, dependency)
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate cells: %w", err)
+		return usecase.CellSet{}, fmt.Errorf("iterate CommanderCells: %w", err)
 	}
-	return cells, nil
+	if err := validateCellSet(set); err != nil {
+		return usecase.CellSet{}, fmt.Errorf("validate persisted Cells: %w", err)
+	}
+	return set, nil
+}
+
+func validateCellSet(set usecase.CellSet) error {
+	commanders := make(map[string]domain.CommanderCell, len(set.Commanders))
+	for _, commander := range set.Commanders {
+		if _, exists := commanders[commander.ID]; exists {
+			return fmt.Errorf("duplicate CommanderCell id %q", commander.ID)
+		}
+		commanders[commander.ID] = commander
+	}
+	targets := make(map[string]domain.TargetCell, len(set.Targets))
+	ownedTargets := make(map[string]struct{}, len(set.Targets))
+	for _, target := range set.Targets {
+		if _, exists := commanders[target.CommanderID]; !exists {
+			return fmt.Errorf("TargetCell %q has unknown CommanderCell %q", target.ID, target.CommanderID)
+		}
+		if _, exists := targets[target.ID]; exists {
+			return fmt.Errorf("duplicate TargetCell id %q", target.ID)
+		}
+		targets[target.ID] = target
+	}
+	dependencies := make(map[string]domain.DependencyCell, len(set.Dependencies))
+	ownedDependencies := make(map[string]struct{}, len(set.Dependencies))
+	for _, dependency := range set.Dependencies {
+		if _, exists := commanders[dependency.CommanderID]; !exists {
+			return fmt.Errorf("DependencyCell %q has unknown CommanderCell %q", dependency.ID, dependency.CommanderID)
+		}
+		if _, exists := dependencies[dependency.ID]; exists {
+			return fmt.Errorf("duplicate DependencyCell id %q", dependency.ID)
+		}
+		dependencies[dependency.ID] = dependency
+	}
+	for _, commander := range set.Commanders {
+		for _, id := range commander.Targets {
+			target, exists := targets[id]
+			if !exists || target.CommanderID != commander.ID {
+				return fmt.Errorf("CommanderCell %q has invalid TargetCell reference %q", commander.ID, id)
+			}
+			ownedTargets[id] = struct{}{}
+		}
+		for _, id := range commander.Dependencies {
+			dependency, exists := dependencies[id]
+			if !exists || dependency.CommanderID != commander.ID {
+				return fmt.Errorf("CommanderCell %q has invalid DependencyCell reference %q", commander.ID, id)
+			}
+			ownedDependencies[id] = struct{}{}
+		}
+	}
+	if len(ownedTargets) != len(targets) || len(ownedDependencies) != len(dependencies) {
+		return fmt.Errorf("CellSet contains an unreferenced TargetCell or DependencyCell")
+	}
+	for _, target := range set.Targets {
+		for _, id := range target.Dependencies {
+			dependency, exists := dependencies[id]
+			if !exists || dependency.CommanderID != target.CommanderID {
+				return fmt.Errorf("TargetCell %q has invalid DependencyCell reference %q", target.ID, id)
+			}
+		}
+	}
+	return nil
 }
 
 type stateExecer interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
-func applyChanges(ctx context.Context, execer stateExecer, current []domain.Cell, next []domain.Cell) error {
-	currentByID := make(map[string]domain.Cell, len(current))
-	nextByID := make(map[string]domain.Cell, len(next))
-	for _, cell := range current {
-		record := cell.Stored()
-		currentByID[record.ID] = cell
+func applyChanges(ctx context.Context, execer stateExecer, current usecase.CellSet, next usecase.CellSet) error {
+	currentRecords, err := cellRecords(current)
+	if err != nil {
+		return err
 	}
-	for position, cell := range next {
-		record := cell.Stored()
-		if _, exists := nextByID[record.ID]; exists {
-			return fmt.Errorf("duplicate cell id %q", record.ID)
+	nextRecords, err := cellRecords(next)
+	if err != nil {
+		return err
+	}
+	currentByID := make(map[string]stateCellRecord, len(currentRecords))
+	for _, record := range currentRecords {
+		currentByID[record.Commander.ID] = record
+	}
+	nextByID := make(map[string]struct{}, len(nextRecords))
+	for position, record := range nextRecords {
+		id := record.Commander.ID
+		if _, exists := nextByID[id]; exists {
+			return fmt.Errorf("duplicate CommanderCell id %q", id)
 		}
-		nextByID[record.ID] = cell
-		stored, exists := currentByID[record.ID]
+		nextByID[id] = struct{}{}
+		stored, exists := currentByID[id]
 		if !exists {
-			if record.Version != 1 {
-				return fmt.Errorf("new cell %q must have version 1", record.ID)
+			if record.Commander.Version != 1 {
+				return fmt.Errorf("new CommanderCell %q must have version 1", id)
 			}
-			if err := insertCell(ctx, execer, position, cell); err != nil {
+			if err := insertCell(ctx, execer, position, record); err != nil {
 				return err
 			}
 			continue
 		}
-		storedRecord := stored.Stored()
-		if reflect.DeepEqual(storedRecord, record) && position == cellPosition(current, record.ID) {
+		if reflect.DeepEqual(stored, record) && position == commanderPosition(current, id) {
 			continue
 		}
-		if record.Version != storedRecord.Version {
-			return fmt.Errorf("%w: update cell %q expected version %d, found %d", domain.ErrVersionConflict, record.ID, record.Version, storedRecord.Version)
+		if record.Commander.Version != stored.Commander.Version {
+			return fmt.Errorf("%w: update CommanderCell %q expected version %d, found %d", domain.ErrVersionConflict, id, record.Commander.Version, stored.Commander.Version)
 		}
-		persisted := cell
-		if err := persisted.AdvanceVersion(); err != nil {
+		commander, err := domain.RestoreCommanderCell(record.Commander)
+		if err != nil {
+			return fmt.Errorf("restore updated CommanderCell %q: %w", id, err)
+		}
+		if err := commander.AdvanceVersion(); err != nil {
 			return err
 		}
-		persistedRecord := persisted.Stored()
-		data, err := json.Marshal(persistedRecord)
-		if err != nil {
-			return fmt.Errorf("encode cell %q: %w", record.ID, err)
-		}
-		result, err := execer.ExecContext(ctx, "UPDATE cells SET issue = ?, position = ?, version = ?, record = ? WHERE id = ? AND version = ?",
-			persistedRecord.Issue, position, persistedRecord.Version, data, persistedRecord.ID, record.Version)
-		if err != nil {
-			return fmt.Errorf("update cell %q: %w", record.ID, err)
-		}
-		if err := requireOneRow(result, "update", record.ID, record.Version); err != nil {
+		record.Commander = commander.Stored()
+		if err := writeCell(ctx, execer, position, record, stored.Commander.Version); err != nil {
 			return err
 		}
 	}
-	for _, cell := range current {
-		record := cell.Stored()
-		if _, exists := nextByID[record.ID]; exists {
+	for _, record := range currentRecords {
+		id := record.Commander.ID
+		if _, exists := nextByID[id]; exists {
 			continue
 		}
-		result, err := execer.ExecContext(ctx, "DELETE FROM cells WHERE id = ? AND version = ?", record.ID, record.Version)
+		result, err := execer.ExecContext(ctx, "DELETE FROM cells WHERE id = ? AND version = ?", id, record.Commander.Version)
 		if err != nil {
-			return fmt.Errorf("delete cell %q: %w", record.ID, err)
+			return fmt.Errorf("delete CommanderCell %q: %w", id, err)
 		}
-		if err := requireOneRow(result, "delete", record.ID, record.Version); err != nil {
+		if err := requireOneRow(result, "delete", id, record.Commander.Version); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func insertCell(ctx context.Context, execer stateExecer, position int, cell domain.Cell) error {
-	record := cell.Stored()
+func cellRecords(set usecase.CellSet) ([]stateCellRecord, error) {
+	if err := validateCellSet(set); err != nil {
+		return nil, err
+	}
+	records := make([]stateCellRecord, 0, len(set.Commanders))
+	for _, commander := range set.Commanders {
+		targets := make([]domain.TargetCell, 0, len(commander.Targets))
+		for _, id := range commander.Targets {
+			for _, target := range set.Targets {
+				if target.ID == id {
+					targets = append(targets, target)
+					break
+				}
+			}
+		}
+		dependencies := make([]domain.DependencyCell, 0, len(commander.Dependencies))
+		for _, id := range commander.Dependencies {
+			for _, dependency := range set.Dependencies {
+				if dependency.ID == id {
+					dependencies = append(dependencies, dependency)
+					break
+				}
+			}
+		}
+		records = append(records, newStateCellRecord(commander, targets, dependencies))
+	}
+	return records, nil
+}
+
+func writeCell(ctx context.Context, execer stateExecer, position int, record stateCellRecord, expectedVersion uint64) error {
 	data, err := json.Marshal(record)
 	if err != nil {
-		return fmt.Errorf("encode cell %q: %w", record.ID, err)
+		return fmt.Errorf("encode CommanderCell %q: %w", record.Commander.ID, err)
+	}
+	result, err := execer.ExecContext(ctx, "UPDATE cells SET issue = ?, position = ?, version = ?, record = ? WHERE id = ? AND version = ?",
+		record.Commander.Issue, position, record.Commander.Version, data, record.Commander.ID, expectedVersion)
+	if err != nil {
+		return fmt.Errorf("update CommanderCell %q: %w", record.Commander.ID, err)
+	}
+	return requireOneRow(result, "update", record.Commander.ID, expectedVersion)
+}
+
+func insertCell(ctx context.Context, execer stateExecer, position int, record stateCellRecord) error {
+	data, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("encode CommanderCell %q: %w", record.Commander.ID, err)
 	}
 	if _, err := execer.ExecContext(ctx, "INSERT INTO cells (id, issue, position, version, record) VALUES (?, ?, ?, ?, ?)",
-		record.ID, record.Issue, position, record.Version, data); err != nil {
-		return fmt.Errorf("insert cell %q: %w", record.ID, err)
+		record.Commander.ID, record.Commander.Issue, position, record.Commander.Version, data); err != nil {
+		return fmt.Errorf("insert CommanderCell %q: %w", record.Commander.ID, err)
 	}
 	return nil
 }
@@ -264,27 +379,41 @@ func insertCell(ctx context.Context, execer stateExecer, position int, cell doma
 func requireOneRow(result sql.Result, operation string, id string, version uint64) error {
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("inspect %s cell %q: %w", operation, id, err)
+		return fmt.Errorf("inspect %s CommanderCell %q: %w", operation, id, err)
 	}
 	if affected != 1 {
-		return fmt.Errorf("%w: %s cell %q expected version %d", domain.ErrVersionConflict, operation, id, version)
+		return fmt.Errorf("%w: %s CommanderCell %q expected version %d", domain.ErrVersionConflict, operation, id, version)
 	}
 	return nil
 }
 
-func cellPosition(cells []domain.Cell, id string) int {
-	for position, cell := range cells {
-		if cell.Stored().ID == id {
+func commanderPosition(set usecase.CellSet, id string) int {
+	for position, commander := range set.Commanders {
+		if commander.ID == id {
 			return position
 		}
 	}
 	return -1
 }
 
-func cloneCells(cells []domain.Cell) []domain.Cell {
-	cloned := make([]domain.Cell, len(cells))
-	for i, cell := range cells {
-		cloned[i] = cell.Clone()
+func cloneCellSet(set usecase.CellSet) (usecase.CellSet, error) {
+	cloned := usecase.NewCellSet(nil, nil, nil)
+	for _, commander := range set.Commanders {
+		cloned.Commanders = append(cloned.Commanders, commander.Clone())
 	}
-	return cloned
+	for _, target := range set.Targets {
+		copy, err := domain.RestoreTargetCell(target)
+		if err != nil {
+			return usecase.CellSet{}, err
+		}
+		cloned.Targets = append(cloned.Targets, copy)
+	}
+	for _, dependency := range set.Dependencies {
+		copy, err := domain.RestoreDependencyCell(dependency)
+		if err != nil {
+			return usecase.CellSet{}, err
+		}
+		cloned.Dependencies = append(cloned.Dependencies, copy)
+	}
+	return cloned, nil
 }

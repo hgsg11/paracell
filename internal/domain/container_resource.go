@@ -2,6 +2,7 @@ package domain
 
 type ContainerResource struct {
 	Name            string
+	SourcePath      string
 	Network         []string
 	SourceContainer string
 	Mode            Mode

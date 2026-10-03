@@ -17,34 +17,34 @@ type SetCellStatusUseCase struct {
 	NotificationFactory NotificationProviderFactory
 }
 
-func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.Cell, error) {
-	var updated domain.Cell
-	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i, cell := range cells {
+func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.CommanderCell, error) {
+	var updated domain.CommanderCell
+	err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
+		for i, cell := range cells.Commanders {
 			if cell.Matches(input.Cell) {
 				if setErr := cell.SetStatus(input.Status); setErr != nil {
-					return nil, setErr
+					return CellSet{}, setErr
 				}
-				cells[i] = cell
+				cells.Commanders[i] = cell
 				updated = cell
 				return cells, nil
 			}
 		}
-		return nil, fmt.Errorf("cell %q not found", input.Cell)
+		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
 	})
 	if err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 	if err := updated.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 	if input.Status == domain.Ready && u.NotificationFactory != nil {
 		notifier, err := u.NotificationFactory.Notification(updated.ResourceDrivers().Notification)
 		if err != nil {
-			return domain.Cell{}, err
+			return domain.CommanderCell{}, err
 		}
-		if err := notifier.NotifyReady(ctx, updated.SessionName(), "Ready: "+updated.Name().Value); err != nil {
-			return domain.Cell{}, err
+		if err := notifier.NotifyReady(ctx, updated.WorkspaceName(), "Ready: "+updated.Name().Value); err != nil {
+			return domain.CommanderCell{}, err
 		}
 	}
 	return updated, nil

@@ -14,39 +14,39 @@ type AnnotateCellInput struct {
 }
 
 type AnnotateCellUseCase struct {
-	Cells          CellPort
-	SessionFactory SessionProviderFactory
+	Cells            CellPort
+	WorkspaceFactory WorkspaceProviderFactory
 }
 
-func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.Cell, error) {
-	var updated domain.Cell
-	if err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i, cell := range cells {
+func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.CommanderCell, error) {
+	var updated domain.CommanderCell
+	if err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
+		for i, cell := range cells.Commanders {
 			if cell.Matches(input.Cell) {
 				if err := cell.SetNote(input.Note); err != nil {
-					return nil, err
+					return CellSet{}, err
 				}
-				cells[i] = cell
+				cells.Commanders[i] = cell
 				updated = cell
 				return cells, nil
 			}
 		}
-		return nil, fmt.Errorf("cell %q not found", input.Cell)
+		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
 	}); err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 	if err := updated.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 
-	if u.SessionFactory == nil {
+	if u.WorkspaceFactory == nil {
 		return updated, nil
 	}
-	session, err := u.SessionFactory.Session(updated.ResourceDrivers().Session)
+	session, err := u.WorkspaceFactory.Workspace(updated.ResourceDrivers().Workspace)
 	if err != nil {
 		return updated, err
 	}
-	if err := session.UpdateStatusLabel(ctx, updated.SessionResource()); err != nil {
+	if err := session.UpdateStatusLabel(ctx, updated.WorkspaceResource()); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}

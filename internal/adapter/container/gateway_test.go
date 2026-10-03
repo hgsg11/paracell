@@ -267,7 +267,7 @@ func TestCreateContainersはGatewayのPort競合時に空きPortへFallbackす�
 		},
 	}
 	adapter := DockerCLIAdapter{Runner: runner}
-	cell := domain.NewContainerResources("123", "myapp", "paracell-myapp-123", "", nil)
+	cell := domain.NewContainerResources("123", "myapp", "paracell-myapp-123", nil)
 
 	_, err := adapter.CreateContainers(context.Background(), cell)
 	if err != nil {
@@ -318,8 +318,12 @@ func TestCreateContainersは途中失敗時に作成済みContainerとNetworkを
 }
 
 func gatewayTestCell() domain.ContainerResources {
-	return domain.NewContainerResources("123", "myapp", "paracell-myapp-123", ".paracell/cells/123/source", []domain.ContainerResource{
-		domain.NewContainerResource("paracell-myapp-123-web", nil, "web", domain.Target, nil, nil),
+	return domain.NewContainerResources("123", "myapp", "paracell-myapp-123", []domain.ContainerResource{
+		func() domain.ContainerResource {
+			r := domain.NewContainerResource("paracell-myapp-123-web", nil, "web", domain.Target, nil, nil)
+			r.SourcePath = ".paracell/cells/123/source"
+			return r
+		}(),
 	})
 }
 

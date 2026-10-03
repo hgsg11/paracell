@@ -177,7 +177,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			sharedContainers = append(sharedContainers, source)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, resources.SourcePath, service, inspection)
+		mounts, err := a.prepareMounts(ctx, service.SourcePath, service, inspection)
 		if err != nil {
 			return nil, err
 		}

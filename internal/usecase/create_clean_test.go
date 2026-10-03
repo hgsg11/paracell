@@ -16,7 +16,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.Template != "feat" || len(cell.Sources.Items) != 1 || cell.CreationStatus() != domain.CreationReady {
+	if cell.Template != "feat" || len(cell.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
 	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
@@ -25,10 +25,10 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	wantCalls := []string{
 		"factory:source:git",
 		"factory:container:none",
-		"factory:session:tmux",
+		"factory:workspace:tmux",
 		"source:create",
 		"containers:create",
-		"session:create",
+		"workspace:create",
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
@@ -43,19 +43,19 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if !errors.Is(err, ports.createSourceErr) {
 		t.Fatalf("error = %v", err)
 	}
-	if len(ports.cells) != 1 {
-		t.Fatalf("cells = %d", len(ports.cells))
+	if len(ports.cells.Commanders) != 1 {
+		t.Fatalf("commanders = %d", len(ports.cells.Commanders))
 	}
-	failedStage, _ := ports.cells[0].CreationFailure()
-	if ports.cells[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
-		t.Fatalf("cell = %#v", ports.cells[0])
+	failedStage, _ := ports.cells.Commanders[0].CreationFailure()
+	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
-	for _, resource := range ports.cells[0].SourceResources() {
+	for _, resource := range ports.cells.Commanders[0].SourceResources(ports.cells.Targets) {
 		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
+	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/repository/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleaned sources = %#v, want %#v", got, want)
 	}
 }
@@ -63,29 +63,31 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 type fakePorts struct {
 	config               domain.Templates
 	configErr            error
-	cells                []domain.Cell
+	cells                CellSet
 	calls                []string
 	updateStatusLabelErr error
 	createSourceErr      error
 	cleanedSources       []domain.SourceResource
 	containerResources   domain.ContainerResources
-	sessionResource      domain.SessionResource
+	workspaceResource    domain.WorkspaceResource
 }
 
 func newFakePorts() *fakePorts {
 	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
-	template, _ := domain.NewTemplate("feat", []domain.SourceTemplate{source}, nil, domain.NewSessionTemplate(nil))
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	target, _ := domain.NewTargetCellSpec("repository", &source, nil, nil)
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{target}, nil)
+	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander)
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
-	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
 	return &fakePorts{config: templates}
 }
 
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
 		Config: ports, Cells: ports, SourceFactory: ports,
-		ContainerFactory: ports, SessionFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
+		ContainerFactory: ports, WorkspaceFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
 	}
 }
 
@@ -93,20 +95,20 @@ func (f *fakePorts) Load(context.Context) (domain.Templates, error) {
 	return f.config, f.configErr
 }
 
-func (f *fakePorts) LoadCells(context.Context) ([]domain.Cell, error) {
-	return append([]domain.Cell(nil), f.cells...), nil
+func (f *fakePorts) LoadCells(context.Context) (CellSet, error) {
+	return NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies), nil
 }
 
-func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
-	before := append([]domain.Cell(nil), f.cells...)
-	cells, err := update(append([]domain.Cell(nil), f.cells...))
+func (f *fakePorts) UpdateCells(_ context.Context, update func(CellSet) (CellSet, error)) error {
+	before := NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies)
+	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies))
 	if err != nil {
 		return err
 	}
-	for index := range cells {
-		for _, previous := range before {
-			if previous.ID == cells[index].ID && !reflect.DeepEqual(previous, cells[index]) {
-				if err := cells[index].AdvanceVersion(); err != nil {
+	for index := range cells.Commanders {
+		for _, previous := range before.Commanders {
+			if previous.ID == cells.Commanders[index].ID && !reflect.DeepEqual(previous, cells.Commanders[index]) {
+				if err := cells.Commanders[index].AdvanceVersion(); err != nil {
 					return err
 				}
 			}
@@ -114,19 +116,6 @@ func (f *fakePorts) UpdateCells(_ context.Context, update func([]domain.Cell) ([
 	}
 	f.cells = cells
 	return nil
-}
-
-func (f *fakePorts) DeleteCell(_ context.Context, target domain.Cell) error {
-	for index, cell := range f.cells {
-		if cell.ID == target.ID {
-			if cell.Version != target.Version {
-				return domain.ErrVersionConflict
-			}
-			f.cells = append(f.cells[:index], f.cells[index+1:]...)
-			return nil
-		}
-	}
-	return domain.ErrNotFound
 }
 
 func (f *fakePorts) Source(driver domain.SourceDriverType) (SourcePort, error) {
@@ -139,8 +128,8 @@ func (f *fakePorts) Container(driver domain.ContainerDriverType) (ContainerPort,
 	return f, nil
 }
 
-func (f *fakePorts) Session(driver domain.SessionDriverType) (SessionPort, error) {
-	f.calls = append(f.calls, "factory:session:"+string(driver))
+func (f *fakePorts) Workspace(driver domain.WorkspaceDriverType) (WorkspacePort, error) {
+	f.calls = append(f.calls, "factory:workspace:"+string(driver))
 	return f, nil
 }
 
@@ -162,30 +151,30 @@ func (f *fakePorts) CleanContainers(context.Context, domain.ContainerResources) 
 	f.calls = append(f.calls, "containers:clean")
 	return nil
 }
-func (f *fakePorts) CreateSession(_ context.Context, resource domain.SessionResource) error {
-	f.calls = append(f.calls, "session:create")
-	f.sessionResource = resource
+func (f *fakePorts) CreateWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:create")
+	f.workspaceResource = resource
 	return nil
 }
-func (f *fakePorts) CleanSession(context.Context, domain.SessionResource) error {
-	f.calls = append(f.calls, "session:clean")
+func (f *fakePorts) CleanWorkspace(context.Context, domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:clean")
 	return nil
 }
-func (f *fakePorts) PrepareSession(context.Context, domain.SessionResource) error { return nil }
-func (f *fakePorts) UpdateStatusLabel(_ context.Context, resource domain.SessionResource) error {
-	f.calls = append(f.calls, "session:label:"+resource.DisplayLabel)
+func (f *fakePorts) PrepareWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
+func (f *fakePorts) UpdateStatusLabel(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:label:"+resource.DisplayLabel)
 	return f.updateStatusLabelErr
 }
-func (f *fakePorts) EnterSession(_ context.Context, resource domain.SessionResource) error {
-	f.calls = append(f.calls, "session:enter:"+resource.CellName)
+func (f *fakePorts) EnterWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+	f.calls = append(f.calls, "workspace:enter:"+resource.CellName)
 	return nil
 }
-func (f *fakePorts) EnterRootSession(_ context.Context, projectName string) error {
-	f.calls = append(f.calls, "session:enter-root:"+projectName)
+func (f *fakePorts) EnterRootWorkspace(_ context.Context, projectName string) error {
+	f.calls = append(f.calls, "workspace:enter-root:"+projectName)
 	return nil
 }
-func (f *fakePorts) ExitSession(context.Context) error {
-	f.calls = append(f.calls, "session:exit")
+func (f *fakePorts) ExitWorkspace(context.Context) error {
+	f.calls = append(f.calls, "workspace:exit")
 	return nil
 }
 
@@ -193,11 +182,11 @@ type fixedIDGenerator struct{ id string }
 
 func (g fixedIDGenerator) NewID() string { return g.id }
 
-func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) domain.Cell {
+func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) domain.CommanderCell {
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, err := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification)
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
+	cell, err := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
 	}

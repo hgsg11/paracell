@@ -9,7 +9,7 @@ import (
 type Templates struct {
 	ProjectName            string
 	Templates              []Template
-	SessionDriverType      SessionDriverType
+	WorkspaceDriverType    WorkspaceDriverType
 	ContainerDriverType    ContainerDriverType
 	SourceDriverType       SourceDriverType
 	NotificationDriverType NotificationDriverType
@@ -32,8 +32,12 @@ func (t Templates) SelectableNames() ([]string, error) {
 		if item.Abstract {
 			continue
 		}
-		if _, err := t.resolveDefinition(item.Name); err != nil {
+		resolved, err := t.resolveDefinition(item.Name)
+		if err != nil {
 			return nil, err
+		}
+		if resolved.Commander == nil {
+			return nil, fmt.Errorf("template %q does not define a CommanderCell", resolved.Name)
 		}
 		names = append(names, item.Name)
 	}
@@ -95,7 +99,7 @@ func (t Templates) resolveDefinition(name string) (Template, error) {
 	return resolve(name)
 }
 
-func NewTemplates(projectName string, templates []Template, sessionDriverType SessionDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType) (Templates, error) {
+func NewTemplates(projectName string, templates []Template, workspaceDriverType WorkspaceDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType) (Templates, error) {
 	names := make(map[string]struct{}, len(templates))
 	for _, item := range templates {
 		if item.Name == "" {
@@ -108,7 +112,7 @@ func NewTemplates(projectName string, templates []Template, sessionDriverType Se
 	}
 	return Templates{
 		ProjectName: projectName, Templates: append([]Template(nil), templates...),
-		SessionDriverType: sessionDriverType, ContainerDriverType: containerDriverType,
+		WorkspaceDriverType: workspaceDriverType, ContainerDriverType: containerDriverType,
 		SourceDriverType: sourceDriverType, NotificationDriverType: notificationDriverType,
 	}, nil
 }

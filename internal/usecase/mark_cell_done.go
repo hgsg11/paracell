@@ -15,24 +15,24 @@ type MarkCellDoneUseCase struct {
 	Cells CellPort
 }
 
-func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInput) (domain.Cell, error) {
-	var updated domain.Cell
-	err := u.Cells.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i, cell := range cells {
+func (u MarkCellDoneUseCase) Execute(ctx context.Context, input MarkCellDoneInput) (domain.CommanderCell, error) {
+	var updated domain.CommanderCell
+	err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
+		for i, cell := range cells.Commanders {
 			if cell.Matches(input.Cell) {
 				cell.ToggleDone()
-				cells[i] = cell
+				cells.Commanders[i] = cell
 				updated = cell
 				return cells, nil
 			}
 		}
-		return nil, fmt.Errorf("cell %q not found", input.Cell)
+		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
 	})
 	if err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 	if err := updated.AdvanceVersion(); err != nil {
-		return domain.Cell{}, err
+		return domain.CommanderCell{}, err
 	}
 	return updated, nil
 }

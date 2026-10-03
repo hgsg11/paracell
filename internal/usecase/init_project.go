@@ -22,7 +22,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 	if exists {
 		return domain.Templates{}, nil
 	}
-	sessionDriver, err := domain.NewSessionDriverType("tmux")
+	workspaceDriver, err := domain.NewWorkspaceDriverType("tmux")
 	if err != nil {
 		return domain.Templates{}, err
 	}
@@ -41,13 +41,21 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		template, err := domain.NewTemplate(name, []domain.SourceTemplate{source}, nil, domain.NewSessionTemplate(nil))
+		target, err := domain.NewTargetCellSpec("repository", &source, nil, nil)
+		if err != nil {
+			return domain.Templates{}, err
+		}
+		commander, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{target}, nil)
+		if err != nil {
+			return domain.Templates{}, err
+		}
+		template, err := domain.NewUnresolvedTemplate(name, "", false, &commander)
 		if err != nil {
 			return domain.Templates{}, err
 		}
 		items = append(items, template)
 	}
-	cfg, err := domain.NewTemplates("", items, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	cfg, err := domain.NewTemplates("", items, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
 	if err != nil {
 		return domain.Templates{}, err
 	}

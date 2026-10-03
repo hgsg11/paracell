@@ -13,8 +13,12 @@ func TestCreateContainersはTargetを作りDependencyを接続する(t *testing.
 		`{"Config":{"Image":"app:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
 		`{"Config":{"Image":"db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["db"]}}}}`,
 	}}
-	resources := domain.NewContainerResources("42", "sample", "cell-42", ".paracell/cells/42/source", []domain.ContainerResource{
-		domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, []domain.Environment{{Name: "A", Value: "B"}}, nil),
+	resources := domain.NewContainerResources("42", "sample", "cell-42", []domain.ContainerResource{
+		func() domain.ContainerResource {
+			r := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, []domain.Environment{{Name: "A", Value: "B"}}, nil)
+			r.SourcePath = ".paracell/cells/42/source"
+			return r
+		}(),
 		domain.NewContainerResource("db", nil, "db", domain.Dependency, nil, nil),
 	})
 	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), resources); err != nil {

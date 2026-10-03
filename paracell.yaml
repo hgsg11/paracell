@@ -2,26 +2,30 @@ project:
     name: "paracell"
 providers:
     source: git
-    session: tmux
+    workspace: tmux
     notifications: tmux
 templates:
     feat:
-        repository:
-            branchPrefix: feat/
-            base: origin/main
-        containers:
-            services: {}
-        session:
-            windows:
-                - name: takt
-                  command: 'codex "{{.Command}}"'
+        commanderCell:
+            name: workspace
+            workspace:
+                windows:
+                    - name: takt
+                      command: 'codex "{{.Command}}"'
+            targets:
+                repository:
+                    source:
+                        branchPrefix: feat/
+                        base: origin/main
     fix:
-        repository:
-            branchPrefix: fix/
-            base: origin/main
-        containers:
-            services: {}
-        session:
-            windows:
-                - name: takt
-                  command: 'codex "{{.Command}}"'
+        commanderCell:
+            name: workspace
+            workspace:
+                windows:
+                    - name: takt
+                      command: 'codex "{{.Command}}"'
+            targets:
+                repository:
+                    source:
+                        branchPrefix: fix/
+                        base: origin/main
