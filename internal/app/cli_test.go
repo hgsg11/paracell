@@ -32,46 +32,39 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-type prepareSessionFactory struct {
-	session *prepareSession
+type prepareWorkspaceFactory struct {
+	session *prepareWorkspace
 }
 
-func (f prepareSessionFactory) Session(domain.SessionDriverType) (usecase.SessionPort, error) {
+func (f prepareWorkspaceFactory) Workspace(domain.WorkspaceDriverType) (usecase.WorkspacePort, error) {
 	return f.session, nil
 }
 
-type prepareSession struct {
-	prepared string
+type prepareWorkspace struct {
+	prepared domain.WorkspaceResource
 }
 
-func (*prepareSession) CreateSession(context.Context, string, string, string, string) error {
+func (*prepareWorkspace) CreateWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
+func (*prepareWorkspace) CleanWorkspace(context.Context, domain.WorkspaceResource) error  { return nil }
+func (s *prepareWorkspace) PrepareWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+	s.prepared = resource
 	return nil
 }
-func (*prepareSession) CreateWindow(context.Context, string, string, string) error      { return nil }
-func (*prepareSession) SendWindowCommand(context.Context, string, string, string) error { return nil }
-func (*prepareSession) ConfigureSession(context.Context, string, string, string, string, []string) error {
+func (*prepareWorkspace) UpdateStatusLabel(context.Context, domain.WorkspaceResource) error {
 	return nil
 }
-func (*prepareSession) CleanSession(context.Context, string) error { return nil }
-func (s *prepareSession) PrepareSession(_ context.Context, name string, cellName string, project string, label string, windows []string) error {
-	s.prepared = cellName
+func (*prepareWorkspace) EnterWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
+func (*prepareWorkspace) EnterRootWorkspace(context.Context, string) error {
 	return nil
 }
-func (*prepareSession) UpdateStatusLabel(context.Context, string, string) error { return nil }
-func (*prepareSession) EnterSession(context.Context, string, string, string, string, []string) error {
-	return nil
-}
-func (*prepareSession) EnterRootSession(context.Context, string) error {
-	return nil
-}
-func (*prepareSession) ExitSession(context.Context) error { return nil }
+func (*prepareWorkspace) ExitWorkspace(context.Context) error { return nil }
 
 type staticConfigPort struct {
 	config domain.Templates
 }
 
 func testTemplates() domain.Templates {
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
+	sessionDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
 	templates, _ := domain.NewTemplates("myapp", nil, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
@@ -82,32 +75,31 @@ func (p staticConfigPort) Load(context.Context) (domain.Templates, error) {
 	return p.config, nil
 }
 
-func appTestCell(id string, issue string, templateName string) domain.Cell {
+func appTestCell(id string, issue string, templateName string) domain.CommanderCell {
 	if templateName == "" {
 		templateName = "default"
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, _ := domain.NewCell(id, issue, "myapp", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
-	_ = cell.FinishCreation()
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
+	cell, _ := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
 	return cell
 }
 
-func TestRunEnterCmdは復元設定後にSession環境を保持して切り替える(t *testing.T) {
+func TestRunEnterCmdは復元設定後にWorkspace環境を保持して切り替える(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	cell := appTestCell("cell-1", "123", "default")
-	session := &prepareSession{}
+	session := &prepareWorkspace{}
 	cmd, err := runEnterCmd(context.Background(), staticConfigPort{
 		config: testTemplates(),
-	}, prepareSessionFactory{session: session}, cell)
+	}, prepareWorkspaceFactory{session: session}, cell)
 	if err != nil {
 		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
 	}
-	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.SessionName()}
+	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.WorkspaceName()}
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}
-	if session.prepared != cell.Name().Value {
+	if session.prepared.CellName != cell.Name().Value {
 		t.Fatalf("prepared resource = %#v, want cell %#v", session.prepared, cell)
 	}
 }
@@ -436,8 +428,8 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
-		func() domain.Cell {
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+		func() domain.CommanderCell {
 			c := appTestCell("cell-1", "123", "default")
 			_ = c.SetNote("PostgreSQL案")
 			return c
@@ -460,15 +452,15 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	}
 }
 
-func TestRunはAnnotateでStateを更新しTmuxSessionなしを成功扱いにする(t *testing.T) {
+func TestRunはAnnotateでStateを更新しTmuxWorkspaceなしを成功扱いにする(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
-	config := []byte("project:\n  name: myapp\nproviders:\n  source: git\n  session: tmux\ntemplates: {}\n")
+	config := []byte("project:\n  name: myapp\nproviders:\n  source: git\n  workspace: tmux\ntemplates: {}\n")
 	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), config, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{appTestCell("cell-1", "123", "default")}); err != nil {
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{appTestCell("cell-1", "123", "default")}); err != nil {
 		t.Fatal(err)
 	}
 	binDir := t.TempDir()
@@ -485,7 +477,7 @@ func TestRunはAnnotateでStateを更新しTmuxSessionなしを成功扱いに�
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cells) != 1 || cells[0].Note != "API 実装 中" {
+	if len(cells.Commanders) != 1 || cells.Commanders[0].Note != "API 実装 中" {
 		t.Fatalf("cells = %#v", cells)
 	}
 }
@@ -514,7 +506,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
 	}); err != nil {
@@ -541,7 +533,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootのStateを読む(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
 	}); err != nil {
@@ -584,7 +576,7 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
 	}); err != nil {
@@ -595,7 +587,7 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   base:
     abstract: true
@@ -603,12 +595,15 @@ templates:
       base: main
   default:
     extends: base
-    repository:
-      branchPrefix: feat/
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -621,8 +616,8 @@ templates:
 	originalClean := runClean
 	defer func() { runClean = originalClean }()
 
-	var got []domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	var got []domain.CommanderCell
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -632,10 +627,10 @@ templates:
 		_ = clean
 		_ = markDone
 		_ = fork
-		got = append([]domain.Cell(nil), cells...)
+		got = append([]domain.CommanderCell(nil), cells...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
@@ -643,7 +638,7 @@ templates:
 		t.Fatal("enterが呼ばれた")
 		return nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -658,15 +653,15 @@ templates:
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := []domain.Cell{
-		func() domain.Cell {
+	want := []domain.CommanderCell{
+		func() domain.CommanderCell {
 			cell := appTestCell("cell-1", "123", "default")
 			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
 			}
 			return cell
 		}(),
-		func() domain.Cell {
+		func() domain.CommanderCell {
 			cell := appTestCell("cell-2", "456", "webapp")
 			if err := cell.SetStatus(domain.Ready); err != nil {
 				t.Fatalf("cell status設定でエラーが返った: %v", err)
@@ -704,7 +699,7 @@ func TestRunはViewにTemplate一覧を渡す(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   base:
     abstract: true
@@ -712,20 +707,25 @@ templates:
       base: main
   default:
     extends: base
-    repository:
-      branchPrefix: feat/
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
   planning:
-    repository:
-      branchPrefix: ""
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: ""
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -735,7 +735,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -765,16 +765,18 @@ func TestRunはViewにCurrentCellを渡す(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -784,7 +786,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -813,16 +815,18 @@ func TestRunはViewからForkHandlerを呼べる(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -834,7 +838,7 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (*domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -853,10 +857,9 @@ templates:
 		if command != "" {
 			t.Fatalf("command = %q, want empty", command)
 		}
-		cell := appTestCell("cell-1", "123", "default")
-		return &cell, nil
+		return appTestCell("cell-1", "123", "default"), nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -889,16 +892,18 @@ func TestRunはViewからのForkでLoggingRunnerを使う(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -909,7 +914,7 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (*domain.Cell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
 		_ = ctx
 		_ = cfg
 		_ = cells
@@ -939,10 +944,9 @@ templates:
 		if _, ok := sessionFactory.Runner.(system.LoggingRunner); !ok {
 			t.Fatalf("session runner type = %T, want system.LoggingRunner", sessionFactory.Runner)
 		}
-		cell := appTestCell("cell-1", "123", "default")
-		return &cell, nil
+		return appTestCell("cell-1", "123", "default"), nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -965,7 +969,7 @@ templates:
 	}
 }
 
-func TestRunは引数なしでRootSessionEnterを実行する(t *testing.T) {
+func TestRunは引数なしでRootWorkspaceEnterを実行する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -973,7 +977,7 @@ func TestRunは引数なしでRootSessionEnterを実行する(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
@@ -987,7 +991,7 @@ templates: {}
 
 	called := false
 	var gotProject string
-	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory) error {
 		loaded, err := cfg.Load(ctx)
 		if err != nil {
 			return err
@@ -1007,7 +1011,7 @@ templates: {}
 		gotProject = loaded.ProjectName
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
@@ -1031,7 +1035,7 @@ templates: {}
 	}
 }
 
-func TestRunはExitでSessionExitを実行する(t *testing.T) {
+func TestRunはExitでWorkspaceExitを実行する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1039,7 +1043,7 @@ func TestRunはExitでSessionExitを実行する(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
@@ -1050,13 +1054,13 @@ templates: {}
 	defer func() { runExit = originalExit }()
 
 	called := false
-	runExit = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+	runExit = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory) error {
 		loaded, err := cfg.Load(ctx)
 		if err != nil {
 			return err
 		}
-		if loaded.SessionDriverType != domain.Tmux {
-			t.Fatalf("session provider = %q, want tmux", loaded.SessionDriverType)
+		if loaded.WorkspaceDriverType != domain.Tmux {
+			t.Fatalf("session provider = %q, want tmux", loaded.WorkspaceDriverType)
 		}
 		_ = factory
 		called = true
@@ -1074,7 +1078,7 @@ templates: {}
 func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{}); err != nil {
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1082,16 +1086,18 @@ func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1102,12 +1108,12 @@ templates:
 	originalView := runView
 	defer func() { runView = originalView }()
 
-	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory) error {
 		t.Fatal("root enterが呼ばれた")
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1134,7 +1140,7 @@ func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -1144,7 +1150,7 @@ func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
@@ -1160,8 +1166,8 @@ templates: {}
 	originalClean := runClean
 	defer func() { runClean = originalClean }()
 
-	var entered domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	var entered domain.CommanderCell
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1181,21 +1187,21 @@ templates: {}
 			Cell:   cells[0],
 		}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
 		entered = cell
 		return nil
 	}
-	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) (*exec.Cmd, error) {
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) (*exec.Cmd, error) {
 		_ = ctx
 		_ = cfg
 		_ = factory
 		entered = cell
 		return exec.Command("true"), nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -1218,7 +1224,7 @@ func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -1228,7 +1234,7 @@ func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
@@ -1242,8 +1248,8 @@ templates: {}
 	originalClean := runClean
 	defer func() { runClean = originalClean }()
 
-	var deleted domain.Cell
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, exit func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	var deleted domain.CommanderCell
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1258,14 +1264,14 @@ templates: {}
 		deleted = cells[0]
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory, cell domain.Cell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
 		_ = cell
 		return nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.SessionProviderFactory, cells usecase.CellPort, cell domain.Cell) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -1284,10 +1290,10 @@ templates: {}
 	}
 }
 
-func TestRunはViewのGoRoot選択でRootSessionEnterを実行する(t *testing.T) {
+func TestRunはViewのGoRoot選択でRootWorkspaceEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{appTestCell("cell-1", "123", "default")}); err != nil {
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{appTestCell("cell-1", "123", "default")}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1295,16 +1301,18 @@ func TestRunはViewのGoRoot選択でRootSessionEnterを実行する(t *testing.
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1316,14 +1324,14 @@ templates:
 	defer func() { runView = originalView }()
 
 	goRootCalled := false
-	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.SessionProviderFactory) error {
+	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.Cell, templates []string, currentCell string, reload func() ([]domain.Cell, error), enter func(domain.Cell) tea.Cmd, goRoot func() error, clean func(domain.Cell) error, markDone func(domain.Cell) (domain.Cell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1355,13 +1363,15 @@ func TestRunはCreateでProvidersがない設定をエラーにする(t *testing
   name: myapp
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1384,18 +1394,16 @@ func TestRunはCreateでContainerProviderがなくてもDockerを実行しない
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services:
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
         web:
-          sourceContainer: myapp-web
-    session:
-      windows: []
+          container: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1418,14 +1426,14 @@ func TestRunはCleanでContainerProviderがなくてもDockerを実行しない(
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -1449,21 +1457,23 @@ func TestRunはReadyでPARACELL_CELLのStatusを更新する(t *testing.T) {
   name: myapp
 providers:
   source: git
-  session: tmux
+  workspace: tmux
 templates:
   default:
-    repository:
-      branchPrefix: feat/
-      base: main
-    containers:
-      services: {}
-    session:
-      windows: []
+    commanderCell:
+      name: workspace
+      workspace:
+        windows: []
+      targets:
+        target:
+          source:
+            branchPrefix: feat/
+            base: main
 `), 0o644); err != nil {
 		t.Fatalf("config保存でエラーが返った: %v", err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.Cell{
+	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		appTestCell("cell-1", "123", "default"),
 	}); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
@@ -1477,8 +1487,8 @@ templates:
 	if err != nil {
 		t.Fatalf("state読み込みでエラーが返った: %v", err)
 	}
-	if !cells[0].HasStatus(domain.Ready) {
-		t.Fatalf("cell = %#v, want status %q", cells[0], domain.Ready)
+	if !cells.Commanders[0].HasStatus(domain.Ready) {
+		t.Fatalf("cell = %#v, want status %q", cells.Commanders[0], domain.Ready)
 	}
 }
 

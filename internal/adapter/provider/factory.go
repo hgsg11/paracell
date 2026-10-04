@@ -41,7 +41,7 @@ func (f Factory) Container(driver domain.ContainerDriverType) (usecase.Container
 	}
 }
 
-func (f Factory) Session(driver domain.SessionDriverType) (usecase.SessionPort, error) {
+func (f Factory) Workspace(driver domain.WorkspaceDriverType) (usecase.WorkspacePort, error) {
 	switch driver {
 	case domain.Tmux:
 		return session.NewTmuxAdapter(f.Runner, f.Root), nil

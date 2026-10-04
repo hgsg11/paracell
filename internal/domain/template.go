@@ -2,102 +2,77 @@ package domain
 
 import "fmt"
 
+// Template is the aggregate root for a CommanderCell and its related Cell specs.
 type Template struct {
-	Name       string
-	Extends    string
-	Abstract   bool
-	Repository *SourceTemplate
-	Containers *[]ContainerTemplate
-	Session    *SessionTemplate
+	Name      string
+	Extends   string
+	Abstract  bool
+	Commander *CommanderCellSpec
 }
 
 func (t Template) resolve(vars TemplateVars) (ResolvedTemplate, error) {
-	var sources []SourceTemplate
-	if t.Repository != nil {
-		sources = []SourceTemplate{*t.Repository}
+	if t.Commander == nil {
+		return ResolvedTemplate{}, fmt.Errorf("template %q does not define a CommanderCell", t.Name)
 	}
-	var containers []ContainerTemplate
-	if t.Containers != nil {
-		containers = make([]ContainerTemplate, 0, len(*t.Containers))
-		for _, container := range *t.Containers {
-			rendered, err := container.render(vars)
+	commander := t.Commander
+	workspace, err := commander.Workspace.render(vars)
+	if err != nil {
+		return ResolvedTemplate{}, err
+	}
+	targets := make([]TargetCellSpec, 0, len(commander.Targets))
+	for _, target := range commander.Targets {
+		var container *ContainerTemplate
+		if target.Container != nil {
+			rendered, err := target.Container.render(vars)
 			if err != nil {
 				return ResolvedTemplate{}, err
 			}
-			containers = append(containers, rendered)
+			container = &rendered
 		}
-	}
-	session := NewSessionTemplate(nil)
-	if t.Session != nil {
-		var err error
-		session, err = t.Session.render(vars)
+		rendered, err := NewTargetCellSpec(target.Name, target.Source, container, target.Dependencies)
 		if err != nil {
 			return ResolvedTemplate{}, err
 		}
+		targets = append(targets, rendered)
 	}
-	return NewResolvedTemplate(t.Name, sources, containers, session), nil
+	dependencies := make([]DependencyCellSpec, 0, len(commander.Dependencies))
+	for _, dependency := range commander.Dependencies {
+		container, err := dependency.Container.render(vars)
+		if err != nil {
+			return ResolvedTemplate{}, err
+		}
+		rendered, err := NewDependencyCellSpec(dependency.Name, container)
+		if err != nil {
+			return ResolvedTemplate{}, err
+		}
+		dependencies = append(dependencies, rendered)
+	}
+	resolvedCommander, err := NewCommanderCellSpec(commander.Name, workspace, targets, dependencies)
+	if err != nil {
+		return ResolvedTemplate{}, err
+	}
+	return NewResolvedTemplate(t.Name, resolvedCommander), nil
 }
 
 func (t Template) merge(parent Template) (Template, error) {
-	repository := parent.Repository
-	if t.Repository != nil {
-		if parent.Repository == nil {
-			repository = t.Repository
-		} else {
-			merged, err := t.Repository.merge(*parent.Repository)
-			if err != nil {
-				return Template{}, err
-			}
-			repository = &merged
-		}
+	commander := parent.Commander
+	if t.Commander != nil {
+		commander = t.Commander
 	}
-	containers := parent.Containers
-	if t.Containers != nil {
-		containers = t.Containers
-	}
-	session := parent.Session
-	if t.Session != nil {
-		session = t.Session
-	}
-	return NewUnresolvedTemplate(t.Name, t.Extends, t.Abstract, repository, containers, session)
+	return NewUnresolvedTemplate(t.Name, t.Extends, t.Abstract, commander)
 }
 
-func NewTemplate(name string, sources []SourceTemplate, containers []ContainerTemplate, session SessionTemplate) (Template, error) {
-	if len(sources) > 1 {
-		return Template{}, fmt.Errorf("template %q defines more than one repository", name)
-	}
-	var repository *SourceTemplate
-	if len(sources) == 1 {
-		source := sources[0]
-		repository = &source
-	}
-	containersCopy := append([]ContainerTemplate(nil), containers...)
-	sessionCopy := session
-	return NewUnresolvedTemplate(name, "", false, repository, &containersCopy, &sessionCopy)
-}
-
-func NewUnresolvedTemplate(name string, extends string, abstract bool, repository *SourceTemplate, containers *[]ContainerTemplate, session *SessionTemplate) (Template, error) {
+func NewUnresolvedTemplate(name, extends string, abstract bool, commander *CommanderCellSpec) (Template, error) {
 	if name == "" {
 		return Template{}, fmt.Errorf("template name is required")
 	}
-	if containers != nil {
-		names := make(map[string]struct{}, len(*containers))
-		for _, container := range *containers {
-			if _, exists := names[container.Name]; exists {
-				return Template{}, fmt.Errorf("duplicate container %q for template %q", container.Name, name)
-			}
-			names[container.Name] = struct{}{}
+	var copy *CommanderCellSpec
+	if commander != nil {
+		cloned, err := cloneCommanderCellSpec(*commander)
+		if err != nil {
+			return Template{}, err
 		}
-		copy := append([]ContainerTemplate(nil), (*containers)...)
-		containers = &copy
+		copy = &cloned
 	}
-	if repository != nil {
-		copy := *repository
-		repository = &copy
-	}
-	if session != nil {
-		copy := NewSessionTemplate(session.Windows)
-		session = &copy
-	}
-	return Template{Name: name, Extends: extends, Abstract: abstract, Repository: repository, Containers: containers, Session: session}, nil
+	return Template{Name: name, Extends: extends, Abstract: abstract, Commander: copy}, nil
 }

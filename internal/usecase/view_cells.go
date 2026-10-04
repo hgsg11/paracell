@@ -10,6 +10,7 @@ type ViewCellsUseCase struct {
 	Cells CellPort
 }
 
-func (u ViewCellsUseCase) Execute(ctx context.Context) ([]domain.Cell, error) {
-	return u.Cells.LoadCells(ctx)
+func (u ViewCellsUseCase) Execute(ctx context.Context) ([]domain.CommanderCell, error) {
+	cells, err := u.Cells.LoadCells(ctx)
+	return cells.Commanders, err
 }

@@ -10,7 +10,7 @@ import (
 
 func TestSetCellStatusはReady時に通知する(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
+		cells: NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil),
 	}
 
 	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
@@ -29,7 +29,7 @@ func TestSetCellStatusはReady時に通知する(t *testing.T) {
 
 func TestSetCellStatusはPending時に通知しない(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: []domain.Cell{newUsecaseTestCell(t, "cell-1", "123", "feat")},
+		cells: NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil),
 	}
 
 	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
@@ -44,41 +44,25 @@ func TestSetCellStatusはPending時に通知しない(t *testing.T) {
 }
 
 type setStatusTestPorts struct {
-	cells []domain.Cell
+	cells CellSet
 	calls []string
 }
 
-func (p *setStatusTestPorts) LoadCells(ctx context.Context) ([]domain.Cell, error) {
+func (p *setStatusTestPorts) LoadCells(ctx context.Context) (CellSet, error) {
 	_ = ctx
-	return append([]domain.Cell(nil), p.cells...), nil
+	return NewCellSet(p.cells.Commanders, p.cells.Targets, p.cells.Dependencies), nil
 }
 
-func (p *setStatusTestPorts) CreateCell(context.Context, domain.Cell) error { return nil }
-
-func (p *setStatusTestPorts) SaveCell(ctx context.Context, cell domain.Cell) error {
-	return p.UpdateCells(ctx, func(cells []domain.Cell) ([]domain.Cell, error) {
-		for i := range cells {
-			if cells[i].SameIdentity(cell) {
-				cells[i] = cell
-				return cells, nil
-			}
-		}
-		return nil, domain.ErrNotFound
-	})
-}
-
-func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func([]domain.Cell) ([]domain.Cell, error)) error {
+func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func(CellSet) (CellSet, error)) error {
 	_ = ctx
-	cells, err := update(append([]domain.Cell(nil), p.cells...))
+	cells, err := update(NewCellSet(p.cells.Commanders, p.cells.Targets, p.cells.Dependencies))
 	if err != nil {
 		return err
 	}
-	p.cells = append([]domain.Cell(nil), cells...)
+	p.cells = cells
 	p.calls = append(p.calls, "save:1")
 	return nil
 }
-
-func (p *setStatusTestPorts) DeleteCell(context.Context, domain.Cell) error { return nil }
 
 func (p *setStatusTestPorts) Notification(driver domain.NotificationDriverType) (Notifier, error) {
 	p.calls = append(p.calls, "factory:notification:"+string(driver))

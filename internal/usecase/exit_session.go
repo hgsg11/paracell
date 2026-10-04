@@ -2,19 +2,19 @@ package usecase
 
 import "context"
 
-type ExitSessionUseCase struct {
-	Config         ConfigPort
-	SessionFactory SessionProviderFactory
+type ExitWorkspaceUseCase struct {
+	Config           ConfigPort
+	WorkspaceFactory WorkspaceProviderFactory
 }
 
-func (u ExitSessionUseCase) Execute(ctx context.Context) error {
+func (u ExitWorkspaceUseCase) Execute(ctx context.Context) error {
 	cfg, err := u.Config.Load(ctx)
 	if err != nil {
 		return err
 	}
-	session, err := u.SessionFactory.Session(cfg.SessionDriverType)
+	session, err := u.WorkspaceFactory.Workspace(cfg.WorkspaceDriverType)
 	if err != nil {
 		return err
 	}
-	return session.ExitSession(ctx)
+	return session.ExitWorkspace(ctx)
 }

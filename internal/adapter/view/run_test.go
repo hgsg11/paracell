@@ -37,17 +37,17 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 		return fakeProgram{model: model}
 	}
 
-	cells := []domain.Cell{
+	cells := []domain.CommanderCell{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.CommanderCell, error) {
 		return cells, nil
-	}, func(cell domain.Cell) tea.Cmd {
+	}, func(cell domain.CommanderCell) tea.Cmd {
 		if cell.Name().Value != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
-	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil }, nil)
+	}, func() error { return nil }, func(cell domain.CommanderCell) error { return nil }, func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil }, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -80,14 +80,14 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 		})
 	}
 
-	cells := []domain.Cell{
+	cells := []domain.CommanderCell{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.Cell, error) {
+	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.CommanderCell, error) {
 		return cells, nil
-	}, func(cell domain.Cell) tea.Cmd {
+	}, func(cell domain.CommanderCell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
-	}, func() error { return nil }, func(cell domain.Cell) error { return nil }, func(cell domain.Cell) (domain.Cell, error) { return cell, nil }, nil)
+	}, func() error { return nil }, func(cell domain.CommanderCell) error { return nil }, func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil }, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		})
 	}
 
-	cells := []domain.Cell{
+	cells := []domain.CommanderCell{
 		viewTestCell("cell-1", "123", "default"),
 	}
 	result, err := Run(
@@ -124,11 +124,11 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		cells,
 		nil,
 		"",
-		func() ([]domain.Cell, error) { return cells, nil },
-		func(cell domain.Cell) tea.Cmd { return nil },
+		func() ([]domain.CommanderCell, error) { return cells, nil },
+		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error { return nil },
-		func(cell domain.Cell) error { return nil },
-		func(cell domain.Cell) (domain.Cell, error) {
+		func(cell domain.CommanderCell) error { return nil },
+		func(cell domain.CommanderCell) (domain.CommanderCell, error) {
 			return cell, cell.MarkDone()
 		},
 		nil,
@@ -164,19 +164,19 @@ func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 
 	result, err := Run(
 		context.Background(),
-		[]domain.Cell{viewTestCell("cell-1", "123", "default")},
+		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
 		nil,
 		"",
-		func() ([]domain.Cell, error) {
-			return []domain.Cell{viewTestCell("cell-1", "123", "default")}, nil
+		func() ([]domain.CommanderCell, error) {
+			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
 		},
-		func(cell domain.Cell) tea.Cmd { return nil },
+		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error {
 			goRootCalled = true
 			return nil
 		},
-		func(cell domain.Cell) error { return nil },
-		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
+		func(cell domain.CommanderCell) error { return nil },
+		func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil },
 		nil,
 	)
 	if err != nil {
@@ -217,14 +217,14 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		nil,
 		[]string{"default"},
 		"",
-		func() ([]domain.Cell, error) {
+		func() ([]domain.CommanderCell, error) {
 			reloaded = true
-			return []domain.Cell{viewTestCell("cell-1", "123", "default")}, nil
+			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
 		},
-		func(cell domain.Cell) tea.Cmd { return nil },
+		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error { return nil },
-		func(cell domain.Cell) error { return nil },
-		func(cell domain.Cell) (domain.Cell, error) { return cell, nil },
+		func(cell domain.CommanderCell) error { return nil },
+		func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil },
 		func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				return forkResultMsg{cell: viewTestCell("cell-1", "123", "default")}

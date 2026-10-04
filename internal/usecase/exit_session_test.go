@@ -6,18 +6,18 @@ import (
 	"testing"
 )
 
-func TestExitSessionはSessionに委譲する(t *testing.T) {
+func TestExitWorkspaceはWorkspaceに委譲する(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
-	uc := ExitSessionUseCase{
-		Config:         ports,
-		SessionFactory: ports,
+	uc := ExitWorkspaceUseCase{
+		Config:           ports,
+		WorkspaceFactory: ports,
 	}
 
 	if err := uc.Execute(ctx); err != nil {
 		t.Fatalf("Executeでエラーが返った: %v", err)
 	}
-	wantCalls := []string{"factory:session:tmux", "session:exit"}
+	wantCalls := []string{"factory:workspace:tmux", "workspace:exit"}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("呼び出し順 = %#v, want %#v", ports.calls, wantCalls)
 	}

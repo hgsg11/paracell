@@ -2,29 +2,27 @@
 
 **AI agent ごとに、issue 単位の独立した開発環境を。**
 
-Paracell は、git worktree・tmux session・container・network・状態管理を、ひとつの **cell** としてまとめて作る CLI です。複数の AI agent を同じ repository で動かしても、branch、作業ディレクトリ、依存 service、port を issue ごとに分離できます。
+Paracell は、Template から AI agent 用の **CommanderCell** と、複数の開発対象 (**TargetCell**)・依存環境 (**DependencyCell**) を作る CLI です。CommanderCell の Workspace から TargetCell の Source をまとめて扱い、それぞれの container/network は issue ごとに分離できます。
 
 ```sh
 paracell fork 123 --template feat
 ```
 
-この1コマンドで、issue #123を進めるための独立した作業環境を起動できます。
+この1コマンドで、issue #123 を進める CommanderCell と、その Template に定義された TargetCell / DependencyCell を起動できます。
 
 ## AI agent の並行開発を、環境ごと分離する
 
-AI agent を並行実行すると、同じファイル、同じcontainer名、同じhost portを取り合いやすくなります。Paracellは作業単位をcellとして分け、agentに「専用のrepository checkoutと実行環境」を渡します。
+AI agent を並行実行すると、同じファイル、同じcontainer名、同じhost portを取り合いやすくなります。Paracell は issue ごとに CommanderCell を作り、複数の TargetCell と依存環境をまとめて扱います。
 
-### 1 issue = 1 cell
+### 1 issue = 1 CommanderCell
 
-| Cellに含まれるもの | 分離される内容 |
+| Cell | 役割 |
 | --- | --- |
-| Source | issue用branchとgit worktree |
-| Terminal | 専用tmux session、window、agentの初期コマンド |
-| Runtime | container、volume、環境変数、Docker network |
-| Endpoint | cell名を含む `.localhost` URL |
-| State | 作成状態 `creating` / `failed` / `ready`、作業状態 `pending` / `ready`、`done` と実行ログ |
+| CommanderCell | Workspace と `pending` / `ready`、`done` などの作業状態 |
+| TargetCell | Source、Container のいずれかまたは両方を持つ開発対象 |
+| DependencyCell | TargetCell が参照する Container 依存環境 |
 
-templateへCodexなどのagent起動コマンドを設定すれば、cell作成と同時にagentへ作業を渡せます。agentのhookから `paracell pending` / `paracell ready` を呼び、人間はTUIから複数cellの状態を確認できます。
+Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。
 
 ### Traefikで、issueごとの通信を調査する
 
@@ -43,7 +41,7 @@ docker logs -f paracell-gateway
 curl http://gateway.paracell.localhost/metrics
 ```
 
-cellを使い終えたら、worktree、tmux session、container、networkをまとめて片付けます。
+CommanderCell を使い終えたら、関連する TargetCell / DependencyCell の worktree、tmux workspace、container、network をまとめて片付けます。
 
 ```sh
 paracell clean 123
@@ -88,52 +86,42 @@ paracell annotate 123 --note "API実装中"
 
 `paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。template を編集して、作りたい cell の形を決めます。
 
-`fork` が source、files、containers、session の途中で失敗した場合、cell は `failed` として残ります。
+`fork` が source、files、containers、workspace の途中で失敗した場合、CommanderCell は `failed` として残ります。
 
 ```yaml
 project:
   name: ""
 providers:
   source: git
-  session: tmux
+  workspace: tmux
   notifications: tmux
 templates:
   base:
     abstract: true
-    repository:
-      base: main
-      branchMode: create
-    session:
-      windows:
-        - name: agent
-          command: 'codex "{{.Command}}"'
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: agent
+            command: 'codex "{{.Command}}"'
+      targets:
+        repository:
+          source:
+            base: main
+            branchMode: create
   feat:
     extends: base
-    repository:
-      branchPrefix: feat/
-  update:
-    extends: base
-    repository:
-      branchPrefix: update/
-  fix:
-    extends: base
-    repository:
-      branchPrefix: fix/
-  review:
-    extends: base
-    repository:
-      branchPrefix: review/
 ```
 
 template は `extends` で一つの親を継承できます。親自身も別のtemplateを継承できます。共通設定だけを持つtemplateには `abstract: true` を付けます。abstract templateは継承元には使えますが、`fork --template` とTUIの選択肢には表示されません。
 
-継承では、子で未指定のscalarとstruct fieldは親の値を維持し、子で指定した値は空文字を含めて上書きします。`files`、`session.windows`、`containers.services`のようなslice/mapは、子で指定するとcollection全体を置換します。親子の要素はappend/deep mergeされません。`[]`または`{}`を指定すると明示的に空へ置換できます。
+子templateで `commanderCell` を省略すると親の定義を引き継ぎます。指定した場合はCommanderCell定義全体を置き換えます。ターゲットや依存セルは各CommanderCell内で定義します。
 
 存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
 
 ## Container gateway
 
-Docker provider でcontainer serviceを使うすべてのcellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各cell専用networkへ接続され、`paracell.yaml` の `containers.services` map key（service role）と公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
+Docker provider でcontainerを使うCommanderCellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各CommanderCell専用networkへ接続され、公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
 
 Traefik dashboard はデフォルトで有効になり、次の URL から利用できます。末尾の `/` は必須です。dashboard と API は専用の管理 port や `api.insecure` を使わず、既存の loopback-only web entrypoint を通じて `gateway.paracell.localhost` にだけ route されます。
 
@@ -296,25 +284,36 @@ tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます�
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
 ```yaml
-containers:
-  services:
-    web:
-      sourceContainer: myapp-web
-      environment:
-        PARACELL_ISSUE: "{{.issue}}"
-        PARACELL_CELL: "{{.name}}"
-        PARACELL_PROJECT: "{{.project}}"
-        OPTIONAL_VALUE: ""
-    db:
-      sourceContainer: myapp-db
-      database:
-        mode: shared
+templates:
+  feat:
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: agent
+            command: 'codex "{{.Command}}"'
+      targets:
+        web:
+          source:
+            path: web
+            base: origin/main
+            branchPrefix: feat/web-
+          container:
+            environment:
+              PARACELL_ISSUE: "{{.issue}}"
+              PARACELL_CELL: "{{.name}}"
+              PARACELL_PROJECT: "{{.project}}"
+              OPTIONAL_VALUE: ""
+          dependencies: [database]
+      dependencies:
+        database:
+          container: {}
 ```
 
 ## ファイル
 
 - `paracell.yaml`: 設定と template
 - `.paracell/state.db`: cell の状態を保存するSQLite database
-- `.paracell/cells/<cell>/source`: cell の git worktree
+- `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree
 
 旧形式の `.paracell/state.json` は読み込みません。

@@ -1,21 +1,19 @@
 package output
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-func outputCell(t *testing.T, issue string, templateName string, note string) domain.Cell {
+func outputCell(t *testing.T, issue string, templateName string, note string) domain.CommanderCell {
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
-	sessionDriver, _ := domain.NewSessionDriverType("tmux")
-	cell, err := domain.NewCell("id-"+issue, issue, "sample", templateName, domain.NewSources(sourceDriver, nil), domain.NewContainers(domain.None, nil), domain.NewSession(sessionDriver, nil), domain.NoNotification, nil)
+	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
+	cell, err := domain.NewCommanderCell("id-"+issue, issue, "sample", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cell.FinishCreation(); err != nil {
 		t.Fatal(err)
 	}
 	if note != "" {
@@ -28,7 +26,7 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 }
 
 func TestFormatCellListはNameとTemplateを表で出力する(t *testing.T) {
-	cells := []domain.Cell{
+	cells := []domain.CommanderCell{
 		outputCell(t, "123", "default", ""),
 		outputCell(t, "456", "webapp", ""),
 	}
@@ -54,23 +52,17 @@ func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
 	cell := outputCell(t, "123", "webapp", "")
-	stored := cell.Stored()
-	stored.Creation.Status = domain.CreationFailed
-	stored.Creation.FailedStage = domain.CreationStageContainers
-	stored.Creation.LastError = "docker failed\nport already used\ttry another"
-	cell, err := domain.RestoreCell(stored)
-	if err != nil {
-		t.Fatal(err)
-	}
+	cell.BeginCreation()
+	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
 
-	got := FormatCellList([]domain.Cell{cell})
+	got := FormatCellList([]domain.CommanderCell{cell})
 	if !strings.Contains(got, "failed\tready\tfalse\tcontainers\tdocker failed port already used try another") {
 		t.Fatalf("output = %q", got)
 	}
 }
 
 func TestFormatCellListはNoteをNameより優先する(t *testing.T) {
-	cells := []domain.Cell{
+	cells := []domain.CommanderCell{
 		outputCell(t, "123", "default", "PostgreSQL案"),
 		outputCell(t, "456", "webapp", ""),
 	}

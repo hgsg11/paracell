@@ -3,10 +3,10 @@ package domain
 type CellDrivers struct {
 	Source       SourceDriverType
 	Container    ContainerDriverType
-	Session      SessionDriverType
+	Workspace    WorkspaceDriverType
 	Notification NotificationDriverType
 }
 
-func NewCellDrivers(source SourceDriverType, container ContainerDriverType, session SessionDriverType, notification NotificationDriverType) CellDrivers {
-	return CellDrivers{Source: source, Container: container, Session: session, Notification: notification}
+func NewCellDrivers(source SourceDriverType, container ContainerDriverType, workspace WorkspaceDriverType, notification NotificationDriverType) CellDrivers {
+	return CellDrivers{Source: source, Container: container, Workspace: workspace, Notification: notification}
 }
