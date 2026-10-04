@@ -48,11 +48,11 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err := ignoreNotFound(workspace.CleanWorkspace(ctx, commander.WorkspaceResource())); err != nil {
 		return err
 	}
-	containerResources := domain.BuildCellGroupContainersService(commander, targets, dependencies, nil)
+	containerResources := domain.BuildContainerResourcesService(commander, targets, dependencies, nil)
 	if err := ignoreNotFound(containers.CleanContainers(ctx, containerResources)); err != nil {
 		return err
 	}
-	for _, resource := range domain.BuildCellGroupSourcesService(commander, targets) {
+	for _, resource := range domain.BuildSourceResourcesService(commander, targets) {
 		if err := ignoreNotFound(source.CleanSource(ctx, resource)); err != nil {
 			return err
 		}

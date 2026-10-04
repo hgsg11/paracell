@@ -2,7 +2,7 @@ package domain
 
 import "path/filepath"
 
-func BuildCellGroupSourcesService(c CommanderCell, targets []TargetCell) []SourceResource {
+func BuildSourceResourcesService(c CommanderCell, targets []TargetCell) []SourceResource {
 	resources := make([]SourceResource, 0, len(targets))
 	for _, target := range targets {
 		if target.Source == nil {

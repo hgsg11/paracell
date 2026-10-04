@@ -23,7 +23,7 @@ AI agent を並行実行すると、同じファイル、同じcontainer名、�
 | TargetCell | CellGroupID と、Source、Container のいずれかまたは両方を持つ開発対象 |
 | DependencyCell | CellGroupID と、TargetCell が参照する Container 依存環境 |
 
-CellGroup と CommanderCell は所属 Cell の一覧を保持しません。TargetCell / DependencyCell の `CellGroupID` で同じ作業一式を特定し、生成・削除します。既存の `commanderCell.targets` / `commanderCell.dependencies` の Template 記述は変更不要です。
+CellGroup は共通情報と所属関係を表すものであり、Cell やコンテナの生成責務を持ちません。CellGroup と CommanderCell は所属 Cell の一覧を保持しません。生成・削除の usecase は TargetCell / DependencyCell の `CellGroupID` で同じ作業一式を特定します。既存の `commanderCell.targets` / `commanderCell.dependencies` の Template 記述は変更不要です。
 
 Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。
 

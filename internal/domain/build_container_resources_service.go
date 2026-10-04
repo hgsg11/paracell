@@ -2,7 +2,7 @@ package domain
 
 import "path/filepath"
 
-func BuildCellGroupContainersService(commander CommanderCell, targets []TargetCell, dependencies []DependencyCell, templates map[string]ContainerTemplate) ContainerResources {
+func BuildContainerResourcesService(commander CommanderCell, targets []TargetCell, dependencies []DependencyCell, templates map[string]ContainerTemplate) ContainerResources {
 	items := make([]ContainerResource, 0, len(targets)+len(dependencies))
 	for _, target := range targets {
 		if target.Container == nil {

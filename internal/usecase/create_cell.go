@@ -45,14 +45,18 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := domain.EnsureCommanderCellUnique(current.Commanders, input.Issue, name); err != nil {
 		return domain.CommanderCell{}, err
 	}
-	commander, targets, dependencies, err := domain.CreateCellGroupService(cfg, resolved, input.Issue, commanderID, u.IDs)
+	group, err := domain.NewCellGroup(u.IDs.NewID(), input.Issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
 	if input.Note != nil {
-		if err := commander.CellGroup.SetNote(*input.Note); err != nil {
+		if err := group.SetNote(*input.Note); err != nil {
 			return domain.CommanderCell{}, err
 		}
+	}
+	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, cfg.WorkspaceDriverType, commanderID, u.IDs)
+	if err != nil {
+		return domain.CommanderCell{}, err
 	}
 	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
@@ -143,14 +147,14 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		for _, resource := range domain.BuildCellGroupSourcesService(*r.Commander, r.Targets) {
+		for _, resource := range domain.BuildSourceResourcesService(*r.Commander, r.Targets) {
 			if err := r.Source.CreateSource(ctx, resource); err != nil {
 				return err
 			}
 		}
 		return nil
 	case domain.CreationStageContainers:
-		resources := domain.BuildCellGroupContainersService(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
+		resources := domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
 		networks, err := r.Containers.CreateContainers(ctx, resources)
 		if err != nil {
 			return err
@@ -175,7 +179,7 @@ func (r cellCreationRunner) rollbackContainers(ctx context.Context, failedStage 
 	if failedStage != domain.CreationStageWorkspace || r.Commander.ResourceDrivers().Container != domain.Docker {
 		return nil
 	}
-	return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildCellGroupContainersService(*r.Commander, r.Targets, r.Dependencies, nil)))
+	return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
 }
 
 func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage domain.CreationStage) error {
@@ -183,7 +187,7 @@ func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage d
 		return ignoreNotFound(r.Workspace.CleanWorkspace(ctx, r.Commander.WorkspaceResource()))
 	}
 	if stage == domain.CreationStageContainers {
-		return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildCellGroupContainersService(*r.Commander, r.Targets, r.Dependencies, nil)))
+		return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
 	}
 	return nil
 }

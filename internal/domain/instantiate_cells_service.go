@@ -1,17 +1,12 @@
 package domain
 
-// CellGroupIDGenerator allocates identities for the group and its runtime Cells.
-type CellGroupIDGenerator interface {
+// RuntimeCellIDGenerator allocates identities for runtime Cells.
+type RuntimeCellIDGenerator interface {
 	NewID() string
 }
 
-// CreateCellGroupService constructs independent runtime Cells from template data.
-func CreateCellGroupService(cfg Templates, resolved ResolvedTemplate, issue, commanderID string, ids CellGroupIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
-	spec := *resolved.Commander
-	group, err := NewCellGroup(ids.NewID(), issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
-	if err != nil {
-		return CommanderCell{}, nil, nil, err
-	}
+// InstantiateCellsService constructs independent runtime Cells from template data.
+func InstantiateCellsService(group *CellGroup, spec CommanderCellSpec, workspaceDriver WorkspaceDriverType, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
 	dependencyIDs := make(map[string]string, len(spec.Dependencies))
 	dependencies := make([]DependencyCell, 0, len(spec.Dependencies))
 	for _, dependencySpec := range spec.Dependencies {
@@ -32,7 +27,7 @@ func CreateCellGroupService(cfg Templates, resolved ResolvedTemplate, issue, com
 		id := ids.NewID()
 		var source *Source
 		if targetSpec.Source != nil {
-			value, err := BuildSource(*targetSpec.Source, issue)
+			value, err := BuildSource(*targetSpec.Source, group.Issue)
 			if err != nil {
 				return CommanderCell{}, nil, nil, err
 			}
@@ -64,8 +59,8 @@ func CreateCellGroupService(cfg Templates, resolved ResolvedTemplate, issue, com
 		}
 		windows = append(windows, window)
 	}
-	workspace := NewWorkspace(cfg.WorkspaceDriverType, windows)
-	commander, err := NewCommanderCell(commanderID, &group, workspace)
+	workspace := NewWorkspace(workspaceDriver, windows)
+	commander, err := NewCommanderCell(commanderID, group, workspace)
 	if err != nil {
 		return CommanderCell{}, nil, nil, err
 	}

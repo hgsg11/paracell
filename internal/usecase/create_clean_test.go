@@ -52,7 +52,7 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
 		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
-	for _, resource := range domain.BuildCellGroupSourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
+	for _, resource := range domain.BuildSourceResourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
 		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
