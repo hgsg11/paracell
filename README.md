@@ -197,7 +197,18 @@ TUI と単独 CLI のどちらから実行しても、コマンドの開始・�
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
-`paracell ready` は `Ready: {{.name}}` を `tmux display-message` で表示します。通知は `providers.notifications: tmux` のときだけ有効です。
+`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は従来どおり `tmux display-message` で表示します。`none` または省略で通知を無効にできます。
+
+macOS のデスクトップ通知には、次のように設定します。
+
+```yaml
+providers:
+  source: git
+  workspace: tmux
+  notifications: terminal-notifier
+```
+
+`terminal-notifier` が同じ Ready メッセージを表示します。Homebrew Cask で Paracell をインストールすると、依存 Formula として `terminal-notifier` も導入されます。実行に失敗した場合は `paracell ready` が通知エラーを返します。この Provider は macOS 専用で、Linux のネイティブ通知や通知クリックから Cell / Workspace へ移動する操作には対応していません。
 
 `paracell` を引数なしで実行すると、project ごとの root tmux session に入ります。そこで `C-p` を押すと `paracell view` を popup で開けます。
 
@@ -279,6 +290,8 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `database.copyMode: schema`: system database を除く全 DB の schema を cell に用意する
 - `database.copyMode: data`: 設定読み込み時に未実装エラーとして拒否する
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
+- `providers.notifications: terminal-notifier`: macOS デスクトップに Ready 通知を出す
+- `providers.notifications: none` または省略: 通知なし
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。

@@ -206,3 +206,32 @@ templates:
 		t.Fatalf("commander template did not survive config save/load: %#v, %v", resolved, err)
 	}
 }
+
+func TestYAMLConfigNotificationDrivers(t *testing.T) {
+	for _, value := range []string{"terminal-notifier", "tmux", "none", "", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "paracell.yaml")
+			data := "project: {name: sample}\nproviders:\n  source: git\n  workspace: tmux\n  notifications: " + value + "\ntemplates: {}\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := NewYAMLConfigAdapter(path).Load(context.Background())
+			if value == "invalid" {
+				if err == nil {
+					t.Fatal("invalid notification driver accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := value
+			if want == "" {
+				want = "none"
+			}
+			if string(cfg.NotificationDriverType) != want {
+				t.Fatalf("notification driver = %q, want %q", cfg.NotificationDriverType, want)
+			}
+		})
+	}
+}

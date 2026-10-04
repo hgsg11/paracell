@@ -48,7 +48,7 @@ templates:
       branchPrefix: feat/
 ```
 
-`providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions and notifications, and `docker` for containers.
+`providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
 
 ## Template Selection Fields
 

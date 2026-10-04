@@ -40,6 +40,8 @@ homebrew_casks:
       - paracell
     binaries:
       - paracell
+    dependencies:
+      - formula: terminal-notifier
     homepage: https://github.com/hgsg11/paradev
     description: Create isolated per-issue development cells from a project repo
     commit_msg_template: "Cask update for {{ .ProjectName }} version {{ .Tag }}"
