@@ -25,6 +25,7 @@ func NewCommanderCellSpec(name string, workspace WorkspaceTemplate, targets []Ta
 		dependencyNames[dependency.Name] = struct{}{}
 	}
 	targetNames := make(map[string]struct{}, len(targets))
+	targetResourceNames := make(map[string]string, len(targets))
 	for _, target := range targets {
 		if target.Name == "" || (target.Source == nil && target.Container == nil) {
 			return CommanderCellSpec{}, fmt.Errorf("target cell name and a source or container are required")
@@ -36,6 +37,11 @@ func NewCommanderCellSpec(name string, workspace WorkspaceTemplate, targets []Ta
 			return CommanderCellSpec{}, fmt.Errorf("duplicate target cell %q", target.Name)
 		}
 		targetNames[target.Name] = struct{}{}
+		resourceName := SafeResourceName(target.Name, "target")
+		if existing, exists := targetResourceNames[resourceName]; exists {
+			return CommanderCellSpec{}, fmt.Errorf("target cells %q and %q resolve to the same source path", existing, target.Name)
+		}
+		targetResourceNames[resourceName] = target.Name
 		for _, dependency := range target.Dependencies {
 			if _, exists := dependencyNames[dependency]; !exists {
 				return CommanderCellSpec{}, fmt.Errorf("target cell %q references unknown dependency cell %q", target.Name, dependency)

@@ -163,7 +163,7 @@ func (c CommanderCell) WorkspaceResource() WorkspaceResource {
 }
 
 func (c CommanderCell) SourceWorktreePath(targetName string) string {
-	return filepath.Join(".paracell", "cells", c.Name().Value, targetName, "source")
+	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
 }
 
 func (c CommanderCell) CreationStatus() CreationStatus {

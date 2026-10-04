@@ -29,6 +29,15 @@ func TestNewCommanderCellSpecValidatesTargetCardinalityAndReferences(t *testing.
 	}
 }
 
+func TestCommanderCellSpecRejectsTargetNamesThatShareSourcePaths(t *testing.T) {
+	container, _ := NewContainerTemplate("app", Target, nil, nil)
+	a, _ := NewTargetCellSpec("api/service", nil, &container, nil)
+	b, _ := NewTargetCellSpec("api-service", nil, &container, nil)
+	if _, err := NewCommanderCellSpec("work", NewWorkspaceTemplate(nil), []TargetCellSpec{a, b}, nil); err == nil {
+		t.Fatal("target names that resolve to one source path were accepted")
+	}
+}
+
 func TestRuntimeCellsAreIndependentTypesAndCommanderHoldsReferences(t *testing.T) {
 	workspaceWindow, _ := NewWorkspaceWindow("agent", "codex")
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
@@ -43,6 +52,9 @@ func TestRuntimeCellsAreIndependentTypesAndCommanderHoldsReferences(t *testing.T
 	}
 	if commander.Status != Ready {
 		t.Fatalf("initial status = %q, want ready", commander.Status)
+	}
+	if path, want := commander.SourceWorktreePath("api/service"), ".paracell/cells/113/api-service/source"; path != want {
+		t.Fatalf("target source path = %q, want %q", path, want)
 	}
 	if err := commander.SetStatus(Pending); err != nil || commander.Status != Pending {
 		t.Fatalf("set CommanderCell status: %v, status %q", err, commander.Status)

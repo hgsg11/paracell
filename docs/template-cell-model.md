@@ -1,9 +1,10 @@
 # Template and runtime cell model
 
 The template describes runtime cells; only the CommanderCell is selected and
-listed as a work item. TargetCell and DependencyCell are owned by that work
-item and referenced by ID. This is a domain relationship diagram, not a
-statement about the SQLite storage layout.
+listed as a work item. TargetCell and DependencyCell are independent runtime
+cells; the CommanderCell references them by ID and does not own or contain them.
+This is a domain relationship diagram, not a statement about the SQLite storage
+layout.
 
 ```mermaid
 erDiagram
