@@ -62,10 +62,6 @@ func (t Template) merge(parent Template) (Template, error) {
 	return NewUnresolvedTemplate(t.Name, t.Extends, t.Abstract, commander)
 }
 
-func NewTemplate(name string, commander CommanderCellSpec) (Template, error) {
-	return NewUnresolvedTemplate(name, "", false, &commander)
-}
-
 func NewUnresolvedTemplate(name, extends string, abstract bool, commander *CommanderCellSpec) (Template, error) {
 	if name == "" {
 		return Template{}, fmt.Errorf("template name is required")
