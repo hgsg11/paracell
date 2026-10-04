@@ -81,7 +81,8 @@ func appTestCell(id string, issue string, templateName string) domain.CommanderC
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	cell, _ := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
+	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
+	cell, _ := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
 	return cell
 }
 
@@ -431,7 +432,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
 		func() domain.CommanderCell {
 			c := appTestCell("cell-1", "123", "default")
-			_ = c.SetNote("PostgreSQL案")
+			_ = c.CellGroup.SetNote("PostgreSQL案")
 			return c
 		}(),
 		appTestCell("cell-2", "456", "webapp"),
@@ -477,7 +478,7 @@ func TestRunはAnnotateでStateを更新しTmuxWorkspaceなしを成功扱いに
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cells.Commanders) != 1 || cells.Commanders[0].Note != "API 実装 中" {
+	if len(cells.Commanders) != 1 || cells.Commanders[0].CellGroup.Note != "API 実装 中" {
 		t.Fatalf("cells = %#v", cells)
 	}
 }

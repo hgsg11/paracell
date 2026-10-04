@@ -143,6 +143,9 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 ## Runtime State
 
+- CellGroup holds the shared issue, project, template, note, and resource drivers. CommanderCell refers to it and retains commands and execution state; TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
+- A CellGroup ID can address the group for note updates or cleanup. SQLite records in the preceding Commander-owned format are read into the new model and rewritten transactionally on their next change, preserving existing resources and execution state.
+
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session. When non-empty, perform development work directly in that cell instead of automatically dispatching again; the task issue need not match the cell identifier.
 - `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.

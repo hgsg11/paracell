@@ -34,12 +34,16 @@ func TestReadyTerminalNotifier(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), []byte(config), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			cell, err := domain.NewCommanderCell("cell-1", "123", "myapp", "default", domain.NewWorkspace(domain.Tmux, nil), nil, nil, domain.Git, domain.None, domain.TerminalNotifierNotification)
+			group, err := domain.NewCellGroup("group-cell-1", "123", "myapp", "default", domain.Git, domain.None, domain.TerminalNotifierNotification)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cell, err := domain.NewCommanderCell("cell-1", &group, domain.NewWorkspace(domain.Tmux, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
 			// Shell metacharacters must remain part of the single message argument.
-			if err := cell.SetNote("done; $(echo unsafe)"); err != nil {
+			if err := cell.CellGroup.SetNote("done; $(echo unsafe)"); err != nil {
 				t.Fatal(err)
 			}
 			store := state.NewSQLiteCellAdapter(filepath.Join(dir, ".paracell", "state.db"))

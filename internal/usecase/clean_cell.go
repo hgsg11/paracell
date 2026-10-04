@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -45,32 +44,15 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err != nil {
 		return err
 	}
-	targets := make([]domain.TargetCell, 0, len(commander.Targets))
-	for _, targetID := range commander.Targets {
-		for _, target := range cells.Targets {
-			if target.ID == targetID {
-				targets = append(targets, target)
-				break
-			}
-		}
-	}
-	dependencies := make([]domain.DependencyCell, 0, len(commander.Dependencies))
-	for _, dependencyID := range commander.Dependencies {
-		for _, dependency := range cells.Dependencies {
-			if dependency.ID == dependencyID {
-				dependencies = append(dependencies, dependency)
-				break
-			}
-		}
-	}
+	targets, dependencies := domain.SelectCellGroupMembersService(commander.CellGroup.ID, cells.Targets, cells.Dependencies)
 	if err := ignoreNotFound(workspace.CleanWorkspace(ctx, commander.WorkspaceResource())); err != nil {
 		return err
 	}
-	containerResources := commanderContainerResources(commander, targets, dependencies, nil)
+	containerResources := domain.BuildCellGroupContainersService(commander, targets, dependencies, nil)
 	if err := ignoreNotFound(containers.CleanContainers(ctx, containerResources)); err != nil {
 		return err
 	}
-	for _, resource := range commander.SourceResources(targets) {
+	for _, resource := range domain.BuildCellGroupSourcesService(commander, targets) {
 		if err := ignoreNotFound(source.CleanSource(ctx, resource)); err != nil {
 			return err
 		}
@@ -78,48 +60,24 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	return u.Cells.UpdateCells(ctx, func(latest CellSet) (CellSet, error) {
 		commanders := make([]domain.CommanderCell, 0, len(latest.Commanders))
 		for _, current := range latest.Commanders {
-			if current.ID != commander.ID {
+			if current.CellGroup.ID != commander.CellGroup.ID {
 				commanders = append(commanders, current)
 			}
 		}
 		remainingTargets := make([]domain.TargetCell, 0, len(latest.Targets))
 		for _, target := range latest.Targets {
-			if target.CommanderID != commander.ID {
+			if target.CellGroupID != commander.CellGroup.ID {
 				remainingTargets = append(remainingTargets, target)
 			}
 		}
 		remainingDependencies := make([]domain.DependencyCell, 0, len(latest.Dependencies))
 		for _, dependency := range latest.Dependencies {
-			if dependency.CommanderID != commander.ID {
+			if dependency.CellGroupID != commander.CellGroup.ID {
 				remainingDependencies = append(remainingDependencies, dependency)
 			}
 		}
 		return NewCellSet(commanders, remainingTargets, remainingDependencies), nil
 	})
-}
-
-func commanderContainerResources(commander domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell, templates map[string]domain.ContainerTemplate) domain.ContainerResources {
-	items := make([]domain.ContainerResource, 0, len(targets)+len(dependencies))
-	for _, target := range targets {
-		if target.Container == nil {
-			continue
-		}
-		template := templates[target.Container.SourceContainer]
-		name := commander.ResourcePrefix() + "-" + domain.SafeResourceName(target.Name, "target") + "-" + domain.SafeResourceName(target.Container.SourceContainer, "container")
-		item := domain.NewContainerResource(name, target.Container.Network, target.Container.SourceContainer, target.Container.Mode, template.Environments, template.Mounts)
-		if target.Source != nil {
-			item.SourcePath = commander.SourceWorktreePath(target.Name)
-			if target.Source.Path != "." {
-				item.SourcePath = filepath.Join(item.SourcePath, target.Source.Path)
-			}
-		}
-		items = append(items, item)
-	}
-	for _, dependency := range dependencies {
-		template := templates[dependency.Container.SourceContainer]
-		items = append(items, domain.NewContainerResource(dependency.Container.SourceContainer, dependency.Container.Network, dependency.Container.SourceContainer, dependency.Container.Mode, template.Environments, template.Mounts))
-	}
-	return domain.NewContainerResources(commander.Name().Value, commander.Project, commander.ResourcePrefix(), items)
 }
 
 func ignoreNotFound(err error) error {

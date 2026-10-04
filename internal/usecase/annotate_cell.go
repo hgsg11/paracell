@@ -23,7 +23,7 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	if err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
 		for i, cell := range cells.Commanders {
 			if cell.Matches(input.Cell) {
-				if err := cell.SetNote(input.Note); err != nil {
+				if err := cell.CellGroup.SetNote(input.Note); err != nil {
 					return CellSet{}, err
 				}
 				cells.Commanders[i] = cell
