@@ -117,6 +117,7 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 
 ## Operate Safely
 
+- Ready notifications use the configured provider: `tmux`, `terminal-notifier` (macOS only), or `none` / omission. The Homebrew Cask installs the notification Formula dependency; do not add runtime installation or click navigation.
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set.
 - Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.

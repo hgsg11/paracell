@@ -56,6 +56,8 @@ func (f Factory) Notification(driver domain.NotificationDriverType) (usecase.Not
 		return notification.NewNoopNotifier(), nil
 	case domain.TmuxNotification:
 		return notification.NewTmuxNotifier(f.Runner), nil
+	case domain.TerminalNotifierNotification:
+		return notification.NewTerminalNotifier(f.Runner), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification driver %q", driver)
 	}
