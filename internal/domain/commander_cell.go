@@ -3,61 +3,31 @@ package domain
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
-	"unicode"
 )
 
-// CommanderCell is an independent runtime Cell with references to related Cells.
+// CommanderCell holds commands and execution state, referring to shared CellGroup information.
 type CommanderCell struct {
-	ID                 string
-	Issue              string
-	Project            string
-	Note               string
-	Template           string
-	Version            CellVersion
-	Workspace          Workspace
-	Targets            []string
-	Dependencies       []string
-	Status             CellStatus
-	Creation           CellCreation
-	Done               bool
-	NotificationDriver NotificationDriverType
-	SourceDriver       SourceDriverType
-	ContainerDriver    ContainerDriverType
+	ID        string
+	CellGroup *CellGroup
+	Version   CellVersion
+	Workspace Workspace
+	Status    CellStatus
+	Creation  CellCreation
+	Done      bool
 }
 
-func NewCommanderCell(id, issue, project, templateName string, workspace Workspace, targets, dependencies []string, sourceDriver SourceDriverType, containerDriver ContainerDriverType, notificationDriver NotificationDriverType) (CommanderCell, error) {
-	if id == "" || issue == "" || templateName == "" {
-		return CommanderCell{}, fmt.Errorf("commander cell id, issue, and template are required")
+func NewCommanderCell(id string, group *CellGroup, workspace Workspace) (CommanderCell, error) {
+	if id == "" || group == nil {
+		return CommanderCell{}, fmt.Errorf("commander cell id and CellGroup are required")
 	}
 	version, err := NewCellVersion(1)
 	if err != nil {
 		return CommanderCell{}, err
 	}
-	if _, err := NewWorkspaceDriverType(string(workspace.Driver)); err != nil {
-		return CommanderCell{}, err
-	}
-	validatedNotificationDriver, err := NewNotificationDriverType(string(notificationDriver))
-	if err != nil {
-		return CommanderCell{}, err
-	}
-	for _, reference := range append(append([]string(nil), targets...), dependencies...) {
-		if reference == "" {
-			return CommanderCell{}, fmt.Errorf("commander cell %q has an empty Cell reference", NewCellName(issue).Value)
-		}
-	}
-	if containerDriver != None && containerDriver != Docker {
-		return CommanderCell{}, fmt.Errorf("invalid container driver type %q", containerDriver)
-	}
-	validatedSourceDriver, err := NewSourceDriverType(string(sourceDriver))
-	if err != nil {
-		return CommanderCell{}, err
-	}
 	return CommanderCell{
-		ID: id, Issue: issue, Project: project, Template: templateName,
-		Version: version, Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
-		Targets: append([]string(nil), targets...), Dependencies: append([]string(nil), dependencies...), Status: Ready,
-		Creation: NewCellCreation(), NotificationDriver: validatedNotificationDriver, SourceDriver: validatedSourceDriver, ContainerDriver: containerDriver,
+		ID: id, CellGroup: group, Version: version,
+		Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
+		Status:    Ready, Creation: NewCellCreation(),
 	}, nil
 }
 
@@ -71,27 +41,18 @@ func (c *CommanderCell) SetStatus(status CellStatus) error {
 }
 
 func (c CommanderCell) DisplayLabel() string {
-	if c.Note != "" {
-		return c.Note
+	if c.CellGroup.Note != "" {
+		return c.CellGroup.Note
 	}
 	return c.Name().Value
 }
 
 func (c CommanderCell) ListLabels() (string, string) {
-	return c.DisplayLabel(), c.Template
+	return c.DisplayLabel(), c.CellGroup.Template
 }
 
 func (c CommanderCell) HasStatus(status CellStatus) bool {
 	return c.Status == status
-}
-
-func (c *CommanderCell) SetNote(note string) error {
-	normalized, err := NormalizeCellNote(note)
-	if err != nil {
-		return err
-	}
-	c.Note = normalized
-	return nil
 }
 
 func (c CommanderCell) EnsureCanBeCleaned() error {
@@ -106,16 +67,7 @@ func (c CommanderCell) SameIdentity(other CommanderCell) bool {
 }
 
 func (c CommanderCell) Matches(identifier string) bool {
-	return c.ID == identifier || c.Issue == identifier || c.Name().Value == identifier
-}
-
-func NormalizeCellNote(note string) (string, error) {
-	normalized := strings.Join(strings.FieldsFunc(note, unicode.IsSpace), " ")
-	length := len([]rune(normalized))
-	if length == 0 || length > 20 {
-		return "", fmt.Errorf("cell note must be between 1 and 20 characters after whitespace normalization")
-	}
-	return normalized, nil
+	return c.ID == identifier || c.CellGroup.ID == identifier || c.CellGroup.Issue == identifier || c.Name().Value == identifier
 }
 
 func ResolveCommanderCell(cells []CommanderCell, identifier string) (CommanderCell, bool) {
@@ -129,7 +81,7 @@ func ResolveCommanderCell(cells []CommanderCell, identifier string) (CommanderCe
 
 func EnsureCommanderCellUnique(cells []CommanderCell, issue string, name CellName) error {
 	for _, cell := range cells {
-		if cell.Issue == issue {
+		if cell.CellGroup.Issue == issue {
 			return fmt.Errorf("commander cell issue %q already exists", issue)
 		}
 		if cell.Name() == name {
@@ -140,26 +92,26 @@ func EnsureCommanderCellUnique(cells []CommanderCell, issue string, name CellNam
 }
 
 func (c CommanderCell) Name() CellName {
-	return NewCellName(c.Issue)
+	return NewCellName(c.CellGroup.Issue)
 }
 
 func (c CommanderCell) ResourcePrefix() string {
-	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.Project, "project"), c.Name().Value)
+	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.CellGroup.Project, "project"), c.Name().Value)
 }
 
 func (c CommanderCell) ResourceDrivers() CellDrivers {
-	return NewCellDrivers(c.SourceDriver, c.ContainerDriver, c.Workspace.Driver, c.NotificationDriver)
+	return NewCellDrivers(c.CellGroup.SourceDriver, c.CellGroup.ContainerDriver, c.Workspace.Driver, c.CellGroup.NotificationDriver)
 }
 
 func (c CommanderCell) WorkspaceName() string {
-	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
+	return SafeResourceName(c.CellGroup.Project, "project") + "-" + c.Name().Value
 }
 
 func (c CommanderCell) WorkspaceResource() WorkspaceResource {
 	workingDirectory := filepath.Join(".paracell", "cells", c.Name().Value)
 	windows := make([]WorkspaceWindow, len(c.Workspace.Windows))
 	copy(windows, c.Workspace.Windows)
-	return NewWorkspaceResource(c.WorkspaceName(), c.Name().Value, c.Project, c.DisplayLabel(), workingDirectory, windows)
+	return NewWorkspaceResource(c.WorkspaceName(), c.Name().Value, c.CellGroup.Project, c.DisplayLabel(), workingDirectory, windows)
 }
 
 func (c CommanderCell) SourceWorktreePath(targetName string) string {
@@ -205,13 +157,13 @@ func (c *CommanderCell) AdvanceVersion() error {
 }
 
 func (c CommanderCell) Stored() StoredCommanderCell {
-	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.Issue, c.Project, c.Note, c.Template, c.Workspace, c.Targets, c.Dependencies, c.SourceDriver, c.ContainerDriver, c.NotificationDriver, c.Creation, string(c.Status), c.Done)
+	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.Creation, string(c.Status), c.Done)
 }
 
 func (c CommanderCell) Clone() CommanderCell {
 	c.Workspace.Windows = append([]WorkspaceWindow(nil), c.Workspace.Windows...)
-	c.Targets = append([]string(nil), c.Targets...)
-	c.Dependencies = append([]string(nil), c.Dependencies...)
+	group := *c.CellGroup
+	c.CellGroup = &group
 	return c
 }
 
@@ -225,19 +177,4 @@ func (c *CommanderCell) MarkDone() error {
 	}
 	c.Done = true
 	return nil
-}
-
-func (c CommanderCell) SourceResources(targets []TargetCell) []SourceResource {
-	resources := make([]SourceResource, 0, len(targets))
-	for _, target := range targets {
-		if target.Source == nil {
-			continue
-		}
-		path := c.SourceWorktreePath(target.Name)
-		if target.Source.Path != "." {
-			path = filepath.Join(path, target.Source.Path)
-		}
-		resources = append(resources, NewSourceResource(target.Source.Path, path, target.Source.Base, target.Source.Branch))
-	}
-	return resources
 }

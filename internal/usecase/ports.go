@@ -24,8 +24,7 @@ type CellPort interface {
 	UpdateCells(context.Context, func(CellSet) (CellSet, error)) error
 }
 
-// CellSet is a state snapshot of independent runtime Cells; the CommanderCell's
-// ID references, rather than embeds, its targets and dependencies.
+// CellSet is a state snapshot of runtime Cells associated by CellGroup ID.
 type CellSet struct {
 	Commanders   []domain.CommanderCell
 	Targets      []domain.TargetCell

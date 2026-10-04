@@ -158,8 +158,8 @@ func loadCells(ctx context.Context, queryer stateQueryer) (usecase.CellSet, erro
 		if err := rows.Scan(&id, &version, &data); err != nil {
 			return usecase.CellSet{}, fmt.Errorf("scan CommanderCell: %w", err)
 		}
-		var record stateCellRecord
-		if err := json.Unmarshal(data, &record); err != nil {
+		record, err := decodeCellRecord(data)
+		if err != nil {
 			return usecase.CellSet{}, fmt.Errorf("decode CommanderCell %q: %w", id, err)
 		}
 		if record.Commander.ID != id || record.Commander.Version != version {
@@ -196,17 +196,24 @@ func loadCells(ctx context.Context, queryer stateQueryer) (usecase.CellSet, erro
 
 func validateCellSet(set usecase.CellSet) error {
 	commanders := make(map[string]domain.CommanderCell, len(set.Commanders))
+	groups := make(map[string]struct{}, len(set.Commanders))
 	for _, commander := range set.Commanders {
 		if _, exists := commanders[commander.ID]; exists {
 			return fmt.Errorf("duplicate CommanderCell id %q", commander.ID)
 		}
 		commanders[commander.ID] = commander
+		if commander.CellGroup == nil {
+			return fmt.Errorf("CommanderCell %q has no CellGroup", commander.ID)
+		}
+		if _, exists := groups[commander.CellGroup.ID]; exists {
+			return fmt.Errorf("duplicate CellGroup id %q", commander.CellGroup.ID)
+		}
+		groups[commander.CellGroup.ID] = struct{}{}
 	}
 	targets := make(map[string]domain.TargetCell, len(set.Targets))
-	ownedTargets := make(map[string]struct{}, len(set.Targets))
 	for _, target := range set.Targets {
-		if _, exists := commanders[target.CommanderID]; !exists {
-			return fmt.Errorf("TargetCell %q has unknown CommanderCell %q", target.ID, target.CommanderID)
+		if _, exists := groups[target.CellGroupID]; !exists {
+			return fmt.Errorf("TargetCell %q has unknown CellGroup %q", target.ID, target.CellGroupID)
 		}
 		if _, exists := targets[target.ID]; exists {
 			return fmt.Errorf("duplicate TargetCell id %q", target.ID)
@@ -214,39 +221,19 @@ func validateCellSet(set usecase.CellSet) error {
 		targets[target.ID] = target
 	}
 	dependencies := make(map[string]domain.DependencyCell, len(set.Dependencies))
-	ownedDependencies := make(map[string]struct{}, len(set.Dependencies))
 	for _, dependency := range set.Dependencies {
-		if _, exists := commanders[dependency.CommanderID]; !exists {
-			return fmt.Errorf("DependencyCell %q has unknown CommanderCell %q", dependency.ID, dependency.CommanderID)
+		if _, exists := groups[dependency.CellGroupID]; !exists {
+			return fmt.Errorf("DependencyCell %q has unknown CellGroup %q", dependency.ID, dependency.CellGroupID)
 		}
 		if _, exists := dependencies[dependency.ID]; exists {
 			return fmt.Errorf("duplicate DependencyCell id %q", dependency.ID)
 		}
 		dependencies[dependency.ID] = dependency
 	}
-	for _, commander := range set.Commanders {
-		for _, id := range commander.Targets {
-			target, exists := targets[id]
-			if !exists || target.CommanderID != commander.ID {
-				return fmt.Errorf("CommanderCell %q has invalid TargetCell reference %q", commander.ID, id)
-			}
-			ownedTargets[id] = struct{}{}
-		}
-		for _, id := range commander.Dependencies {
-			dependency, exists := dependencies[id]
-			if !exists || dependency.CommanderID != commander.ID {
-				return fmt.Errorf("CommanderCell %q has invalid DependencyCell reference %q", commander.ID, id)
-			}
-			ownedDependencies[id] = struct{}{}
-		}
-	}
-	if len(ownedTargets) != len(targets) || len(ownedDependencies) != len(dependencies) {
-		return fmt.Errorf("CellSet contains an unreferenced TargetCell or DependencyCell")
-	}
 	for _, target := range set.Targets {
 		for _, id := range target.Dependencies {
 			dependency, exists := dependencies[id]
-			if !exists || dependency.CommanderID != target.CommanderID {
+			if !exists || dependency.CellGroupID != target.CellGroupID {
 				return fmt.Errorf("TargetCell %q has invalid DependencyCell reference %q", target.ID, id)
 			}
 		}
@@ -272,12 +259,25 @@ func applyChanges(ctx context.Context, execer stateExecer, current usecase.CellS
 		currentByID[record.Commander.ID] = record
 	}
 	nextByID := make(map[string]struct{}, len(nextRecords))
-	for position, record := range nextRecords {
+	for _, record := range nextRecords {
+		nextByID[record.Commander.ID] = struct{}{}
+	}
+	// Release deleted positions before compacting the surviving groups.
+	for _, record := range currentRecords {
 		id := record.Commander.ID
 		if _, exists := nextByID[id]; exists {
-			return fmt.Errorf("duplicate CommanderCell id %q", id)
+			continue
 		}
-		nextByID[id] = struct{}{}
+		result, err := execer.ExecContext(ctx, "DELETE FROM cells WHERE id = ? AND version = ?", id, record.Commander.Version)
+		if err != nil {
+			return fmt.Errorf("delete CommanderCell %q: %w", id, err)
+		}
+		if err := requireOneRow(result, "delete", id, record.Commander.Version); err != nil {
+			return err
+		}
+	}
+	for position, record := range nextRecords {
+		id := record.Commander.ID
 		stored, exists := currentByID[id]
 		if !exists {
 			if record.Commander.Version != 1 {
@@ -306,19 +306,6 @@ func applyChanges(ctx context.Context, execer stateExecer, current usecase.CellS
 			return err
 		}
 	}
-	for _, record := range currentRecords {
-		id := record.Commander.ID
-		if _, exists := nextByID[id]; exists {
-			continue
-		}
-		result, err := execer.ExecContext(ctx, "DELETE FROM cells WHERE id = ? AND version = ?", id, record.Commander.Version)
-		if err != nil {
-			return fmt.Errorf("delete CommanderCell %q: %w", id, err)
-		}
-		if err := requireOneRow(result, "delete", id, record.Commander.Version); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
@@ -328,24 +315,7 @@ func cellRecords(set usecase.CellSet) ([]stateCellRecord, error) {
 	}
 	records := make([]stateCellRecord, 0, len(set.Commanders))
 	for _, commander := range set.Commanders {
-		targets := make([]domain.TargetCell, 0, len(commander.Targets))
-		for _, id := range commander.Targets {
-			for _, target := range set.Targets {
-				if target.ID == id {
-					targets = append(targets, target)
-					break
-				}
-			}
-		}
-		dependencies := make([]domain.DependencyCell, 0, len(commander.Dependencies))
-		for _, id := range commander.Dependencies {
-			for _, dependency := range set.Dependencies {
-				if dependency.ID == id {
-					dependencies = append(dependencies, dependency)
-					break
-				}
-			}
-		}
+		targets, dependencies := domain.SelectCellGroupMembersService(commander.CellGroup.ID, set.Targets, set.Dependencies)
 		records = append(records, newStateCellRecord(commander, targets, dependencies))
 	}
 	return records, nil
@@ -357,7 +327,7 @@ func writeCell(ctx context.Context, execer stateExecer, position int, record sta
 		return fmt.Errorf("encode CommanderCell %q: %w", record.Commander.ID, err)
 	}
 	result, err := execer.ExecContext(ctx, "UPDATE cells SET issue = ?, position = ?, version = ?, record = ? WHERE id = ? AND version = ?",
-		record.Commander.Issue, position, record.Commander.Version, data, record.Commander.ID, expectedVersion)
+		record.Commander.CellGroup.Issue, position, record.Commander.Version, data, record.Commander.ID, expectedVersion)
 	if err != nil {
 		return fmt.Errorf("update CommanderCell %q: %w", record.Commander.ID, err)
 	}
@@ -370,7 +340,7 @@ func insertCell(ctx context.Context, execer stateExecer, position int, record st
 		return fmt.Errorf("encode CommanderCell %q: %w", record.Commander.ID, err)
 	}
 	if _, err := execer.ExecContext(ctx, "INSERT INTO cells (id, issue, position, version, record) VALUES (?, ?, ?, ?, ?)",
-		record.Commander.ID, record.Commander.Issue, position, record.Commander.Version, data); err != nil {
+		record.Commander.ID, record.Commander.CellGroup.Issue, position, record.Commander.Version, data); err != nil {
 		return fmt.Errorf("insert CommanderCell %q: %w", record.Commander.ID, err)
 	}
 	return nil

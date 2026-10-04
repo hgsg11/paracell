@@ -45,14 +45,18 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := domain.EnsureCommanderCellUnique(current.Commanders, input.Issue, name); err != nil {
 		return domain.CommanderCell{}, err
 	}
-	commander, targets, dependencies, err := instantiateCommander(cfg, resolved, input.Issue, commanderID, u.IDs)
+	group, err := domain.NewCellGroup(u.IDs.NewID(), input.Issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
 	if input.Note != nil {
-		if err := commander.SetNote(*input.Note); err != nil {
+		if err := group.SetNote(*input.Note); err != nil {
 			return domain.CommanderCell{}, err
 		}
+	}
+	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, cfg.WorkspaceDriverType, commanderID, u.IDs)
+	if err != nil {
+		return domain.CommanderCell{}, err
 	}
 	source, err := u.SourceFactory.Source(cfg.SourceDriverType)
 	if err != nil {
@@ -85,74 +89,6 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.CommanderCell{}, err
 	}
 	return commander, nil
-}
-
-func instantiateCommander(cfg domain.Templates, resolved domain.ResolvedTemplate, issue, commanderID string, ids IDGenerator) (domain.CommanderCell, []domain.TargetCell, []domain.DependencyCell, error) {
-	spec := *resolved.Commander
-	dependencyIDs := make(map[string]string, len(spec.Dependencies))
-	dependencies := make([]domain.DependencyCell, 0, len(spec.Dependencies))
-	for _, dependencySpec := range spec.Dependencies {
-		id := ids.NewID()
-		container, err := domain.NewContainer(nil, dependencySpec.Container.Name, dependencySpec.Container.Mode)
-		if err != nil {
-			return domain.CommanderCell{}, nil, nil, err
-		}
-		dependency, err := domain.NewDependencyCell(id, commanderID, dependencySpec.Name, container)
-		if err != nil {
-			return domain.CommanderCell{}, nil, nil, err
-		}
-		dependencyIDs[dependencySpec.Name] = id
-		dependencies = append(dependencies, dependency)
-	}
-	targets := make([]domain.TargetCell, 0, len(spec.Targets))
-	targetIDs := make([]string, 0, len(spec.Targets))
-	for _, targetSpec := range spec.Targets {
-		id := ids.NewID()
-		var source *domain.Source
-		if targetSpec.Source != nil {
-			value, err := domain.BuildSource(*targetSpec.Source, issue)
-			if err != nil {
-				return domain.CommanderCell{}, nil, nil, err
-			}
-			source = &value
-		}
-		var container *domain.Container
-		if targetSpec.Container != nil {
-			value, err := domain.NewContainer(nil, targetSpec.Container.Name, targetSpec.Container.Mode)
-			if err != nil {
-				return domain.CommanderCell{}, nil, nil, err
-			}
-			container = &value
-		}
-		dependencies := make([]string, 0, len(targetSpec.Dependencies))
-		for _, dependencyName := range targetSpec.Dependencies {
-			dependencies = append(dependencies, dependencyIDs[dependencyName])
-		}
-		target, err := domain.NewTargetCell(id, commanderID, targetSpec.Name, source, container, dependencies)
-		if err != nil {
-			return domain.CommanderCell{}, nil, nil, err
-		}
-		targetIDs = append(targetIDs, id)
-		targets = append(targets, target)
-	}
-	dependencyReferences := make([]string, 0, len(dependencies))
-	for _, dependency := range dependencies {
-		dependencyReferences = append(dependencyReferences, dependency.ID)
-	}
-	windows := make([]domain.WorkspaceWindow, 0, len(spec.Workspace.Windows))
-	for _, item := range spec.Workspace.Windows {
-		window, err := domain.NewWorkspaceWindow(item.Name, item.Command)
-		if err != nil {
-			return domain.CommanderCell{}, nil, nil, err
-		}
-		windows = append(windows, window)
-	}
-	workspace := domain.NewWorkspace(cfg.WorkspaceDriverType, windows)
-	commander, err := domain.NewCommanderCell(commanderID, issue, cfg.ProjectName, resolved.Name, workspace, targetIDs, dependencyReferences, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
-	if err != nil {
-		return domain.CommanderCell{}, nil, nil, err
-	}
-	return commander, targets, dependencies, nil
 }
 
 func containerTemplates(spec domain.CommanderCellSpec) map[string]domain.ContainerTemplate {
@@ -211,14 +147,14 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		for _, resource := range r.Commander.SourceResources(r.Targets) {
+		for _, resource := range domain.BuildSourceResourcesService(*r.Commander, r.Targets) {
 			if err := r.Source.CreateSource(ctx, resource); err != nil {
 				return err
 			}
 		}
 		return nil
 	case domain.CreationStageContainers:
-		resources := commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
+		resources := domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
 		networks, err := r.Containers.CreateContainers(ctx, resources)
 		if err != nil {
 			return err
@@ -240,10 +176,10 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 }
 
 func (r cellCreationRunner) rollbackContainers(ctx context.Context, failedStage domain.CreationStage) error {
-	if failedStage != domain.CreationStageWorkspace || r.Commander.ContainerDriver != domain.Docker {
+	if failedStage != domain.CreationStageWorkspace || r.Commander.ResourceDrivers().Container != domain.Docker {
 		return nil
 	}
-	return ignoreNotFound(r.Containers.CleanContainers(ctx, commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, nil)))
+	return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
 }
 
 func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage domain.CreationStage) error {
@@ -251,7 +187,7 @@ func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage d
 		return ignoreNotFound(r.Workspace.CleanWorkspace(ctx, r.Commander.WorkspaceResource()))
 	}
 	if stage == domain.CreationStageContainers {
-		return ignoreNotFound(r.Containers.CleanContainers(ctx, commanderContainerResources(*r.Commander, r.Targets, r.Dependencies, nil)))
+		return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
 	}
 	return nil
 }
@@ -270,12 +206,12 @@ func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
 			if latest.Commanders[index].ID == r.Commander.ID {
 				latest.Commanders[index] = r.Commander.Clone()
 				for childIndex := range latest.Targets {
-					if latest.Targets[childIndex].CommanderID == r.Commander.ID {
+					if latest.Targets[childIndex].CellGroupID == r.Commander.CellGroup.ID {
 						latest.Targets[childIndex] = targetByID(r.Targets, latest.Targets[childIndex].ID)
 					}
 				}
 				for childIndex := range latest.Dependencies {
-					if latest.Dependencies[childIndex].CommanderID == r.Commander.ID {
+					if latest.Dependencies[childIndex].CellGroupID == r.Commander.CellGroup.ID {
 						latest.Dependencies[childIndex] = dependencyByID(r.Dependencies, latest.Dependencies[childIndex].ID)
 					}
 				}

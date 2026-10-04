@@ -24,7 +24,8 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 func viewTestCell(id string, issue string, templateName string) domain.CommanderCell {
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	cell, _ := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
+	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
+	cell, _ := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
 	return cell
 }
 
@@ -153,7 +154,7 @@ func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *
 
 func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	_ = cell.SetNote("API実装中")
+	_ = cell.CellGroup.SetNote("API実装中")
 	err := cell.SetStatus(domain.Pending)
 	if err != nil {
 		t.Fatal(err)
@@ -939,7 +940,7 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		if cell.Name().Value != "123" {
 			t.Fatalf("toggle cell = %#v, want name %q", cell, "123")
 		}
-		return viewTestCell(cell.ID, cell.Name().Value, cell.Template), nil
+		return viewTestCell(cell.ID, cell.Name().Value, cell.CellGroup.Template), nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})

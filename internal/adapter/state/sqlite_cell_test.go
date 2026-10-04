@@ -13,7 +13,11 @@ func persistedTestCell(t *testing.T) domain.CommanderCell {
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	cell, err := domain.NewCommanderCell("id", "42", "sample", "feat", domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.Docker, domain.NoNotification)
+	group, err := domain.NewCellGroup("group-id", "42", "sample", "feat", sourceDriver, domain.Docker, domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell, err := domain.NewCommanderCell("id", &group, domain.NewWorkspace(workspaceDriver, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +54,7 @@ func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否�
 		t.Fatal(err)
 	}
 	changed := cell
-	_ = changed.SetNote("updated")
+	_ = changed.CellGroup.SetNote("updated")
 	if err := adapter.SaveCells(ctx, []domain.CommanderCell{changed}); err != nil {
 		t.Fatal(err)
 	}
@@ -60,12 +64,12 @@ func TestSQLiteStateは更新ごとにVersionを1増やし古い更新を拒否�
 	}
 
 	stale := cell
-	_ = stale.SetNote("stale")
+	_ = stale.CellGroup.SetNote("stale")
 	if err := adapter.SaveCells(ctx, []domain.CommanderCell{stale}); !errors.Is(err, domain.ErrVersionConflict) {
 		t.Fatalf("error = %v", err)
 	}
 	got, _ = adapter.LoadCells(ctx)
-	if got.Commanders[0].Version != 2 || got.Commanders[0].Note != "updated" {
+	if got.Commanders[0].Version != 2 || got.Commanders[0].CellGroup.Note != "updated" {
 		t.Fatalf("commander changed after conflict: %#v", got.Commanders[0])
 	}
 }

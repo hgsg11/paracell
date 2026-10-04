@@ -12,12 +12,16 @@ func outputCell(t *testing.T, issue string, templateName string, note string) do
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	cell, err := domain.NewCommanderCell("id-"+issue, issue, "sample", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
+	group, err := domain.NewCellGroup("group-id-"+issue, issue, "sample", templateName, sourceDriver, domain.None, domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell, err := domain.NewCommanderCell("id-"+issue, &group, domain.NewWorkspace(workspaceDriver, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if note != "" {
-		err = cell.SetNote(note)
+		err = cell.CellGroup.SetNote(note)
 		if err != nil {
 			t.Fatal(err)
 		}

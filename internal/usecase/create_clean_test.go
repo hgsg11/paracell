@@ -3,7 +3,9 @@ package usecase
 import (
 	"context"
 	"errors"
+	"github.com/hgsg11/paracell/internal/adapter/id"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -16,7 +18,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.Template != "feat" || len(cell.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
+	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
 	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
@@ -50,7 +52,7 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
 		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
-	for _, resource := range ports.cells.Commanders[0].SourceResources(ports.cells.Targets) {
+	for _, resource := range domain.BuildSourceResourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
 		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
@@ -101,6 +103,9 @@ func (f *fakePorts) LoadCells(context.Context) (CellSet, error) {
 
 func (f *fakePorts) UpdateCells(_ context.Context, update func(CellSet) (CellSet, error)) error {
 	before := NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies)
+	for i := range before.Commanders {
+		before.Commanders[i] = before.Commanders[i].Clone()
+	}
 	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies))
 	if err != nil {
 		return err
@@ -186,9 +191,75 @@ func newUsecaseTestCell(t *testing.T, id string, issue string, templateName stri
 	t.Helper()
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	cell, err := domain.NewCommanderCell(id, issue, "myapp", templateName, domain.NewWorkspace(workspaceDriver, nil), nil, nil, sourceDriver, domain.None, domain.NoNotification)
+	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell, err := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return cell
+}
+
+func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) {
+	ctx := context.Background()
+	ports := newFakePorts()
+	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
+	app, _ := domain.NewContainerTemplate("app", domain.Target, nil, nil)
+	db, _ := domain.NewContainerTemplate("postgres", domain.Dependency, nil, nil)
+	api, _ := domain.NewTargetCellSpec("api", &source, &app, []string{"database"})
+	web, _ := domain.NewTargetCellSpec("web", &source, nil, []string{"database"})
+	database, _ := domain.NewDependencyCellSpec("database", db)
+	window, _ := domain.NewWindow("agent", "codex {{.Command}}")
+	spec, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate([]domain.Window{window}), []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &spec)
+	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork := newForkCellUseCase(ports)
+	fork.IDs = id.RandomGenerator{}
+	note := " API 実装 "
+	first, err := fork.Execute(ctx, ForkCellInput{Issue: "118", Template: "feat", Command: "implement 118", Note: &note})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := fork.Execute(ctx, ForkCellInput{Issue: "119", Template: "feat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroup.ID, ports.cells.Targets, ports.cells.Dependencies)
+	if first.CellGroup.ID == first.ID || first.CellGroup.ID == second.CellGroup.ID || len(targets) != 2 || len(dependencies) != 1 {
+		t.Fatalf("invalid grouping: %#v, %#v", first, ports.cells)
+	}
+	for _, target := range targets {
+		if len(target.Dependencies) != 1 || target.Dependencies[0] != dependencies[0].ID {
+			t.Fatalf("dependency link = %#v", target)
+		}
+	}
+	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CreationStatus() != domain.CreationReady {
+		t.Fatalf("commands/status/note not preserved: %#v", first)
+	}
+	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+		t.Fatal(err)
+	}
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroup.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if len(ports.cells.Commanders) != 1 || !ports.cells.Commanders[0].SameIdentity(second) || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
+		t.Fatalf("wrong group deleted: %#v", ports.cells)
+	}
+	if len(ports.cleanedSources) != 2 {
+		t.Fatalf("cleaned sources: %#v", ports.cleanedSources)
+	}
+	for _, resource := range ports.cleanedSources {
+		if !strings.Contains(resource.WorktreePath, "/118/") {
+			t.Fatalf("unrelated source cleaned: %#v", resource)
+		}
+	}
 }

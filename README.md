@@ -14,13 +14,16 @@ paracell fork 123 --template feat
 
 AI agent を並行実行すると、同じファイル、同じcontainer名、同じhost portを取り合いやすくなります。Paracell は issue ごとに CommanderCell を作り、複数の TargetCell と依存環境をまとめて扱います。
 
-### 1 issue = 1 CommanderCell
+### 1 issue = 1 CellGroup
 
 | Cell | 役割 |
 | --- | --- |
-| CommanderCell | Workspace と `pending` / `ready`、`done` などの作業状態 |
-| TargetCell | Source、Container のいずれかまたは両方を持つ開発対象 |
-| DependencyCell | TargetCell が参照する Container 依存環境 |
+| CellGroup | ID、Issue、Project、Template、Note、通知・Source・Container driver の共通情報 |
+| CommanderCell | CellGroup への参照、Workspace と `pending` / `ready`、`done` などの作業状態 |
+| TargetCell | CellGroupID と、Source、Container のいずれかまたは両方を持つ開発対象 |
+| DependencyCell | CellGroupID と、TargetCell が参照する Container 依存環境 |
+
+CellGroup は共通情報と所属関係を表すものであり、Cell やコンテナの生成責務を持ちません。CellGroup と CommanderCell は所属 Cell の一覧を保持しません。生成・削除の usecase は TargetCell / DependencyCell の `CellGroupID` で同じ作業一式を特定します。既存の `commanderCell.targets` / `commanderCell.dependencies` の Template 記述は変更不要です。
 
 Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。
 
@@ -77,7 +80,7 @@ paracell fork 123 --template feat
 paracell
 ```
 
-cell の用途を短く示したい場合は、fork 時または作成後に note を設定できます。
+作業一式の用途を短く示したい場合は、fork 時または作成後に CellGroup 全体の note を設定できます。
 
 ```sh
 paracell fork 123 --template feat --note "PostgreSQL案"
@@ -261,14 +264,14 @@ paracell --version
 ```
 
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
-- `annotate`: ID、Issue、Name のいずれかで既存 cell を指定し、note を設定・上書きする
+- `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
 - `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
 - `clean`: cell の worktree / container / session を片付ける
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
-note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は表示専用であり、cell の指定には引き続き ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
+note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は CellGroup 全体の表示専用情報であり、cell の指定には CommanderCell ID、CellGroup ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
 
 ## 設定メモ
 
@@ -328,5 +331,7 @@ templates:
 - `paracell.yaml`: 設定と template
 - `.paracell/state.db`: cell の状態を保存するSQLite database
 - `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree
+
+SQLite の既存 CommanderCell 形式は読み込み時に CellGroup へ変換します。既存の CommanderCell ID を CellGroup ID として所属を復元し、次の変更時に新形式を transaction 内で保存します。Note、命令、状態、version、関連 Cell とリソース情報は保持し、不正な所属参照はエラーとして扱います。新規作成では CellGroup と各 Cell に別々の ID を割り当てます。
 
 旧形式の `.paracell/state.json` は読み込みません。

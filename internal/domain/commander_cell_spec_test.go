@@ -38,16 +38,20 @@ func TestCommanderCellSpecRejectsTargetNamesThatShareSourcePaths(t *testing.T) {
 	}
 }
 
-func TestRuntimeCellsAreIndependentTypesAndCommanderHoldsReferences(t *testing.T) {
+func TestRuntimeCellsShareGroupAndCommanderRetainsExecutionState(t *testing.T) {
 	workspaceWindow, _ := NewWorkspaceWindow("agent", "codex")
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	workspace := NewWorkspace(workspaceDriver, []WorkspaceWindow{workspaceWindow})
 	sourceDriver, _ := NewSourceDriverType("git")
-	commander, err := NewCommanderCell("commander-id", "113", "sample", "feat", workspace, []string{"target-id"}, []string{"dependency-id"}, sourceDriver, None, NoNotification)
+	group, err := NewCellGroup("group-commander-id", "113", "sample", "feat", sourceDriver, None, NoNotification)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commander.Targets[0] != "target-id" || commander.Dependencies[0] != "dependency-id" || commander.Workspace.Windows[0].Command != "codex" {
+	commander, err := NewCommanderCell("commander-id", &group, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if commander.CellGroup != &group || commander.Workspace.Windows[0].Command != "codex" {
 		t.Fatalf("commander = %#v", commander)
 	}
 	if commander.Status != Ready {
@@ -60,11 +64,11 @@ func TestRuntimeCellsAreIndependentTypesAndCommanderHoldsReferences(t *testing.T
 		t.Fatalf("set CommanderCell status: %v, status %q", err, commander.Status)
 	}
 	source, _ := NewSource(".", "main", "feat/api")
-	if _, err := NewTargetCell("target-id", "commander-id", "api", &source, nil, []string{"dependency-id"}); err != nil {
+	if _, err := NewTargetCell("target-id", group.ID, "api", &source, nil, []string{"dependency-id"}); err != nil {
 		t.Fatalf("source-only runtime TargetCell rejected: %v", err)
 	}
 	container, _ := NewContainer(nil, "db", Dependency)
-	if _, err := NewDependencyCell("dependency-id", "commander-id", "db", container); err != nil {
+	if _, err := NewDependencyCell("dependency-id", group.ID, "db", container); err != nil {
 		t.Fatalf("runtime DependencyCell rejected: %v", err)
 	}
 }
