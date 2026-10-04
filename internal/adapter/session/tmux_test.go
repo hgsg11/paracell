@@ -132,13 +132,23 @@ func TestUpdateStatusLabelはNoteを優先しWorkspaceなしを識別する(t *t
 }
 
 func TestPrepareWorkspaceはNoteをStatusLabelへ反映する(t *testing.T) {
-	runner := &fakeRunner{}
-	cell := cellWorkspaceResource("API実装中", nil)
-	if err := (TmuxAdapter{Runner: runner}).PrepareWorkspace(context.Background(), cell); err != nil {
-		t.Fatal(err)
-	}
-	if !containsCall(runner.calls, "tmux set-option -t paracell-myapp-123 @paracell-status-label API実装中") {
-		t.Fatalf("calls = %#v", runner.calls)
+	for _, note := range []string{"API実装中", "root", ""} {
+		t.Run(note, func(t *testing.T) {
+			runner := &fakeRunner{}
+			cell := cellWorkspaceResource(note, nil)
+			if err := NewTmuxAdapter(runner, "").PrepareWorkspace(context.Background(), cell); err != nil {
+				t.Fatal(err)
+			}
+			label := note
+			if label == "" {
+				label = "123"
+			}
+			for _, want := range appearanceCalls("paracell-myapp-123", "paracell-myapp", label, "paracell-myapp-123") {
+				if !containsCall(runner.calls, want) {
+					t.Fatalf("appearance call not found: calls = %#v, want %q", runner.calls, want)
+				}
+			}
+		})
 	}
 }
 
@@ -168,7 +178,7 @@ func TestConfigureWorkspaceはContinuumのStatusRightを保つ(t *testing.T) {
 	}}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
+	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", false, []string{target}); err != nil {
 		t.Fatalf("configureWorkspaceでエラーが返った: %v", err)
 	}
 	want := "tmux set-option -t " + target + " status-right " + continuum + " " + paracellClockFormat
@@ -185,7 +195,7 @@ func TestConfigureWorkspaceは時刻表示を重複追加しない(t *testing.T)
 	}}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
+	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", false, []string{target}); err != nil {
 		t.Fatalf("configureWorkspaceでエラーが返った: %v", err)
 	}
 	for _, call := range runner.calls {
@@ -328,9 +338,9 @@ func TestEnterRootWorkspaceはWorkspaceがなければ作成してAttachする(t
 		"tmux set-option -t myapp-root status-left #{@paracell-status-label} ",
 		"tmux set-option -t myapp-root status-left-length 100",
 		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t myapp-root window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell-myapp-root",
 		"tmux set-option -t myapp-root mouse on",
 		"tmux set-option -t myapp-root set-clipboard on",
@@ -368,9 +378,9 @@ func TestEnterRootWorkspaceはPopup起動用にProjectRootを引き回す(t *tes
 		"tmux set-option -t myapp-root status-left #{@paracell-status-label} ",
 		"tmux set-option -t myapp-root status-left-length 100",
 		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t myapp-root window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell-myapp-root",
 		"tmux set-option -t myapp-root mouse on",
 		"tmux set-option -t myapp-root set-clipboard on",
@@ -408,9 +418,9 @@ func TestEnterRootWorkspaceはHasWorkspaceがexitStatus1だけでも作成して
 		"tmux set-option -t myapp-root status-left #{@paracell-status-label} ",
 		"tmux set-option -t myapp-root status-left-length 100",
 		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t myapp-root window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell-myapp-root",
 		"tmux set-option -t myapp-root mouse on",
 		"tmux set-option -t myapp-root set-clipboard on",
@@ -443,9 +453,9 @@ func TestEnterRootWorkspaceは既存WorkspaceでもPopupBindingを更新する(t
 		"tmux set-option -t myapp-root status-left #{@paracell-status-label} ",
 		"tmux set-option -t myapp-root status-left-length 100",
 		"tmux set-option -t myapp-root status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t myapp-root window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t myapp-root window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t myapp-root window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t myapp-root window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t myapp-root after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t myapp-root key-table paracell-myapp-root",
 		"tmux set-option -t myapp-root mouse on",
 		"tmux set-option -t myapp-root set-clipboard on",

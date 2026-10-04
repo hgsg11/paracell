@@ -83,7 +83,7 @@ func (a TmuxAdapter) configureCellWorkspace(ctx context.Context, resource domain
 	if len(windowTargets) == 0 {
 		windowTargets = append(windowTargets, resource.Name)
 	}
-	return a.configureWorkspace(ctx, resource.Name, resource.Project, resource.DisplayLabel, windowTargets)
+	return a.configureWorkspace(ctx, resource.Name, resource.Project, resource.DisplayLabel, false, windowTargets)
 }
 
 func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, resource domain.WorkspaceResource) error {
@@ -97,7 +97,7 @@ func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, resource domain.Work
 	return err
 }
 
-func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, project string, label string, windowTargets []string) error {
+func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, project string, label string, isRoot bool, windowTargets []string) error {
 	keyTable := "paracell-" + target
 	if err := a.Runner.Run(ctx, "tmux", "set-option", "-t", target, "@paracell-project", project); err != nil {
 		return err
@@ -132,7 +132,10 @@ func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, proj
 			return err
 		}
 	}
-	windowFormat := "#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }"
+	windowFormat := "#W#{?window_flags,#{window_flags}, }"
+	if !isRoot {
+		windowFormat = "#{@paracell-status-label}:" + windowFormat
+	}
 	if listed, err := a.Runner.Output(ctx, "tmux", "list-windows", "-t", target, "-F", "#{window_id}"); err == nil && strings.TrimSpace(listed) != "" {
 		windowTargets = strings.Fields(listed)
 	}
@@ -248,7 +251,7 @@ func (a TmuxAdapter) configureRootWorkspace(ctx context.Context, name string) er
 	if err := a.Runner.Run(ctx, "tmux", "set-environment", "-t", name, "PARACELL_ROOT", a.Root); err != nil {
 		return err
 	}
-	return a.configureWorkspace(ctx, name, strings.TrimSuffix(name, "-root"), "root", []string{name})
+	return a.configureWorkspace(ctx, name, strings.TrimSuffix(name, "-root"), "root", true, []string{name})
 }
 
 func rootWorkspaceName(project string) string {
