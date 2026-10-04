@@ -215,7 +215,6 @@ func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
 						latest.Dependencies[childIndex] = dependencyByID(r.Dependencies, latest.Dependencies[childIndex].ID)
 					}
 				}
-				*cells = NewCellSet(latest.Commanders, latest.Targets, latest.Dependencies)
 				return latest, nil
 			}
 		}
@@ -223,7 +222,19 @@ func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
 	}); err != nil {
 		return err
 	}
-	return r.Commander.AdvanceVersion()
+	// Unchanged stages do not advance the persisted version. Use the committed
+	// snapshot instead of assuming every save increments it.
+	stored, err := r.Cells.LoadCells(ctx)
+	if err != nil {
+		return err
+	}
+	commander, ok := domain.ResolveCommanderCell(stored.Commanders, r.Commander.ID)
+	if !ok {
+		return fmt.Errorf("CommanderCell %q not found", r.Commander.Name().Value)
+	}
+	*r.Commander = commander
+	*cells = stored
+	return nil
 }
 
 func targetByID(targets []domain.TargetCell, id string) domain.TargetCell {

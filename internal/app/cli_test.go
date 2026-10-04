@@ -1389,6 +1389,7 @@ templates:
 }
 
 func TestRunはCreateでContainerProviderがなくてもDockerを実行しない(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "paracell.yaml")
 	content := []byte(`project:
