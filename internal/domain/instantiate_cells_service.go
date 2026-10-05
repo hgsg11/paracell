@@ -31,13 +31,13 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 			}
 			source = &value
 		}
-		containers := make([]Container, 0, len(targetSpec.Containers))
+		containers := make([]*Container, 0, len(targetSpec.Containers))
 		for _, containerSpec := range targetSpec.Containers {
 			value, err := NewContainer(nil, containerSpec.Name, containerSpec.Mode)
 			if err != nil {
 				return CommanderCell{}, nil, nil, err
 			}
-			containers = append(containers, value)
+			containers = append(containers, &value)
 		}
 		target, err := NewTargetCell(id, group.ID, targetSpec.Name, source, containers)
 		if err != nil {

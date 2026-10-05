@@ -27,7 +27,7 @@ func TestRuntimeTargetHasNoDependencyReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	container, _ := NewContainer(nil, "web", Target)
-	if _, err := NewTargetCell("target-id", "group-id", "api", nil, []Container{container}); err != nil {
+	if _, err := NewTargetCell("target-id", "group-id", "api", nil, []*Container{&container}); err != nil {
 		t.Fatal(err)
 	}
 }

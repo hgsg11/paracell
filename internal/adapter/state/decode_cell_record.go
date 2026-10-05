@@ -25,7 +25,8 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	}
 	for i := range record.Targets {
 		if len(record.Targets[i].Containers) == 0 && i < len(oldTargets.Targets) && oldTargets.Targets[i].Container != nil {
-			record.Targets[i].Containers = []domain.Container{*oldTargets.Targets[i].Container}
+			container := *oldTargets.Targets[i].Container
+			record.Targets[i].Containers = []*domain.Container{&container}
 		}
 	}
 	if record.Commander.CellGroup != nil {

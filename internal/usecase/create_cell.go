@@ -158,7 +158,7 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 		}
 		for i := range r.Targets {
 			for j := range r.Targets[i].Containers {
-				container := &r.Targets[i].Containers[j]
+				container := r.Targets[i].Containers[j]
 				container.Network = append([]string(nil), networks[container.SourceContainer]...)
 			}
 		}
