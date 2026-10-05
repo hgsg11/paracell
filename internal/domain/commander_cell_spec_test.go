@@ -2,73 +2,32 @@ package domain
 
 import "testing"
 
-func TestNewCommanderCellSpecValidatesTargetCardinalityAndReferences(t *testing.T) {
-	source, err := NewSourceTemplate(".", "main", "feat/")
-	if err != nil {
+func TestTargetAndDependencySpecsArePeers(t *testing.T) {
+	source, _ := NewSourceTemplate(".", "main", "feat/")
+	containerA, _ := NewContainerTemplate("web", Target, nil, nil)
+	containerB, _ := NewContainerTemplate("worker", Target, nil, nil)
+	if _, err := NewTargetCellSpec("empty", nil, nil); err == nil {
+		t.Fatal("empty target accepted")
+	}
+	target, err := NewTargetCellSpec("app", &source, []ContainerTemplate{containerA, containerB})
+	if err != nil || len(target.Containers) != 2 {
+		t.Fatalf("target = %#v, err = %v", target, err)
+	}
+	if _, err := NewDependencyCellSpec("database"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewTargetCellSpec("empty", nil, nil, nil); err == nil {
-		t.Fatal("target with neither Source nor Container must be rejected")
-	}
-	if _, err := NewTargetCellSpec("source", &source, nil, nil); err != nil {
-		t.Fatalf("source-only target rejected: %v", err)
-	}
-	mode, _ := NewMode("target")
-	container, _ := NewContainerTemplate("web", mode, nil, nil)
-	if _, err := NewTargetCellSpec("container", nil, &container, nil); err != nil {
-		t.Fatalf("container-only target rejected: %v", err)
-	}
-	target, _ := NewTargetCellSpec("api", &source, &container, []string{"db"})
-	if _, err := NewCommanderCellSpec("work", NewWorkspaceTemplate(nil), []TargetCellSpec{target}, nil); err == nil {
-		t.Fatal("target reference to an unrelated dependency must be rejected")
-	}
-	dependencyContainer, _ := NewContainerTemplate("db", Dependency, nil, nil)
-	dependency, _ := NewDependencyCellSpec("db", dependencyContainer)
-	if _, err := NewCommanderCellSpec("work", NewWorkspaceTemplate(nil), []TargetCellSpec{target}, []DependencyCellSpec{dependency}); err != nil {
-		t.Fatalf("valid cell structure rejected: %v", err)
+	if _, err := NewDependencyCellSpec(""); err == nil {
+		t.Fatal("empty dependency name accepted")
 	}
 }
 
-func TestCommanderCellSpecRejectsTargetNamesThatShareSourcePaths(t *testing.T) {
-	container, _ := NewContainerTemplate("app", Target, nil, nil)
-	a, _ := NewTargetCellSpec("api/service", nil, &container, nil)
-	b, _ := NewTargetCellSpec("api-service", nil, &container, nil)
-	if _, err := NewCommanderCellSpec("work", NewWorkspaceTemplate(nil), []TargetCellSpec{a, b}, nil); err == nil {
-		t.Fatal("target names that resolve to one source path were accepted")
-	}
-}
-
-func TestRuntimeCellsShareGroupAndCommanderRetainsExecutionState(t *testing.T) {
-	workspaceWindow, _ := NewWorkspaceWindow("agent", "codex")
-	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
-	workspace := NewWorkspace(workspaceDriver, []WorkspaceWindow{workspaceWindow})
-	sourceDriver, _ := NewSourceDriverType("git")
-	group, err := NewCellGroup("group-commander-id", "113", "sample", "feat", sourceDriver, None, NoNotification)
-	if err != nil {
-		t.Fatal(err)
-	}
-	commander, err := NewCommanderCell("commander-id", &group, workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if commander.CellGroup != &group || commander.Workspace.Windows[0].Command != "codex" {
-		t.Fatalf("commander = %#v", commander)
-	}
-	if commander.Status != Ready {
-		t.Fatalf("initial status = %q, want ready", commander.Status)
-	}
-	if path, want := commander.SourceWorktreePath("api/service"), ".paracell/cells/113/api-service/source"; path != want {
-		t.Fatalf("target source path = %q, want %q", path, want)
-	}
-	if err := commander.SetStatus(Pending); err != nil || commander.Status != Pending {
-		t.Fatalf("set CommanderCell status: %v, status %q", err, commander.Status)
-	}
+func TestRuntimeTargetHasNoDependencyReferences(t *testing.T) {
 	source, _ := NewSource(".", "main", "feat/api")
-	if _, err := NewTargetCell("target-id", group.ID, "api", &source, nil, []string{"dependency-id"}); err != nil {
-		t.Fatalf("source-only runtime TargetCell rejected: %v", err)
+	if _, err := NewTargetCell("target-id", "group-id", "api", &source, nil); err != nil {
+		t.Fatal(err)
 	}
-	container, _ := NewContainer(nil, "db", Dependency)
-	if _, err := NewDependencyCell("dependency-id", group.ID, "db", container); err != nil {
-		t.Fatalf("runtime DependencyCell rejected: %v", err)
+	container, _ := NewContainer(nil, "web", Target)
+	if _, err := NewTargetCell("target-id", "group-id", "api", nil, []*Container{&container}); err != nil {
+		t.Fatal(err)
 	}
 }

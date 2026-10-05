@@ -6,12 +6,11 @@ type RuntimeCellIDGenerator interface {
 }
 
 // InstantiateCellsService constructs independent runtime Cells from template data.
-func InstantiateCellsService(group *CellGroup, spec CommanderCellSpec, workspaceDriver WorkspaceDriverType, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
-	dependencyIDs := make(map[string]string, len(spec.Dependencies))
-	dependencies := make([]DependencyCell, 0, len(spec.Dependencies))
-	for _, dependencySpec := range spec.Dependencies {
+func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, targetSpecs []TargetCellSpec, dependencySpecs []DependencyCellSpec, workspaceDriver WorkspaceDriverType, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
+	dependencies := make([]DependencyCell, 0, len(dependencySpecs))
+	for _, dependencySpec := range dependencySpecs {
 		id := ids.NewID()
-		container, err := NewContainer(nil, dependencySpec.Container.Name, dependencySpec.Container.Mode)
+		container, err := NewContainer(nil, dependencySpec.Name, Dependency)
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
@@ -19,11 +18,10 @@ func InstantiateCellsService(group *CellGroup, spec CommanderCellSpec, workspace
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
-		dependencyIDs[dependencySpec.Name] = id
 		dependencies = append(dependencies, dependency)
 	}
-	targets := make([]TargetCell, 0, len(spec.Targets))
-	for _, targetSpec := range spec.Targets {
+	targets := make([]TargetCell, 0, len(targetSpecs))
+	for _, targetSpec := range targetSpecs {
 		id := ids.NewID()
 		var source *Source
 		if targetSpec.Source != nil {
@@ -33,26 +31,22 @@ func InstantiateCellsService(group *CellGroup, spec CommanderCellSpec, workspace
 			}
 			source = &value
 		}
-		var container *Container
-		if targetSpec.Container != nil {
-			value, err := NewContainer(nil, targetSpec.Container.Name, targetSpec.Container.Mode)
+		containers := make([]*Container, 0, len(targetSpec.Containers))
+		for _, containerSpec := range targetSpec.Containers {
+			value, err := NewContainer(nil, containerSpec.Name, containerSpec.Mode)
 			if err != nil {
 				return CommanderCell{}, nil, nil, err
 			}
-			container = &value
+			containers = append(containers, &value)
 		}
-		dependencies := make([]string, 0, len(targetSpec.Dependencies))
-		for _, dependencyName := range targetSpec.Dependencies {
-			dependencies = append(dependencies, dependencyIDs[dependencyName])
-		}
-		target, err := NewTargetCell(id, group.ID, targetSpec.Name, source, container, dependencies)
+		target, err := NewTargetCell(id, group.ID, targetSpec.Name, source, containers)
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
 		targets = append(targets, target)
 	}
-	windows := make([]WorkspaceWindow, 0, len(spec.Workspace.Windows))
-	for _, item := range spec.Workspace.Windows {
+	windows := make([]WorkspaceWindow, 0, len(commanderSpec.Workspace.Windows))
+	for _, item := range commanderSpec.Workspace.Windows {
 		window, err := NewWorkspaceWindow(item.Name, item.Command)
 		if err != nil {
 			return CommanderCell{}, nil, nil, err

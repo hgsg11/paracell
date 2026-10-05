@@ -54,7 +54,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 			return domain.CommanderCell{}, err
 		}
 	}
-	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, cfg.WorkspaceDriverType, commanderID, u.IDs)
+	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, resolved.Targets, resolved.Dependencies, cfg.WorkspaceDriverType, commanderID, u.IDs)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
@@ -83,7 +83,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	runner := cellCreationRunner{
 		Cells: u.Cells, Source: source, Containers: containers, Workspace: workspace,
 		Commander: &commander, Targets: targets, Dependencies: dependencies,
-		ContainerTemplates: containerTemplates(*resolved.Commander),
+		ContainerTemplates: containerTemplates(resolved.Targets),
 	}
 	if err := runner.run(ctx, &cellSet); err != nil {
 		return domain.CommanderCell{}, err
@@ -91,15 +91,12 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	return commander, nil
 }
 
-func containerTemplates(spec domain.CommanderCellSpec) map[string]domain.ContainerTemplate {
-	templates := make(map[string]domain.ContainerTemplate, len(spec.Targets)+len(spec.Dependencies))
-	for _, target := range spec.Targets {
-		if target.Container != nil {
-			templates[target.Container.Name] = *target.Container
+func containerTemplates(targets []domain.TargetCellSpec) map[string]domain.ContainerTemplate {
+	templates := make(map[string]domain.ContainerTemplate)
+	for _, target := range targets {
+		for _, container := range target.Containers {
+			templates[container.Name] = container
 		}
-	}
-	for _, dependency := range spec.Dependencies {
-		templates[dependency.Container.Name] = dependency.Container
 	}
 	return templates
 }
@@ -160,8 +157,9 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 			return err
 		}
 		for i := range r.Targets {
-			if r.Targets[i].Container != nil {
-				r.Targets[i].Container.Network = append([]string(nil), networks[r.Targets[i].Container.SourceContainer]...)
+			for j := range r.Targets[i].Containers {
+				container := r.Targets[i].Containers[j]
+				container.Network = append([]string(nil), networks[container.SourceContainer]...)
 			}
 		}
 		for i := range r.Dependencies {

@@ -41,15 +41,15 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		target, err := domain.NewTargetCellSpec("repository", &source, nil, nil)
+		target, err := domain.NewTargetCellSpec("repository", &source, nil)
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		commander, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{target}, nil)
+		commander, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		template, err := domain.NewUnresolvedTemplate(name, "", false, &commander)
+		template, err := domain.NewUnresolvedTemplate(name, "", false, &commander, []domain.TargetCellSpec{target}, nil)
 		if err != nil {
 			return domain.Templates{}, err
 		}

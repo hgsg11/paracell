@@ -21,9 +21,9 @@ AI agent を並行実行すると、同じファイル、同じcontainer名、�
 | CellGroup | ID、Issue、Project、Template、Note、通知・Source・Container driver の共通情報 |
 | CommanderCell | CellGroup への参照、Workspace と `pending` / `ready`、`done` などの作業状態 |
 | TargetCell | CellGroupID と、Source、Container のいずれかまたは両方を持つ開発対象 |
-| DependencyCell | CellGroupID と、TargetCell が参照する Container 依存環境 |
+| DependencyCell | CellGroupID と Compose service から解決した Container 依存環境 |
 
-CellGroup は共通情報と所属関係を表すものであり、Cell やコンテナの生成責務を持ちません。CellGroup と CommanderCell は所属 Cell の一覧を保持しません。生成・削除の usecase は TargetCell / DependencyCell の `CellGroupID` で同じ作業一式を特定します。既存の `commanderCell.targets` / `commanderCell.dependencies` の Template 記述は変更不要です。
+CellGroup は共通情報を保持し、CommanderCell、TargetCell、DependencyCell は Group ID を共有する peer です。CommanderCell は TargetCell / DependencyCell を内包せず、TargetCell は DependencyCell を個別に参照しません。生成・削除の usecase は `CellGroupID` で同じ作業一式を特定します。Template では `commanderCell`、`targets`、`dependencies` を同階層に記述します。
 
 Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。
 
@@ -107,18 +107,18 @@ templates:
         windows:
           - name: agent
             command: 'codex "{{.Command}}"'
-      targets:
-        repository:
-          source:
-            base: main
-            branchMode: create
+    targets:
+      repository:
+        source:
+          base: main
+          branchMode: create
   feat:
     extends: base
 ```
 
 template は `extends` で一つの親を継承できます。親自身も別のtemplateを継承できます。共通設定だけを持つtemplateには `abstract: true` を付けます。abstract templateは継承元には使えますが、`fork --template` とTUIの選択肢には表示されません。
 
-子templateで `commanderCell` を省略すると親の定義を引き継ぎます。指定した場合はCommanderCell定義全体を置き換えます。ターゲットや依存セルは各CommanderCell内で定義します。
+子templateでは `commanderCell`、`targets`、`dependencies` はそれぞれ親の定義を引き継げます。ターゲットと依存セルは CommanderCell の子ではなく、同階層に定義します。DependencyCell は Compose service 名だけを列挙し、Container 設定を持ちません。
 
 存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
 
@@ -297,6 +297,8 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `providers.notifications: none` または省略: 通知なし
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
+TargetCell の `containers` には複数の Compose service を列挙できます。同じ CellGroup 内で同じ service と同じ mount path を使う Container は CellGroup 専用のコピー Volume を共有し、別 CellGroup とは共有しません。DependencyCell は service 名だけを `dependencies` に列挙し、既存の Compose service Container を CellGroup 専用 network に接続します。
+
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
 ```yaml
@@ -308,22 +310,21 @@ templates:
         windows:
           - name: agent
             command: 'codex "{{.Command}}"'
-      targets:
-        web:
-          source:
-            path: web
-            base: origin/main
-            branchPrefix: feat/web-
-          container:
+    targets:
+      web:
+        source:
+          path: web
+          base: origin/main
+          branchPrefix: feat/web-
+        containers:
+          app:
             environment:
               PARACELL_ISSUE: "{{.issue}}"
               PARACELL_CELL: "{{.name}}"
               PARACELL_PROJECT: "{{.project}}"
               OPTIONAL_VALUE: ""
-          dependencies: [database]
-      dependencies:
-        database:
-          container: {}
+          worker: {}
+    dependencies: [database]
 ```
 
 ## ファイル

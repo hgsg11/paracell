@@ -12,11 +12,11 @@ templates:
                 windows:
                     - name: takt
                       command: 'codex "{{.Command}}"'
-            targets:
-                repository:
-                    source:
-                        branchPrefix: feat/
-                        base: origin/main
+        targets:
+            repository:
+                source:
+                    branchPrefix: feat/
+                    base: origin/main
     fix:
         commanderCell:
             name: workspace
@@ -24,8 +24,8 @@ templates:
                 windows:
                     - name: takt
                       command: 'codex "{{.Command}}"'
-            targets:
-                repository:
-                    source:
-                        branchPrefix: fix/
-                        base: origin/main
+        targets:
+            repository:
+                source:
+                    branchPrefix: fix/
+                    base: origin/main

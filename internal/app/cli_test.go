@@ -592,19 +592,12 @@ providers:
 templates:
   base:
     abstract: true
-    repository:
-      base: main
   default:
     extends: base
     commanderCell:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -704,29 +697,17 @@ providers:
 templates:
   base:
     abstract: true
-    repository:
-      base: main
   default:
     extends: base
     commanderCell:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
   planning:
     commanderCell:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: ""
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -773,11 +754,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -823,11 +799,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -900,11 +871,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1094,11 +1060,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1309,11 +1270,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1368,11 +1324,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1403,9 +1354,10 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        web:
-          container: {}
+    targets:
+      web:
+        containers:
+          web: {}
 `)
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("設定を書けなかった: %v", err)
@@ -1466,11 +1418,6 @@ templates:
       name: workspace
       workspace:
         windows: []
-      targets:
-        target:
-          source:
-            branchPrefix: feat/
-            base: main
 `), 0o644); err != nil {
 		t.Fatalf("config保存でエラーが返った: %v", err)
 	}
