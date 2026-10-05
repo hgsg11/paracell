@@ -65,11 +65,11 @@ func appearanceCalls(target string, project string, label string, windowTargets 
 	}
 	for _, windowTarget := range windowTargets {
 		calls = append(calls,
-			"tmux set-window-option -t "+windowTarget+" window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-			"tmux set-window-option -t "+windowTarget+" window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
+			"tmux set-window-option -t "+windowTarget+" window-status-format #W#{?window_flags,#{window_flags}, }",
+			"tmux set-window-option -t "+windowTarget+" window-status-current-format #W#{?window_flags,#{window_flags}, }",
 		)
 	}
-	calls = append(calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'")
+	calls = append(calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'")
 	return calls
 }
 
@@ -178,7 +178,7 @@ func TestConfigureWorkspaceはContinuumのStatusRightを保つ(t *testing.T) {
 	}}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", false, []string{target}); err != nil {
+	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
 		t.Fatalf("configureWorkspaceでエラーが返った: %v", err)
 	}
 	want := "tmux set-option -t " + target + " status-right " + continuum + " " + paracellClockFormat
@@ -195,7 +195,7 @@ func TestConfigureWorkspaceは時刻表示を重複追加しない(t *testing.T)
 	}}
 	adapter := TmuxAdapter{Runner: runner}
 
-	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", false, []string{target}); err != nil {
+	if err := adapter.configureWorkspace(context.Background(), target, "paracell-myapp", "123", []string{target}); err != nil {
 		t.Fatalf("configureWorkspaceでエラーが返った: %v", err)
 	}
 	for _, call := range runner.calls {
@@ -237,12 +237,12 @@ func TestEnterWorkspaceはResurrectで復元された全Windowを再設定する
 		t.Fatalf("EnterWorkspaceでエラーが返った: %v", err)
 	}
 	for _, windowID := range []string{"%9", "%10"} {
-		want := "tmux set-window-option -t " + windowID + " window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }"
+		want := "tmux set-window-option -t " + windowID + " window-status-format #W#{?window_flags,#{window_flags}, }"
 		if !containsCall(runner.calls, want) {
 			t.Fatalf("復元windowのlabel再設定がない: calls = %#v, want %q", runner.calls, want)
 		}
 	}
-	if !containsCall(runner.calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'") {
+	if !containsCall(runner.calls, "tmux set-hook -t "+target+" after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'") {
 		t.Fatalf("new-window hookが再設定されていない: calls = %#v", runner.calls)
 	}
 	if !containsCall(runner.calls, "tmux set-option -t "+target+" key-table paracell-"+target) {
@@ -501,9 +501,9 @@ func TestCreateWorkspaceはWindow未指定ならWorkspaceだけ作る(t *testing
 		"tmux set-option -t paracell-myapp-123 status-left #{@paracell-status-label} ",
 		"tmux set-option -t paracell-myapp-123 status-left-length 100",
 		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t paracell-myapp-123 window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123 window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t paracell-myapp-123 window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123 window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell-paracell-myapp-123",
 		"tmux set-option -t paracell-myapp-123 mouse on",
 		"tmux set-option -t paracell-myapp-123 set-clipboard on",
@@ -539,11 +539,11 @@ func TestCreateWorkspaceは指定Windowを作る(t *testing.T) {
 		"tmux set-option -t paracell-myapp-123 status-left #{@paracell-status-label} ",
 		"tmux set-option -t paracell-myapp-123 status-left-length 100",
 		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:server window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell-paracell-myapp-123",
 		"tmux set-option -t paracell-myapp-123 mouse on",
 		"tmux set-option -t paracell-myapp-123 set-clipboard on",
@@ -583,13 +583,13 @@ func TestCreateWorkspaceはWindow作成後にCommandをEnterで実行する(t *t
 		"tmux set-option -t paracell-myapp-123 status-left #{@paracell-status-label} ",
 		"tmux set-option -t paracell-myapp-123 status-left-length 100",
 		"tmux set-option -t paracell-myapp-123 status-right #{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}%H:%M %d-%b-%y",
-		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:server window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:test window-status-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t paracell-myapp-123:test window-status-current-format #{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }",
-		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }'",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:editor window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:server window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:test window-status-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-window-option -t paracell-myapp-123:test window-status-current-format #W#{?window_flags,#{window_flags}, }",
+		"tmux set-hook -t paracell-myapp-123 after-new-window[100] set-window-option window-status-format '#W#{?window_flags,#{window_flags}, }'; set-window-option window-status-current-format '#W#{?window_flags,#{window_flags}, }'",
 		"tmux set-option -t paracell-myapp-123 key-table paracell-paracell-myapp-123",
 		"tmux set-option -t paracell-myapp-123 mouse on",
 		"tmux set-option -t paracell-myapp-123 set-clipboard on",
