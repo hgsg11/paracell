@@ -230,14 +230,6 @@ func validateCellSet(set usecase.CellSet) error {
 		}
 		dependencies[dependency.ID] = dependency
 	}
-	for _, target := range set.Targets {
-		for _, id := range target.Dependencies {
-			dependency, exists := dependencies[id]
-			if !exists || dependency.CellGroupID != target.CellGroupID {
-				return fmt.Errorf("TargetCell %q has invalid DependencyCell reference %q", target.ID, id)
-			}
-		}
-	}
 	return nil
 }
 

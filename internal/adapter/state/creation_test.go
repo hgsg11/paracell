@@ -24,13 +24,12 @@ type creationPorts struct {
 func newCreationPorts(t *testing.T, failedStage domain.CreationStage) *creationPorts {
 	t.Helper()
 	source, _ := domain.NewSourceTemplate(".", "main", "verify/")
-	repository, _ := domain.NewTargetCellSpec("repository", &source, nil, nil)
+	repository, _ := domain.NewTargetCellSpec("repository", &source, nil)
 	web, _ := domain.NewContainerTemplate("web", domain.Target, nil, nil)
-	target, _ := domain.NewTargetCellSpec("web", nil, &web, []string{"database"})
-	database, _ := domain.NewContainerTemplate("database", domain.Dependency, nil, nil)
-	dependency, _ := domain.NewDependencyCellSpec("database", database)
-	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{repository, target}, []domain.DependencyCellSpec{dependency})
-	template, _ := domain.NewUnresolvedTemplate("verify", "", false, &commander)
+	target, _ := domain.NewTargetCellSpec("web", nil, []domain.ContainerTemplate{web})
+	dependency, _ := domain.NewDependencyCellSpec("database")
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+	template, _ := domain.NewUnresolvedTemplate("verify", "", false, &commander, []domain.TargetCellSpec{repository, target}, []domain.DependencyCellSpec{dependency})
 	config, err := domain.NewTemplates("verify", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
@@ -111,7 +110,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 				if !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace"}) {
 					t.Fatalf("stages = %v", ports.calls)
 				}
-				if !reflect.DeepEqual(stored.Targets[1].Container.Network, []string{"cell-network"}) || !reflect.DeepEqual(stored.Dependencies[0].Container.Network, []string{"cell-network"}) {
+				if !reflect.DeepEqual(stored.Targets[1].Containers[0].Network, []string{"cell-network"}) || !reflect.DeepEqual(stored.Dependencies[0].Container.Network, []string{"cell-network"}) {
 					t.Fatal("container networks not persisted")
 				}
 			} else {

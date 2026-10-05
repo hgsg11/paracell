@@ -15,6 +15,19 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		return stateCellRecord{}, err
 	}
+	var oldTargets struct {
+		Targets []struct {
+			Container *domain.Container
+		}
+	}
+	if err := json.Unmarshal(data, &oldTargets); err != nil {
+		return stateCellRecord{}, err
+	}
+	for i := range record.Targets {
+		if len(record.Targets[i].Containers) == 0 && i < len(oldTargets.Targets) && oldTargets.Targets[i].Container != nil {
+			record.Targets[i].Containers = []domain.Container{*oldTargets.Targets[i].Container}
+		}
+	}
 	if record.Commander.CellGroup != nil {
 		return record, nil
 	}

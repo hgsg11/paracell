@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestCellGroupRoundTripAndRejectedUpdateIsolation(t *testing.T) {
 	source, _ := domain.NewSource(".", "main", "feat/42")
 	container, _ := domain.NewContainer([]string{"original"}, "postgres", domain.Dependency)
 	dependency, _ := domain.NewDependencyCell("db", commander.CellGroup.ID, "database", container)
-	target, _ := domain.NewTargetCell("api", commander.CellGroup.ID, "api", &source, nil, []string{dependency.ID})
+	target, _ := domain.NewTargetCell("api", commander.CellGroup.ID, "api", &source, nil)
 	want := usecase.NewCellSet([]domain.CommanderCell{commander}, []domain.TargetCell{target}, []domain.DependencyCell{dependency})
 	if err := adapter.UpdateCells(ctx, func(usecase.CellSet) (usecase.CellSet, error) { return want, nil }); err != nil {
 		t.Fatal(err)
@@ -28,7 +29,7 @@ func TestCellGroupRoundTripAndRejectedUpdateIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	targets, dependencies := domain.SelectCellGroupMembersService(got.Commanders[0].CellGroup.ID, got.Targets, got.Dependencies)
-	if len(targets) != 1 || len(dependencies) != 1 || targets[0].Dependencies[0] != dependencies[0].ID || got.Commanders[0].CellGroup.ID == got.Commanders[0].ID {
+	if len(targets) != 1 || len(dependencies) != 1 || got.Commanders[0].CellGroup.ID == got.Commanders[0].ID {
 		t.Fatalf("group associations were not preserved: %#v", got)
 	}
 	rejected := errors.New("reject")
@@ -49,6 +50,34 @@ func TestCellGroupRoundTripAndRejectedUpdateIsolation(t *testing.T) {
 		return set, nil
 	}); err == nil {
 		t.Fatal("unknown group accepted")
+	}
+}
+
+func TestDecodeCellRecordPreservesExistingTargetContainer(t *testing.T) {
+	data, err := json.Marshal(map[string]any{
+		"commander": map[string]any{
+			"Version": 1, "ID": "commander", "CellGroup": map[string]any{
+				"ID": "group", "Issue": "42", "Project": "sample", "Template": "feat",
+				"SourceDriver": "git", "ContainerDriver": "docker", "NotificationDriver": "none",
+			},
+			"Workspace": map[string]any{"Driver": "tmux"}, "Creation": map[string]any{"Status": "ready"}, "Status": "ready",
+		},
+		"targets": []any{map[string]any{
+			"ID": "target", "CellGroupID": "group", "Name": "app",
+			"Container":    map[string]any{"Network": []string{"old-network"}, "SourceContainer": "web", "Mode": "target"},
+			"Dependencies": []string{"dependency"},
+		}},
+		"dependencies": []any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeCellRecord(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Targets) != 1 || len(decoded.Targets[0].Containers) != 1 || decoded.Targets[0].Containers[0].SourceContainer != "web" {
+		t.Fatalf("existing TargetCell container was lost: %#v", decoded.Targets)
 	}
 }
 
@@ -82,7 +111,7 @@ func TestLegacyCommanderRecordLoadsAndUpdatesAsCellGroup(t *testing.T) {
 	if cell.CellGroup.ID != "old" || cell.CellGroup.Note != "old note" || cell.Version != 3 || cell.Status != domain.Pending || !cell.Done || cell.Workspace.Windows[0].Command != "codex implement" {
 		t.Fatalf("legacy runtime information changed: %#v", cell)
 	}
-	if set.Targets[0].CellGroupID != "old" || set.Dependencies[0].CellGroupID != "old" || set.Targets[0].Dependencies[0] != "db" || set.Dependencies[0].Container.Network[0] != "original" {
+	if set.Targets[0].CellGroupID != "old" || set.Dependencies[0].CellGroupID != "old" || set.Dependencies[0].Container.Network[0] != "original" {
 		t.Fatalf("legacy membership/resources changed: %#v", set)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {

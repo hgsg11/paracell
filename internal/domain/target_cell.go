@@ -4,36 +4,36 @@ import "fmt"
 
 // TargetCell is one independent runtime development target, not an aggregate root.
 type TargetCell struct {
-	ID           string
-	CellGroupID  string
-	Name         string
-	Source       *Source
-	Container    *Container
-	Dependencies []string
+	ID          string
+	CellGroupID string
+	Name        string
+	Source      *Source
+	Containers  []Container
 }
 
-func NewTargetCell(id, cellGroupID, name string, source *Source, container *Container, dependencies []string) (TargetCell, error) {
+func NewTargetCell(id, cellGroupID, name string, source *Source, containers []Container) (TargetCell, error) {
 	if id == "" || cellGroupID == "" || name == "" {
 		return TargetCell{}, fmt.Errorf("target cell id, CellGroup reference, and name are required")
 	}
-	if source == nil && container == nil {
+	if source == nil && len(containers) == 0 {
 		return TargetCell{}, fmt.Errorf("target cell %q requires a source or container", name)
 	}
-	if container != nil && container.Mode != Target {
-		return TargetCell{}, fmt.Errorf("target cell %q requires a target container", name)
+	for _, container := range containers {
+		if container.Mode != Target {
+			return TargetCell{}, fmt.Errorf("target cell %q requires target containers", name)
+		}
 	}
 	var sourceCopy *Source
 	if source != nil {
 		copy := *source
 		sourceCopy = &copy
 	}
-	var containerCopy *Container
-	if container != nil {
-		copy := *container
-		copy.Network = append([]string(nil), container.Network...)
-		containerCopy = &copy
+	containerCopies := make([]Container, len(containers))
+	for i, container := range containers {
+		containerCopies[i] = container
+		containerCopies[i].Network = append([]string(nil), container.Network...)
 	}
-	return TargetCell{ID: id, CellGroupID: cellGroupID, Name: name, Source: sourceCopy, Container: containerCopy, Dependencies: append([]string(nil), dependencies...)}, nil
+	return TargetCell{ID: id, CellGroupID: cellGroupID, Name: name, Source: sourceCopy, Containers: containerCopies}, nil
 }
 
 func RestoreTargetCell(stored TargetCell) (TargetCell, error) {
@@ -45,13 +45,13 @@ func RestoreTargetCell(stored TargetCell) (TargetCell, error) {
 		}
 		source = &validated
 	}
-	var container *Container
-	if stored.Container != nil {
-		validated, err := NewContainer(stored.Container.Network, stored.Container.SourceContainer, stored.Container.Mode)
+	containers := make([]Container, len(stored.Containers))
+	for i, storedContainer := range stored.Containers {
+		validated, err := NewContainer(storedContainer.Network, storedContainer.SourceContainer, storedContainer.Mode)
 		if err != nil {
 			return TargetCell{}, err
 		}
-		container = &validated
+		containers[i] = validated
 	}
-	return NewTargetCell(stored.ID, stored.CellGroupID, stored.Name, source, container, stored.Dependencies)
+	return NewTargetCell(stored.ID, stored.CellGroupID, stored.Name, source, containers)
 }

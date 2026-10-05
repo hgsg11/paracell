@@ -159,6 +159,13 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 	}
 	for _, service := range sortedContainerResources(resources.Items) {
 		source := service.SourceContainer
+		if service.Mode == domain.Dependency {
+			resolved, err := a.resolveComposeService(ctx, source)
+			if err != nil {
+				return nil, err
+			}
+			source = resolved
+		}
 		inspection, err := a.inspectContainer(ctx, source)
 		if err != nil {
 			return nil, err
@@ -175,9 +182,10 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 				}
 			}
 			sharedContainers = append(sharedContainers, source)
+			networks[service.SourceContainer] = append(networks[service.SourceContainer], network)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, service.SourcePath, service, inspection)
+		mounts, err := a.prepareMounts(ctx, network, service.SourcePath, service, inspection)
 		if err != nil {
 			return nil, err
 		}
@@ -213,6 +221,27 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 		createdContainers = append(createdContainers, service.Name)
 	}
 	return networks, nil
+}
+
+func (a DockerCLIAdapter) resolveComposeService(ctx context.Context, name string) (string, error) {
+	args := []string{"ps", "--filter", "label=" + composeServiceLabel + "=" + name}
+	if root := strings.TrimSpace(a.Root); root != "" {
+		workingDir, err := filepath.Abs(root)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, "--filter", "label="+composeWorkingDirLabel+"="+filepath.Clean(workingDir))
+	}
+	args = append(args, "--format", "{{.ID}}")
+	output, err := a.Runner.Output(ctx, "docker", args...)
+	if err != nil {
+		return "", fmt.Errorf("resolve Compose service %q: %w", name, err)
+	}
+	ids := strings.Fields(output)
+	if len(ids) == 0 {
+		return "", fmt.Errorf("Compose service %q has no running container", name)
+	}
+	return ids[0], nil
 }
 
 func sortedNetworkNames(networks map[string]dockerNetwork) []string {
@@ -301,12 +330,12 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, sourcePath string, service domain.ContainerResource, inspection containerInspection) ([]string, error) {
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, inspection containerInspection) ([]string, error) {
 	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
 	if err != nil {
 		return nil, err
 	}
-	mounts, err := a.copyMounts(ctx, sourcePath, service, inspection.Mounts, composeMounts)
+	mounts, err := a.copyMounts(ctx, volumeScope, sourcePath, service, inspection.Mounts, composeMounts)
 	if err != nil {
 		return nil, err
 	}
@@ -317,11 +346,11 @@ func (a DockerCLIAdapter) prepareMounts(ctx context.Context, sourcePath string, 
 	return mounts, nil
 }
 
-func (a DockerCLIAdapter) copyMounts(ctx context.Context, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
-			targetVolume := copiedVolumeName(service.Name, mount.Destination)
+			targetVolume := copiedVolumeName(volumeScope, service.SourceContainer, mount.Destination)
 			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
 				return nil, err
 			}
@@ -485,13 +514,13 @@ func (a DockerCLIAdapter) createNamedVolume(ctx context.Context, name string) er
 	return a.Runner.Run(ctx, "docker", "volume", "create", name)
 }
 
-func copiedVolumeName(container string, destination string) string {
+func copiedVolumeName(scope string, container string, destination string) string {
 	name := strings.Trim(destination, "/")
 	name = strings.ReplaceAll(name, "/", "-")
 	if name == "" {
 		name = "root"
 	}
-	return domain.SafeResourceName(container+"-"+name, "volume")
+	return domain.SafeResourceName(scope+"-"+container+"-"+name, "volume")
 }
 
 func isolatedNetworkAliases(networks map[string]dockerNetwork) []string {
@@ -546,7 +575,12 @@ func (a DockerCLIAdapter) CleanContainers(ctx context.Context, resources domain.
 			if service.Mode != domain.Dependency {
 				continue
 			}
-			if err := a.disconnectDependency(ctx, network, service.SourceContainer); err != nil {
+			source, err := a.resolveComposeService(ctx, service.SourceContainer)
+			if err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+				continue
+			}
+			if err := a.disconnectDependency(ctx, network, source); err != nil {
 				cleanupErr = errors.Join(cleanupErr, err)
 			}
 		}

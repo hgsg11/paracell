@@ -76,9 +76,9 @@ type fakePorts struct {
 
 func newFakePorts() *fakePorts {
 	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
-	target, _ := domain.NewTargetCellSpec("repository", &source, nil, nil)
-	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil), []domain.TargetCellSpec{target}, nil)
-	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander)
+	target, _ := domain.NewTargetCellSpec("repository", &source, nil)
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander, []domain.TargetCellSpec{target}, nil)
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
@@ -207,16 +207,15 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	ports := newFakePorts()
 	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
 	app, _ := domain.NewContainerTemplate("app", domain.Target, nil, nil)
-	db, _ := domain.NewContainerTemplate("postgres", domain.Dependency, nil, nil)
-	api, _ := domain.NewTargetCellSpec("api", &source, &app, []string{"database"})
-	web, _ := domain.NewTargetCellSpec("web", &source, nil, []string{"database"})
-	database, _ := domain.NewDependencyCellSpec("database", db)
+	api, _ := domain.NewTargetCellSpec("api", &source, []domain.ContainerTemplate{app})
+	web, _ := domain.NewTargetCellSpec("web", &source, nil)
+	database, _ := domain.NewDependencyCellSpec("database")
 	window, _ := domain.NewWindow("agent", "codex {{.Command}}")
-	spec, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate([]domain.Window{window}), []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
+	spec, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate([]domain.Window{window}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &spec)
+	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &spec, []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
 	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
@@ -235,11 +234,6 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroup.ID, ports.cells.Targets, ports.cells.Dependencies)
 	if first.CellGroup.ID == first.ID || first.CellGroup.ID == second.CellGroup.ID || len(targets) != 2 || len(dependencies) != 1 {
 		t.Fatalf("invalid grouping: %#v, %#v", first, ports.cells)
-	}
-	for _, target := range targets {
-		if len(target.Dependencies) != 1 || target.Dependencies[0] != dependencies[0].ID {
-			t.Fatalf("dependency link = %#v", target)
-		}
 	}
 	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CreationStatus() != domain.CreationReady {
 		t.Fatalf("commands/status/note not preserved: %#v", first)
