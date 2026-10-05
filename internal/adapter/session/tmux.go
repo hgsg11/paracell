@@ -132,7 +132,7 @@ func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, proj
 			return err
 		}
 	}
-	windowFormat := "#{@paracell-status-label}:#W#{?window_flags,#{window_flags}, }"
+	windowFormat := "#W#{?window_flags,#{window_flags}, }"
 	if listed, err := a.Runner.Output(ctx, "tmux", "list-windows", "-t", target, "-F", "#{window_id}"); err == nil && strings.TrimSpace(listed) != "" {
 		windowTargets = strings.Fields(listed)
 	}
