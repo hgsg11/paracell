@@ -200,7 +200,7 @@ TUI と単独 CLI のどちらから実行しても、コマンドの開始・�
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
-`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は従来どおり `tmux display-message` で表示します。`none` または省略で通知を無効にできます。
+`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は従来どおり `tmux display-message` を表示し、対象 cell の tmux session に接続している各 client の端末へ OSC 9 terminal notification も送ります。SSH 越しの場合は接続元 terminal が OSC 9 通知をサポートしている必要があります。端末ごとに対応状況や通知設定が異なり、非対応端末では通知されません。OSC sequence は tmux client の tty へ直接書き込むため、接続元に helper のインストールは不要です。`none` または省略で通知を無効にできます。
 
 macOS のデスクトップ通知には、次のように設定します。
 
