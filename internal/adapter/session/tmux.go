@@ -21,12 +21,27 @@ func NewTmuxAdapter(runner system.Runner, root string) TmuxAdapter {
 	return TmuxAdapter{Runner: runner, Root: root}
 }
 
+func windowNameWithoutWorkspaceLabel(windowName string, label string) string {
+	if label == "" {
+		return windowName
+	}
+	return strings.TrimPrefix(windowName, label+":")
+}
+
 const (
 	paracellClockFormat        = "%H:%M %d-%b-%y"
 	paracellDefaultStatusRight = "#{?window_bigger,[#{window_offset_x}#,#{window_offset_y}] ,}" + paracellClockFormat
 )
 
 func (a TmuxAdapter) CreateWorkspace(ctx context.Context, resource domain.WorkspaceResource) (returnErr error) {
+	if len(resource.Windows) > 0 {
+		windows := make([]domain.WorkspaceWindow, len(resource.Windows))
+		for i, window := range resource.Windows {
+			window.Name = windowNameWithoutWorkspaceLabel(window.Name, resource.DisplayLabel)
+			windows[i] = window
+		}
+		resource.Windows = windows
+	}
 	if len(resource.Windows) == 0 {
 		if err := a.Runner.Run(ctx, "tmux", "new-session", "-d", "-s", resource.Name, "-e", "PARACELL_CELL="+resource.CellName, "-e", "PARACELL_ROOT="+a.Root, "-c", resource.WorkingDirectory); err != nil {
 			return err
@@ -89,7 +104,8 @@ func (a TmuxAdapter) configureCellWorkspace(ctx context.Context, resource domain
 func (a TmuxAdapter) UpdateStatusLabel(ctx context.Context, resource domain.WorkspaceResource) error {
 	err := a.Runner.Run(ctx, "tmux", "set-option", "-t", resource.Name, "@paracell-status-label", resource.DisplayLabel)
 	if err == nil {
-		return nil
+		_, err = a.normalizeWindowNames(ctx, resource.Name, resource.DisplayLabel)
+		return err
 	}
 	if strings.Contains(strings.ToLower(err.Error()), "can't find session") {
 		return fmt.Errorf("%w: %v", domain.ErrNotFound, err)
@@ -133,8 +149,10 @@ func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, proj
 		}
 	}
 	windowFormat := "#W#{?window_flags,#{window_flags}, }"
-	if listed, err := a.Runner.Output(ctx, "tmux", "list-windows", "-t", target, "-F", "#{window_id}"); err == nil && strings.TrimSpace(listed) != "" {
-		windowTargets = strings.Fields(listed)
+	if listed, err := a.normalizeWindowNames(ctx, target, label); err != nil {
+		return err
+	} else if len(listed) > 0 {
+		windowTargets = listed
 	}
 	for _, windowTarget := range windowTargets {
 		if err := a.Runner.Run(ctx, "tmux", "set-window-option", "-t", windowTarget, "window-status-format", windowFormat); err != nil {
@@ -175,6 +193,30 @@ func (a TmuxAdapter) configureWorkspace(ctx context.Context, target string, proj
 	}
 	args = append(args, "-E", "paracell", "view")
 	return a.Runner.Run(ctx, "tmux", args...)
+}
+
+func (a TmuxAdapter) normalizeWindowNames(ctx context.Context, target string, label string) ([]string, error) {
+	listed, err := a.Runner.Output(ctx, "tmux", "list-windows", "-t", target, "-F", "#{window_id}\t#{window_name}")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(listed) == "" {
+		return nil, nil
+	}
+	windowTargets := make([]string, 0)
+	for _, line := range strings.Split(strings.TrimSpace(listed), "\n") {
+		window := strings.SplitN(line, "\t", 2)
+		windowTargets = append(windowTargets, window[0])
+		if len(window) == 2 {
+			name := windowNameWithoutWorkspaceLabel(window[1], label)
+			if name != window[1] {
+				if err := a.Runner.Run(ctx, "tmux", "rename-window", "-t", window[0], name); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	return windowTargets, nil
 }
 
 func (a TmuxAdapter) CleanWorkspace(ctx context.Context, resource domain.WorkspaceResource) error {
