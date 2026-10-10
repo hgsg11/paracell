@@ -19,18 +19,27 @@ type SetCellStatusUseCase struct {
 
 func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusInput) (domain.CommanderCell, error) {
 	var updated domain.CommanderCell
+	var group domain.CellGroup
 	err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
-		for i, cell := range cells.Commanders {
-			if cell.Matches(input.Cell) {
-				if setErr := cell.SetStatus(input.Status); setErr != nil {
-					return CellSet{}, setErr
-				}
+		cell, ok := cells.FindCommander(input.Cell)
+		if !ok {
+			return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
+		}
+		if err := cell.SetStatus(input.Status); err != nil {
+			return CellSet{}, err
+		}
+		for i := range cells.Commanders {
+			if cells.Commanders[i].ID == cell.ID {
 				cells.Commanders[i] = cell
-				updated = cell
-				return cells, nil
+				break
 			}
 		}
-		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
+		group, ok = cells.CellGroup(cell.CellGroupID)
+		if !ok {
+			return CellSet{}, fmt.Errorf("CellGroup %q not found", cell.CellGroupID)
+		}
+		updated = cell
+		return cells, nil
 	})
 	if err != nil {
 		return domain.CommanderCell{}, err
@@ -39,11 +48,11 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 		return domain.CommanderCell{}, err
 	}
 	if input.Status == domain.Ready && u.NotificationFactory != nil {
-		notifier, err := u.NotificationFactory.Notification(updated.ResourceDrivers().Notification)
+		notifier, err := u.NotificationFactory.Notification(group.NotificationDriver)
 		if err != nil {
 			return domain.CommanderCell{}, err
 		}
-		if err := notifier.NotifyReady(ctx, updated.WorkspaceName(), "Ready: "+updated.Name().Value); err != nil {
+		if err := notifier.NotifyReady(ctx, group.WorkspaceName(), "Ready: "+group.Name().Value); err != nil {
 			return domain.CommanderCell{}, err
 		}
 	}

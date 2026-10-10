@@ -2,13 +2,13 @@ package domain
 
 import "path/filepath"
 
-func BuildSourceResourcesService(c CommanderCell, targets []TargetCell) []SourceResource {
+func BuildSourceResourcesService(group CellGroup, targets []TargetCell) []SourceResource {
 	resources := make([]SourceResource, 0, len(targets))
 	for _, target := range targets {
 		if target.Source == nil {
 			continue
 		}
-		path := c.SourceWorktreePath(target.Name)
+		path := group.SourceWorktreePath(target.Name)
 		if target.Source.Path != "." {
 			path = filepath.Join(path, target.Source.Path)
 		}

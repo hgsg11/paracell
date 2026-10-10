@@ -6,7 +6,7 @@ type RuntimeCellIDGenerator interface {
 }
 
 // InstantiateCellsService constructs independent runtime Cells from template data.
-func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, targetSpecs []TargetCellSpec, dependencySpecs []DependencyCellSpec, workspaceDriver WorkspaceDriverType, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
+func InstantiateCellsService(groupID, issue string, commanderSpec CommanderCellSpec, targetSpecs []TargetCellSpec, dependencySpecs []DependencyCellSpec, workspaceDriver WorkspaceDriverType, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
 	dependencies := make([]DependencyCell, 0, len(dependencySpecs))
 	for _, dependencySpec := range dependencySpecs {
 		id := ids.NewID()
@@ -14,7 +14,7 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
-		dependency, err := NewDependencyCell(id, group.ID, dependencySpec.Name, container)
+		dependency, err := NewDependencyCell(id, groupID, dependencySpec.Name, container)
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
@@ -25,7 +25,7 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 		id := ids.NewID()
 		var source *Source
 		if targetSpec.Source != nil {
-			value, err := BuildSource(*targetSpec.Source, group.Issue)
+			value, err := BuildSource(*targetSpec.Source, issue)
 			if err != nil {
 				return CommanderCell{}, nil, nil, err
 			}
@@ -39,7 +39,7 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 			}
 			containers = append(containers, &value)
 		}
-		target, err := NewTargetCell(id, group.ID, targetSpec.Name, source, containers)
+		target, err := NewTargetCell(id, groupID, targetSpec.Name, source, containers)
 		if err != nil {
 			return CommanderCell{}, nil, nil, err
 		}
@@ -54,7 +54,7 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 		windows = append(windows, window)
 	}
 	workspace := NewWorkspace(workspaceDriver, windows)
-	commander, err := NewCommanderCell(commanderID, group, workspace)
+	commander, err := NewCommanderCell(commanderID, groupID, workspace)
 	if err != nil {
 		return CommanderCell{}, nil, nil, err
 	}

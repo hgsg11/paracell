@@ -2,32 +2,30 @@ package domain
 
 import (
 	"fmt"
-	"path/filepath"
 )
 
 // CommanderCell holds commands and execution state, referring to shared CellGroup information.
 type CommanderCell struct {
-	ID        string
-	CellGroup *CellGroup
-	Version   CellVersion
-	Workspace Workspace
-	Status    CellStatus
-	Creation  CellCreation
-	Done      bool
+	ID          string
+	CellGroupID string
+	Version     CellVersion
+	Workspace   Workspace
+	Status      CellStatus
+	Done        bool
 }
 
-func NewCommanderCell(id string, group *CellGroup, workspace Workspace) (CommanderCell, error) {
-	if id == "" || group == nil {
-		return CommanderCell{}, fmt.Errorf("commander cell id and CellGroup are required")
+func NewCommanderCell(id, cellGroupID string, workspace Workspace) (CommanderCell, error) {
+	if id == "" || cellGroupID == "" {
+		return CommanderCell{}, fmt.Errorf("commander cell id and CellGroup ID are required")
 	}
 	version, err := NewCellVersion(1)
 	if err != nil {
 		return CommanderCell{}, err
 	}
 	return CommanderCell{
-		ID: id, CellGroup: group, Version: version,
+		ID: id, CellGroupID: cellGroupID, Version: version,
 		Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
-		Status:    Ready, Creation: NewCellCreation(),
+		Status:    Ready,
 	}, nil
 }
 
@@ -40,21 +38,6 @@ func (c *CommanderCell) SetStatus(status CellStatus) error {
 	return nil
 }
 
-func (c CommanderCell) DisplayLabel() string {
-	if c.CellGroup.Note != "" {
-		return c.CellGroup.Note
-	}
-	return c.Name().Value
-}
-
-func (c CommanderCell) ListLabels() (string, string) {
-	return c.DisplayLabel(), c.CellGroup.Template
-}
-
-func (c CommanderCell) HasStatus(status CellStatus) bool {
-	return c.Status == status
-}
-
 func (c CommanderCell) EnsureCanBeCleaned() error {
 	if !c.Done {
 		return fmt.Errorf("完了済みではないので消せない")
@@ -62,12 +45,8 @@ func (c CommanderCell) EnsureCanBeCleaned() error {
 	return nil
 }
 
-func (c CommanderCell) SameIdentity(other CommanderCell) bool {
-	return c.ID == other.ID
-}
-
 func (c CommanderCell) Matches(identifier string) bool {
-	return c.ID == identifier || c.CellGroup.ID == identifier || c.CellGroup.Issue == identifier || c.Name().Value == identifier
+	return c.ID == identifier || c.CellGroupID == identifier
 }
 
 func ResolveCommanderCell(cells []CommanderCell, identifier string) (CommanderCell, bool) {
@@ -77,74 +56,6 @@ func ResolveCommanderCell(cells []CommanderCell, identifier string) (CommanderCe
 		}
 	}
 	return CommanderCell{}, false
-}
-
-func EnsureCommanderCellUnique(cells []CommanderCell, issue string, name CellName) error {
-	for _, cell := range cells {
-		if cell.CellGroup.Issue == issue {
-			return fmt.Errorf("commander cell issue %q already exists", issue)
-		}
-		if cell.Name() == name {
-			return fmt.Errorf("commander cell name %q already exists", name.Value)
-		}
-	}
-	return nil
-}
-
-func (c CommanderCell) Name() CellName {
-	return NewCellName(c.CellGroup.Issue)
-}
-
-func (c CommanderCell) ResourcePrefix() string {
-	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.CellGroup.Project, "project"), c.Name().Value)
-}
-
-func (c CommanderCell) ResourceDrivers() CellDrivers {
-	return NewCellDrivers(c.CellGroup.SourceDriver, c.CellGroup.ContainerDriver, c.Workspace.Driver, c.CellGroup.NotificationDriver)
-}
-
-func (c CommanderCell) WorkspaceName() string {
-	return SafeResourceName(c.CellGroup.Project, "project") + "-" + c.Name().Value
-}
-
-func (c CommanderCell) WorkspaceResource() WorkspaceResource {
-	workingDirectory := filepath.Join(".paracell", "cells", c.Name().Value)
-	windows := make([]WorkspaceWindow, len(c.Workspace.Windows))
-	copy(windows, c.Workspace.Windows)
-	return NewWorkspaceResource(c.WorkspaceName(), c.Name().Value, c.CellGroup.Project, c.DisplayLabel(), workingDirectory, windows)
-}
-
-func (c CommanderCell) SourceWorktreePath(targetName string) string {
-	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
-}
-
-func (c CommanderCell) CreationStatus() CreationStatus {
-	return c.Creation.Status
-}
-
-func (c CommanderCell) CreationFailure() (CreationStage, string) {
-	return c.Creation.FailedStage, c.Creation.LastError
-}
-
-func (c *CommanderCell) BeginCreation() {
-	creation := NewCellCreation()
-	creation.Status = CreationCreating
-	c.Creation = creation
-}
-
-func (c *CommanderCell) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
-func (c *CommanderCell) FinishCreation() {
-	c.Creation.Status = CreationReady
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
 }
 
 func (c *CommanderCell) AdvanceVersion() error {
@@ -157,24 +68,14 @@ func (c *CommanderCell) AdvanceVersion() error {
 }
 
 func (c CommanderCell) Stored() StoredCommanderCell {
-	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.Creation, string(c.Status), c.Done)
+	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroupID, c.Workspace, string(c.Status), c.Done)
 }
 
 func (c CommanderCell) Clone() CommanderCell {
 	c.Workspace.Windows = append([]WorkspaceWindow(nil), c.Workspace.Windows...)
-	group := *c.CellGroup
-	c.CellGroup = &group
 	return c
 }
 
 func (c *CommanderCell) ToggleDone() {
 	c.Done = !c.Done
-}
-
-func (c *CommanderCell) MarkDone() error {
-	if c.Done {
-		return fmt.Errorf("cell is already done")
-	}
-	c.Done = true
-	return nil
 }
