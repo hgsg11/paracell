@@ -131,16 +131,16 @@ func TestUpdateStatusLabelはNoteを優先しWorkspaceなしを識別する(t *t
 	}
 }
 
-func TestUpdateStatusLabelは既存window名から重複noteを除く(t *testing.T) {
+func TestUpdateStatusLabelは既存window名から繰り返されたlabelを除く(t *testing.T) {
 	const target = "paracell-myapp-123"
 	runner := &fakeRunner{outputs: map[string]string{
-		"tmux list-windows -t " + target + " -F #{window_id}\t#{window_name}": "%9\tnote:editor\n",
+		"tmux list-windows -t " + target + " -F #{window_id}\t#{window_name}": "%9\tnote:note:note:editor\n",
 	}}
 	if err := (TmuxAdapter{Runner: runner}).UpdateStatusLabel(context.Background(), cellWorkspaceResource("note", nil)); err != nil {
 		t.Fatalf("UpdateStatusLabelでエラーが返った: %v", err)
 	}
 	if !containsCall(runner.calls, "tmux rename-window -t %9 editor") {
-		t.Fatalf("重複prefixを除くrenameがない: calls = %#v", runner.calls)
+		t.Fatalf("繰り返されたprefixを除くrenameがない: calls = %#v", runner.calls)
 	}
 }
 

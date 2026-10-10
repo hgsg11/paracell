@@ -25,7 +25,11 @@ func windowNameWithoutWorkspaceLabel(windowName string, label string) string {
 	if label == "" {
 		return windowName
 	}
-	return strings.TrimPrefix(windowName, label+":")
+	prefix := label + ":"
+	for strings.HasPrefix(windowName, prefix) {
+		windowName = strings.TrimPrefix(windowName, prefix)
+	}
+	return windowName
 }
 
 const (
