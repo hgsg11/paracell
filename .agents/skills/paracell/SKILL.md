@@ -32,9 +32,11 @@ The following interview, issue preparation, and dispatch steps apply to the disp
 2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested. `paracell init` creates `paracell.yaml` and initializes `.paracell/state.db`.
 3. Read the complete root `paracell.yaml` and run `paracell ls` before selecting a template or creating, changing, or cleaning a cell.
 4. Read [references/configuration.md](references/configuration.md) before interpreting template compatibility or changing configuration.
-5. Inspect only the repository context needed to settle requirements and selection criteria. Treat repository instructions and the checked-out source as authoritative over an older installed binary.
+5. Inspect only the repository context needed to check template compatibility and derive dispatch inputs from an approved issue. Treat repository instructions and the checked-out source as authoritative over an older installed binary.
 
-## Grill the Requirements
+## Resolve Requirements Before Creating an Issue
+
+This interview applies only when no approved GitHub issue was supplied. When the user provides a finalized issue for a cell, treat its body as settled requirements and skip this interview. Read it only to derive dispatch inputs: target/template, branch prefix, and note. Ask a focused question only if repository configuration and issue content do not determine a required dispatch input; do not reopen scope or ask for work-package approval.
 
 Treat requirements as a decision tree. Resolve parent decisions before the choices that depend on them, and keep exploring until every branch that can materially change the result has been settled.
 
@@ -67,6 +69,8 @@ The interview is complete only when no material decision branch remains, the wor
 
 Compare the work package against itself, the user's latest instructions, repository facts and policies, existing cells, and template capabilities.
 
+When the user supplied an approved issue, keep its scope fixed. Check only for a blocker to dispatch, such as a hard incompatibility with every available template or a direct conflict with repository policy. Do not turn this check into another requirements interview; ask only for information needed to choose a dispatch input or resolve a genuine blocker.
+
 Treat a conflict as blocking when satisfying one requirement necessarily violates another, a requested result is incompatible with repository policy or known behavior, the target or delivery contract cannot be identified safely, or every template violates a hard constraint. Missing implementation detail is not a contradiction when the worker can discover it without changing scope.
 
 If a blocking contradiction exists:
@@ -80,10 +84,12 @@ If a blocking contradiction exists:
 
 Evaluate every template in `paracell.yaml`; never select by name alone.
 
-1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior.
-2. Prefer the template whose purpose most specifically matches the task, then choose the independent branch prefix (for example, `fix` for a bug repair and `feat` for new behavior).
-3. Prefer fewer unnecessary files, containers, services, and session windows.
-4. Break a remaining tie by the more specific semantic match, then by declaration order in `paracell.yaml`.
+1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior. Apply all later selection rules only to this compatible set.
+2. Use target matching only when the request or issue explicitly names the desired target. Resolve inherited templates and compare the requested target name against each compatible template's `targets` entry names by exact equality. Do not use the template key, task-kind prefix, semantic similarity, or a template's presumed purpose to infer a match.
+3. If one target is named, the matching candidate set contains compatible templates with that exact `targets` entry. If multiple targets are named, it contains compatible templates that include every named target. When the target-matching set is nonempty, choose its lexicographically smallest template key (case-sensitive byte order). If the request names no target or there are no target-matching templates, choose the lexicographically smallest compatible template key overall. If no compatible template exists, stop and explain why. Do not use declaration order or file/container counts to break ties.
+4. Choose the branch prefix independently from the selected template. Pass `--prefix <key>` when the configured key for the intended branch naming is known and should be used, even if template selection fell back to another key. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never infer branch prefix from the selected template.
+
+For example, if compatible templates `feat`, `fix`, `review`, and `update` all have `targets.repository`, a request for `repository` matches all four and selects `feat` by key order. If only `update` has `targets.web`, a request for `web` selects `update`, regardless of available prefix keys. The branch prefix is chosen separately: pass `--prefix fix` to use the configured `fix` prefix, or omit the option only if the default `feat` prefix is intended.
 5. Record the selected template and a one-sentence reason in the handoff result.
 
 If no existing template is compatible, stop and explain the missing capability. Add or edit a template only when the user requested configuration changes or explicitly approves them.
@@ -92,8 +98,8 @@ If no existing template is compatible, stop and explain the missing capability. 
 
 Do not place the work package itself in `--command`, a tmux command, or an environment variable.
 
-1. If the user supplied an issue number, read it with `gh issue view` and confirm that its body matches the approved work package. Update a stale body only after the user approves the changed requirements.
-2. If no issue number was supplied, write the approved work package to a temporary Markdown file and create one GitHub issue with `gh issue create --body-file`. Use a concise title and never interpolate the body through a shell argument.
+1. If the user supplied an approved issue number, read it with `gh issue view` and treat its body as the final work package. Do not compare it to a newly assembled work package, reopen its requirements, or edit it unless the user requests that change.
+2. If no issue number was supplied, use the confirmed work package, write it to a temporary Markdown file, and create one GitHub issue with `gh issue create --body-file`. Use a concise title and never interpolate the body through a shell argument.
 3. Use the returned numeric issue number as the Paracell identifier. Do not derive a slug when issue-backed dispatch is available.
 4. Keep secrets out of the issue body. Treat repository visibility as the visibility boundary for the work package.
 5. If issue creation fails, do not create a cell. If cell creation fails after issue creation, keep the issue and report its number so dispatch can be retried without creating a duplicate.
@@ -102,7 +108,7 @@ Treat a missing `gh` executable, missing GitHub authentication, or a repository 
 
 ## Dispatch the Work
 
-Dispatch only when the eligibility gate passed and the user has confirmed the shared understanding reached by the requirements interview. A qualifying system-change request counts as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package without side effects.
+For a supplied approved issue, dispatch after deriving its inputs; do not ask the user to confirm the issue requirements again. For a newly prepared issue, dispatch only after the user confirms the work package. A qualifying system-change request counts as authorization to create the cell; do not require the user to repeat the words create, send, start, or fork. If the user asked only for analysis or a recommendation, return the work package without side effects.
 
 1. Resolve the approved GitHub issue and its numeric issue number using the issue-backed workflow above.
 2. Check `paracell ls` for a cell with that issue number. Do not create a duplicate. If the existing cell is `failed`, report the failed stage and latest error instead of attempting automatic recovery.

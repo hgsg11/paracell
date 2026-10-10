@@ -28,6 +28,9 @@ providers:
   container: docker
   session: tmux
   notifications: tmux
+prefixes:
+  feat: feat/
+  fix: fix/
 templates:
   base:
     abstract: true
@@ -50,13 +53,14 @@ templates:
 
 `providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
 
+A fresh `paracell init` creates one starter template named `example` for the `repository` target. Its default branch-prefix keys remain `feat` and `fix`. Rename or add templates to represent the targets used by the project; prefix keys are not template names unless the project independently chooses matching names.
+
 ## Template Selection Fields
 
-- Template key: conveys intended task type but does not override field-level compatibility.
+- `prefixes`: optional map from a key to a branch-name prefix. Keys and values control branch naming only; they do not select templates. Pass `--prefix <key>` when the configured prefix key for the intended branch naming is known and should be used, regardless of which template was selected. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never derive the prefix from a template key.
+- Template key: identifies a configured template. To select by target, resolve inheritance and match explicitly requested target names against the names under each compatible template's `targets` map by exact equality; do not compare target names to template keys. With one requested target, a candidate must contain that target entry. With several, a candidate must contain all of them. Choose the lexicographically smallest matching template key (case-sensitive byte order); if none match or no target is named, choose the lexicographically smallest compatible template key overall. Do not infer a match from a task kind, prefix, semantic closeness, or YAML declaration order.
 - `extends`: names one parent template. A parent may itself extend one parent; multiple inheritance is not supported.
 - `abstract: true`: marks a reusable template that is excluded from both `fork --template` and the TUI template list.
-- `prefixes`: optional top-level map from prefix key to branch-name prefix. Built-ins are `feat: feat/` and `fix: fix/`; configured values override these and may add keys.
-- `fork --prefix <name>` selects a prefix key independently of `--template`; omission selects `feat`.
 - `repository.base`: accepts an explicit branch or `current`.
 - `repository.branchMode`:
   - Omitted or `create`: require a new branch.
@@ -65,6 +69,8 @@ templates:
 - `files`: project-root-relative local inputs copied into the cell source.
 - `containers.services`: declares container copies required by the cell.
 - `session.windows`: declares tmux windows and startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
+
+The issue's example configuration has prefix keys `feat` and `fix`, and template keys `feat`, `fix`, `review`, and `update`. These are independent namespaces even though two keys happen to be identical. If all four compatible templates contain `targets.repository`, a request for target `repository` matches all four and selects template `feat` by key order. If only `templates.update` contains `targets.web`, a request for `web` selects `update`; the template key itself is not the target match. For branch naming, pass `--prefix fix` to use `fix/` regardless of the selected template, or omit `--prefix` only when the CLI's default `feat/` is intended.
 
 Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
 
