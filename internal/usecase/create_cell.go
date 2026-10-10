@@ -70,7 +70,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
-	commander.BeginCreation()
+	commander.CellGroup.BeginCreation()
 	cellSet := NewCellSet(append(current.Commanders, commander), append(current.Targets, targets...), append(current.Dependencies, dependencies...))
 	if err := u.Cells.UpdateCells(ctx, func(latest CellSet) (CellSet, error) {
 		if err := domain.EnsureCommanderCellUnique(latest.Commanders, input.Issue, name); err != nil {
@@ -126,7 +126,7 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 					return r.fail(ctx, cells, stage, err)
 				}
 			}
-			r.Commander.FinishCreation()
+			r.Commander.CellGroup.FinishCreation()
 		}
 		saveCtx := ctx
 		if stage == domain.CreationStageWorkspace && r.BeforeTerminal != nil {
@@ -191,7 +191,7 @@ func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage d
 }
 
 func (r cellCreationRunner) fail(ctx context.Context, cells *CellSet, stage domain.CreationStage, createErr error) error {
-	r.Commander.FailCreation(stage, createErr)
+	r.Commander.CellGroup.FailCreation(stage, createErr)
 	if err := r.save(context.WithoutCancel(ctx), cells); err != nil {
 		return errors.Join(createErr, fmt.Errorf("save failed CommanderCell: %w", err))
 	}

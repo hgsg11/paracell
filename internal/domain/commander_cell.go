@@ -12,7 +12,6 @@ type CommanderCell struct {
 	Version   CellVersion
 	Workspace Workspace
 	Status    CellStatus
-	Creation  CellCreation
 	Done      bool
 }
 
@@ -27,7 +26,7 @@ func NewCommanderCell(id string, group *CellGroup, workspace Workspace) (Command
 	return CommanderCell{
 		ID: id, CellGroup: group, Version: version,
 		Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
-		Status:    Ready, Creation: NewCellCreation(),
+		Status:    Ready,
 	}, nil
 }
 
@@ -118,35 +117,6 @@ func (c CommanderCell) SourceWorktreePath(targetName string) string {
 	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
 }
 
-func (c CommanderCell) CreationStatus() CreationStatus {
-	return c.Creation.Status
-}
-
-func (c CommanderCell) CreationFailure() (CreationStage, string) {
-	return c.Creation.FailedStage, c.Creation.LastError
-}
-
-func (c *CommanderCell) BeginCreation() {
-	creation := NewCellCreation()
-	creation.Status = CreationCreating
-	c.Creation = creation
-}
-
-func (c *CommanderCell) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
-func (c *CommanderCell) FinishCreation() {
-	c.Creation.Status = CreationReady
-	c.Creation.FailedStage = ""
-	c.Creation.LastError = ""
-}
-
 func (c *CommanderCell) AdvanceVersion() error {
 	version, err := c.Version.Add()
 	if err != nil {
@@ -157,7 +127,7 @@ func (c *CommanderCell) AdvanceVersion() error {
 }
 
 func (c CommanderCell) Stored() StoredCommanderCell {
-	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.Creation, string(c.Status), c.Done)
+	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.CellGroup.Creation, string(c.Status), c.Done)
 }
 
 func (c CommanderCell) Clone() CommanderCell {

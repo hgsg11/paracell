@@ -66,6 +66,12 @@ func RestoreCommanderCell(stored StoredCommanderCell) (CommanderCell, error) {
 	if err != nil {
 		return CommanderCell{}, err
 	}
-	cell.Version, cell.Creation, cell.Status, cell.Done = version, stored.Creation, status, stored.Done
+	if raw.Creation.Status == "" {
+		group.Creation = stored.Creation
+	} else {
+		group.Creation = raw.Creation
+	}
+	cell.CellGroup = &group
+	cell.Version, cell.Status, cell.Done = version, status, stored.Done
 	return cell, nil
 }
