@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paracell Ticket Implementer"
+  short_description: "Implement a development ticket inside a Paracell cell"
+  default_prompt: "Use $paracell-implement to implement this development ticket in the current cell and deliver a PR."
