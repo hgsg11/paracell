@@ -80,10 +80,12 @@ If a blocking contradiction exists:
 
 Evaluate every template in `paracell.yaml`; never select by name alone.
 
-1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior.
-2. Prefer the template whose purpose most specifically matches the task, then choose the independent branch prefix (for example, `fix` for a bug repair and `feat` for new behavior).
-3. Prefer fewer unnecessary files, containers, services, and session windows.
-4. Break a remaining tie by the more specific semantic match, then by declaration order in `paracell.yaml`.
+1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior. Apply all later selection rules only to this compatible set.
+2. Classify the requested work by its explicit outcome: a bug repair is `fix`; a new user-visible capability is `feat`. For another task kind, use its exact configured prefix key only when the request explicitly identifies that kind (for example, `review`). Do not infer a kind from a template's name or purpose.
+3. Read the top-level `prefixes` map. Its keys are task-kind names and its values are branch-name prefixes; it is not a template selector by itself. For the selected task kind, if that key is configured, the candidate template is the concrete template whose key exactly equals the prefix key. Select it when it is in the compatible set. If it is absent or incompatible, continue to the fallback rule. A configured prefix key with no same-key template is not a match.
+4. Fallback: among compatible templates, choose the lexicographically smallest template key (case-sensitive byte order). This applies when `prefixes` is absent, the task kind has no configured prefix, there is no same-key template, or that template was excluded as incompatible. Thus a tie or empty match set always has one reproducible outcome, provided at least one compatible template exists. Do not use semantic closeness, declaration order, or file/container counts to break ties.
+
+For example, with configured prefix keys `feat` and `fix` and compatible template keys `feat`, `fix`, `review`, and `update`, feature work selects `feat`, bug fixes select `fix`, and a request explicitly identified as `review` or `update` has no configured matching prefix and falls back to `feat` (the lexicographically first compatible key). If compatibility filtering removes `feat`, the fallback is the first remaining key instead.
 5. Record the selected template and a one-sentence reason in the handoff result.
 
 If no existing template is compatible, stop and explain the missing capability. Add or edit a template only when the user requested configuration changes or explicitly approves them.

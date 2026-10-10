@@ -28,6 +28,9 @@ providers:
   container: docker
   session: tmux
   notifications: tmux
+prefixes:
+  feat: feat/
+  fix: fix/
 templates:
   base:
     abstract: true
@@ -52,11 +55,12 @@ templates:
 
 ## Template Selection Fields
 
-- Template key: conveys intended task type but does not override field-level compatibility.
+- `prefixes`: optional map from task-kind key to branch-name prefix. The key identifies a task kind; the value is used for branch naming. It does not name or select a template by itself. For example, `feat: feat/` and `fix: fix/` configure those task kinds, while `templates.feat` and `templates.fix` are the matching template entries.
+- Template key: identifies a concrete template. For deterministic Skill selection, a configured task-kind prefix key matches only a template with the exact same key, after compatibility filtering. If that exact template is absent or incompatible—or there is no configured prefix for the task kind—the Skill chooses the lexicographically smallest compatible template key (case-sensitive byte order). Prefix configuration may be absent or contain keys with no matching templates; neither case changes this fallback. The Skill never chooses by semantic closeness or YAML declaration order.
 - `extends`: names one parent template. A parent may itself extend one parent; multiple inheritance is not supported.
 - `abstract: true`: marks a reusable template that is excluded from both `fork --template` and the TUI template list.
-- `prefixes`: optional top-level map from prefix key to branch-name prefix. Built-ins are `feat: feat/` and `fix: fix/`; configured values override these and may add keys.
-- `fork --prefix <name>` selects a prefix key independently of `--template`; omission selects `feat`.
+- `prefixes`: optional top-level map from task-kind key to branch-name prefix. The map configures branch naming and gives the Skill task-kind keys it can match against same-key templates; configured values may override or add keys. In a configuration with `feat` and `fix` prefixes and `feat`, `fix`, `review`, and `update` templates, the first two keys correspond exactly; `review` and `update` have no corresponding configured prefix and are fallback candidates rather than prefix matches.
+- `fork --prefix <name>` selects a prefix key independently of `--template`; omission selects `feat`. This CLI option does not alter the Skill's template compatibility filtering or deterministic template fallback rule.
 - `repository.base`: accepts an explicit branch or `current`.
 - `repository.branchMode`:
   - Omitted or `create`: require a new branch.
@@ -65,6 +69,8 @@ templates:
 - `files`: project-root-relative local inputs copied into the cell source.
 - `containers.services`: declares container copies required by the cell.
 - `session.windows`: declares tmux windows and startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
+
+For example, with prefix keys `feat` and `fix` and compatible template keys `feat`, `fix`, `review`, and `update`, feature work selects `feat` and bug fixes select `fix`. An explicitly identified `review` or `update` task has no matching configured prefix key, so the fallback is `feat`, the lexicographically smallest compatible template key. Compatibility filtering happens first; if `feat` is incompatible, the first remaining key wins.
 
 Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
 
