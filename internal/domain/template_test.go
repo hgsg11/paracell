@@ -6,7 +6,7 @@ import (
 )
 
 func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t *testing.T) {
-	source, _ := NewSourceTemplate("services/api", "origin/main", "feat/")
+	source, _ := NewSourceTemplate("services/api", "origin/main")
 	mode, _ := NewMode("target")
 	environment, _ := NewEnvironment("CELL", "{{.Project}}-{{.Name}}")
 	container, _ := NewContainerTemplate("api", mode, []Environment{environment}, nil)
@@ -20,7 +20,7 @@ func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t 
 	child, _ := NewUnresolvedTemplate("feat", "base", false, nil, nil, nil)
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	config, _ := NewTemplates("sample", []Template{base, child}, workspaceDriver, Docker, sourceDriver, NoNotification)
+	config, _ := NewTemplates("sample", []Template{base, child}, workspaceDriver, Docker, sourceDriver, NoNotification, nil)
 
 	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "make test"))
 	if err != nil {
@@ -43,14 +43,14 @@ func TestResolveTemplateはInheritanceCycleとAbstractTemplateを拒否する(t 
 	sourceDriver, _ := NewSourceDriverType("git")
 	a, _ := NewUnresolvedTemplate("a", "b", false, nil, nil, nil)
 	b, _ := NewUnresolvedTemplate("b", "a", false, nil, nil, nil)
-	config, _ := NewTemplates("sample", []Template{a, b}, workspaceDriver, None, sourceDriver, NoNotification)
+	config, _ := NewTemplates("sample", []Template{a, b}, workspaceDriver, None, sourceDriver, NoNotification, nil)
 	if _, err := config.Resolve("a", NewTemplateVars("", "", "", "")); err == nil || !strings.Contains(err.Error(), "cycle") {
 		t.Fatalf("cycle error = %v", err)
 	}
 	window, _ := NewWindow("agent", "")
 	commander, _ := NewCommanderCellSpec("workspace", NewWorkspaceTemplate([]Window{window}))
 	base, _ := NewUnresolvedTemplate("base", "", true, &commander, nil, nil)
-	config, _ = NewTemplates("sample", []Template{base}, workspaceDriver, None, sourceDriver, NoNotification)
+	config, _ = NewTemplates("sample", []Template{base}, workspaceDriver, None, sourceDriver, NoNotification, nil)
 	if _, err := config.Resolve("base", NewTemplateVars("", "", "", "")); err == nil {
 		t.Fatal("abstract template must not be selectable")
 	}

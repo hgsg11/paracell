@@ -21,6 +21,9 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
+	if got := ports.createdSources[0].Branch; got != "feat/42" {
+		t.Fatalf("branch = %q, want feat/42", got)
+	}
 	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
 		t.Fatalf("drivers = %#v, want %#v", got, want)
 	}
@@ -34,6 +37,29 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
+	}
+}
+
+func TestForkCellはPrefixをTemplateから独立してSourceへ適用する(t *testing.T) {
+	ports := newFakePorts()
+	ports.config, _ = domain.NewTemplates("myapp", ports.config.Templates, domain.Tmux, domain.None, domain.Git, domain.NoNotification, map[string]string{"feat": "feature/", "topic": "work-"})
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat", Prefix: "topic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ports.createdSources[0].Branch; got != "work-42" {
+		t.Fatalf("branch = %q, want work-42", got)
+	}
+}
+
+func TestForkCellは未定義Prefixを拒否する(t *testing.T) {
+	ports := newFakePorts()
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat", Prefix: "unknown"})
+	if err == nil || !strings.Contains(err.Error(), `prefix "unknown" not found`) {
+		t.Fatalf("error = %v", err)
+	}
+	if len(ports.cells.Commanders) != 0 {
+		t.Fatalf("created commanders = %d", len(ports.cells.Commanders))
 	}
 }
 
@@ -70,19 +96,20 @@ type fakePorts struct {
 	updateStatusLabelErr error
 	createSourceErr      error
 	cleanedSources       []domain.SourceResource
+	createdSources       []domain.SourceResource
 	containerResources   domain.ContainerResources
 	workspaceResource    domain.WorkspaceResource
 }
 
 func newFakePorts() *fakePorts {
-	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
+	source, _ := domain.NewSourceTemplate(".", "main")
 	target, _ := domain.NewTargetCellSpec("repository", &source, nil)
 	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
 	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander, []domain.TargetCellSpec{target}, nil)
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
-	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil)
 	return &fakePorts{config: templates}
 }
 
@@ -138,8 +165,9 @@ func (f *fakePorts) Workspace(driver domain.WorkspaceDriverType) (WorkspacePort,
 	return f, nil
 }
 
-func (f *fakePorts) CreateSource(context.Context, domain.SourceResource) error {
+func (f *fakePorts) CreateSource(_ context.Context, resource domain.SourceResource) error {
 	f.calls = append(f.calls, "source:create")
+	f.createdSources = append(f.createdSources, resource)
 	return f.createSourceErr
 }
 func (f *fakePorts) CleanSource(_ context.Context, resource domain.SourceResource) error {
@@ -205,7 +233,7 @@ func newUsecaseTestCell(t *testing.T, id string, issue string, templateName stri
 func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) {
 	ctx := context.Background()
 	ports := newFakePorts()
-	source, _ := domain.NewSourceTemplate(".", "main", "feat/")
+	source, _ := domain.NewSourceTemplate(".", "main")
 	app, _ := domain.NewContainerTemplate("app", domain.Target, nil, nil)
 	api, _ := domain.NewTargetCellSpec("api", &source, []domain.ContainerTemplate{app})
 	web, _ := domain.NewTargetCellSpec("web", &source, nil)
@@ -216,7 +244,7 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 		t.Fatal(err)
 	}
 	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &spec, []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
-	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
+	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

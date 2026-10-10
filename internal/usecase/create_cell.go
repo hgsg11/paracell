@@ -11,6 +11,7 @@ import (
 type ForkCellInput struct {
 	Issue    string
 	Template string
+	Prefix   string
 	Command  string
 	Note     *string
 }
@@ -26,6 +27,14 @@ type ForkCellUseCase struct {
 
 func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (domain.CommanderCell, error) {
 	cfg, err := u.Config.Load(ctx)
+	if err != nil {
+		return domain.CommanderCell{}, err
+	}
+	prefixName := input.Prefix
+	if prefixName == "" {
+		prefixName = domain.FeatPrefix
+	}
+	branchPrefix, err := cfg.BranchPrefix(prefixName)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
@@ -54,7 +63,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 			return domain.CommanderCell{}, err
 		}
 	}
-	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, resolved.Targets, resolved.Dependencies, cfg.WorkspaceDriverType, commanderID, u.IDs)
+	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, resolved.Targets, resolved.Dependencies, cfg.WorkspaceDriverType, branchPrefix, commanderID, u.IDs)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}

@@ -18,6 +18,9 @@ providers:
   container: docker
   workspace: tmux
   notifications: tmux
+prefixes:
+  feat: feature/
+  urgent: urgent/
 templates:
   feat:
     commanderCell:
@@ -31,7 +34,6 @@ templates:
         source:
           path: .
           base: main
-          branchPrefix: feat/
         containers:
           web:
             environment:
@@ -50,6 +52,9 @@ templates:
 	}
 	if got.ProjectName != "sample" || got.ContainerDriverType != domain.Docker {
 		t.Fatalf("templates = %#v", got)
+	}
+	if got.Prefixes[domain.FeatPrefix] != "feature/" || got.Prefixes[domain.FixPrefix] != "fix/" || got.Prefixes["urgent"] != "urgent/" {
+		t.Fatalf("prefixes = %#v", got.Prefixes)
 	}
 	resolved, err := got.Resolve("feat", domain.NewTemplateVars("42", "42", "", ""))
 	if err != nil {
@@ -119,7 +124,6 @@ templates:
         source:
           path: services/api
           base: origin/main
-          branchPrefix: feat/api-
         containers:
           app:
             environment:

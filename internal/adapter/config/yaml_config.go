@@ -30,6 +30,7 @@ type yamlConfig struct {
 		Name string `yaml:"name"`
 	} `yaml:"project"`
 	Providers yamlProviders              `yaml:"providers"`
+	Prefixes  map[string]string          `yaml:"prefixes,omitempty"`
 	Templates map[string]rawYAMLTemplate `yaml:"templates"`
 }
 
@@ -90,9 +91,8 @@ func validateYAMLFields(node *yaml.Node, allowed ...string) error {
 }
 
 type rawRepositoryTemplate struct {
-	Path   *string `yaml:"path,omitempty"`
-	Base   *string `yaml:"base,omitempty"`
-	Prefix *string `yaml:"branchPrefix,omitempty"`
+	Path *string `yaml:"path,omitempty"`
+	Base *string `yaml:"base,omitempty"`
 }
 
 type rawContainer struct {
@@ -142,7 +142,7 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 		}
 		items = append(items, domainTemplate)
 	}
-	templates, err := domain.NewTemplates(raw.Project.Name, items, workspaceDriver, domain.NewContainerDriverType(raw.Providers.Container), sourceDriver, notificationDriver)
+	templates, err := domain.NewTemplates(raw.Project.Name, items, workspaceDriver, domain.NewContainerDriverType(raw.Providers.Container), sourceDriver, notificationDriver, raw.Prefixes)
 	if err != nil {
 		return domain.Templates{}, err
 	}
@@ -163,7 +163,7 @@ func (raw rawYAMLTemplate) toDomain(name string) (domain.Template, error) {
 		value := raw.Targets[targetName]
 		var source *domain.SourceTemplate
 		if value.Source != nil {
-			parsed, err := domain.NewPartialSourceTemplate(value.Source.Path, value.Source.Base, value.Source.Prefix)
+			parsed, err := domain.NewPartialSourceTemplate(value.Source.Path, value.Source.Base)
 			if err != nil {
 				return domain.Template{}, fmt.Errorf("target cell %q source: %w", targetName, err)
 			}
@@ -263,6 +263,7 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 			Workspace: string(cfg.WorkspaceDriverType), Notifications: string(cfg.NotificationDriverType),
 		},
 		Templates: make(map[string]rawYAMLTemplate, len(cfg.Templates)),
+		Prefixes:  cfg.Prefixes,
 	}
 	raw.Project.Name = cfg.ProjectName
 	for _, item := range cfg.Templates {
@@ -272,7 +273,7 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 			rawTarget := rawTargetCellSpec{Containers: make(map[string]rawContainer, len(target.Containers))}
 			if target.Source != nil {
 				source := *target.Source
-				rawTarget.Source = &rawRepositoryTemplate{Path: stringPointer(source.Path), Base: stringPointer(source.Base), Prefix: stringPointer(source.Prefix)}
+				rawTarget.Source = &rawRepositoryTemplate{Path: stringPointer(source.Path), Base: stringPointer(source.Base)}
 			}
 			for _, container := range target.Containers {
 				rawTarget.Containers[container.Name] = *rawContainerFromTemplate(container)

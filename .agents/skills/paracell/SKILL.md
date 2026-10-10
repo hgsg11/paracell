@@ -81,7 +81,7 @@ If a blocking contradiction exists:
 Evaluate every template in `paracell.yaml`; never select by name alone.
 
 1. Resolve `extends` according to [references/configuration.md](references/configuration.md), exclude `abstract: true` templates from selection, and eliminate concrete templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior.
-2. Prefer the template whose purpose and branch prefix most specifically match the task: for example, a bug repair generally favors `fix`, while new behavior generally favors `feat`.
+2. Prefer the template whose purpose most specifically matches the task, then choose the independent branch prefix (for example, `fix` for a bug repair and `feat` for new behavior).
 3. Prefer fewer unnecessary files, containers, services, and session windows.
 4. Break a remaining tie by the more specific semantic match, then by declaration order in `paracell.yaml`.
 5. Record the selected template and a one-sentence reason in the handoff result.
@@ -108,7 +108,7 @@ Dispatch only when the eligibility gate passed and the user has confirmed the sh
 2. Check `paracell ls` for a cell with that issue number. Do not create a duplicate. If the existing cell is `failed`, report the failed stage and latest error instead of attempting automatic recovery.
 3. Generate a natural, concise note from the ticket title and body. If ticket information is unavailable, use the confirmed work objective. The note must be 1-20 Unicode characters after whitespace normalization; do not pad it to 20 characters or pack detailed requirements into it. Treat it only as a display label, never as a cell identifier or search key.
 4. Build only a short instruction such as `You are already inside a Paracell cell; implement directly here without redispatch. Read GitHub issue #123 as the single source of truth, verify its acceptance criteria, and create a PR with Closes #123.` Keep detailed requirements exclusively in the issue body and worker command.
-5. Run `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
+5. Select the branch prefix independently from the template when needed; omitted `--prefix` uses `feat`. Run `paracell fork <issue-number> --template <template> [--prefix <prefix>] --note <note> --command <short-issue-instruction>` using argument-safe execution. Do not interpolate an assembled command through an extra shell.
 6. Run `paracell ls` and confirm the new cell and creation status. A successful dispatch is `ready`; a failed dispatch remains inspectable with its failed stage and latest error and can be retried after the cause is fixed. Report the issue URL or number, selected template, and dispatched objective.
 
 Stop after reporting the confirmed dispatch. Do not capture the cell's tmux pane, monitor the worker, type follow-up input into it, wait for completion, or operate on its worktree unless the user explicitly requests that additional operation.

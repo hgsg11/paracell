@@ -7,12 +7,11 @@ import (
 )
 
 type SourceTemplate struct {
-	Path   string
-	Base   string
-	Prefix string
+	Path string
+	Base string
 }
 
-func NewSourceTemplate(path string, base string, prefix string) (SourceTemplate, error) {
+func NewSourceTemplate(path string, base string) (SourceTemplate, error) {
 	if path == "" {
 		path = "."
 	}
@@ -23,19 +22,16 @@ func NewSourceTemplate(path string, base string, prefix string) (SourceTemplate,
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return SourceTemplate{}, fmt.Errorf("source path %q must stay within project root", path)
 	}
-	return SourceTemplate{Path: clean, Base: base, Prefix: prefix}, nil
+	return SourceTemplate{Path: clean, Base: base}, nil
 }
 
-func NewPartialSourceTemplate(path *string, base *string, prefix *string) (SourceTemplate, error) {
-	pathValue, baseValue, prefixValue := "", "", ""
+func NewPartialSourceTemplate(path *string, base *string) (SourceTemplate, error) {
+	pathValue, baseValue := "", ""
 	if path != nil {
 		pathValue = *path
 	}
 	if base != nil {
 		baseValue = *base
 	}
-	if prefix != nil {
-		prefixValue = *prefix
-	}
-	return NewSourceTemplate(pathValue, baseValue, prefixValue)
+	return NewSourceTemplate(pathValue, baseValue)
 }

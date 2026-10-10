@@ -11,7 +11,7 @@ type Source struct {
 }
 
 func NewSource(path string, base string, branch string) (Source, error) {
-	template, err := NewSourceTemplate(path, base, "")
+	template, err := NewSourceTemplate(path, base)
 	if err != nil {
 		return Source{}, err
 	}

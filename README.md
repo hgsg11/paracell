@@ -6,6 +6,8 @@ Paracell は、Template から AI agent 用の **CommanderCell** と、複数の
 
 ```sh
 paracell fork 123 --template feat
+# --template はCell構成、--prefix はbranch prefixを独立して選択（省略時 feat）
+paracell fork 123 --template fix --prefix urgent
 ```
 
 この1コマンドで、issue #123 を進める CommanderCell と、その Template に定義された TargetCell / DependencyCell を起動できます。
@@ -251,7 +253,7 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 
 ```text
 paracell init
-paracell fork <issue> --template <template> [--command <command>] [--note <note>]
+paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]
 paracell annotate <cell> --note <note>
 paracell view
 paracell ls
@@ -302,6 +304,10 @@ TargetCell の `containers` には複数の Compose service を列挙できま�
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
 ```yaml
+prefixes:
+  feat: feature/
+  fix: fix/
+  urgent: urgent/
 templates:
   feat:
     commanderCell:
@@ -315,7 +321,6 @@ templates:
         source:
           path: web
           base: origin/main
-          branchPrefix: feat/web-
         containers:
           app:
             environment:

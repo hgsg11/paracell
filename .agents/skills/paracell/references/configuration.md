@@ -8,7 +8,7 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml` and initialize `.paracell/state.db` | Keeps an existing configuration unchanged |
-| `paracell fork <issue> --template <name> [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
+| `paracell fork <issue> --template <name> [--prefix <name>] [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
 | `paracell view` | Open the cell/template TUI | Interactive |
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
@@ -45,7 +45,7 @@ templates:
   feat:
     extends: base
     repository:
-      branchPrefix: feat/
+      base: origin/main
 ```
 
 `providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
@@ -55,7 +55,8 @@ templates:
 - Template key: conveys intended task type but does not override field-level compatibility.
 - `extends`: names one parent template. A parent may itself extend one parent; multiple inheritance is not supported.
 - `abstract: true`: marks a reusable template that is excluded from both `fork --template` and the TUI template list.
-- `repository.branchPrefix`: prefixes the issue or task identifier to form the branch name.
+- `prefixes`: optional top-level map from prefix key to branch-name prefix. Built-ins are `feat: feat/` and `fix: fix/`; configured values override these and may add keys.
+- `fork --prefix <name>` selects a prefix key independently of `--template`; omission selects `feat`.
 - `repository.base`: accepts an explicit branch or `current`.
 - `repository.branchMode`:
   - Omitted or `create`: require a new branch.
@@ -95,7 +96,7 @@ templates:
   feat:
     extends: base
     repository:
-      branchPrefix: feat/
+      base: origin/main
     files: [config/feat.yaml]
     containers:
       services: {}
@@ -114,7 +115,7 @@ The Paracell Skill stores the complete work package in a GitHub issue before dis
 - Keep `--command` short: tell the worker to read the issue and treat it as the single source of truth.
 - Pass `--note` on every Skill dispatch. Derive it from the issue title and body when available, or from the confirmed work objective otherwise.
 - Keep the note natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements. It is display-only, not a dispatch identifier or search key.
-- Use `paracell fork <issue-number> --template <template> --note <note> --command <short-issue-instruction>` with each argument passed separately.
+- Use `paracell fork <issue-number> --template <template> [--prefix <prefix>] --note <note> --command <short-issue-instruction>` with each argument passed separately. Omit `--prefix` to use `feat`.
 - If issue creation succeeds but `fork` fails, retain the issue and report the failed cell. A normal `fork` with the same Issue or Name remains a duplicate.
 - A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
 

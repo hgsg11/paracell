@@ -3,7 +3,7 @@ package domain
 import "testing"
 
 func TestTargetAndDependencySpecsArePeers(t *testing.T) {
-	source, _ := NewSourceTemplate(".", "main", "feat/")
+	source, _ := NewSourceTemplate(".", "main")
 	containerA, _ := NewContainerTemplate("web", Target, nil, nil)
 	containerB, _ := NewContainerTemplate("worker", Target, nil, nil)
 	if _, err := NewTargetCellSpec("empty", nil, nil); err == nil {
