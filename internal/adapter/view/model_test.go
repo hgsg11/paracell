@@ -557,7 +557,9 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 		if cell.Name().Value != "123" {
 			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
 		}
-		cell.ToggleDone()
+		if err := cell.MarkDone(); err != nil {
+			t.Fatalf("MarkDoneでエラーが返った: %v", err)
+		}
 		return cell, nil
 	}
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -632,7 +634,7 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if got.Cells[0].Status != domain.Ready {
+	if !got.Cells[0].HasStatus(domain.Ready) {
 		t.Fatalf("cell = %#v, want status %q", got.Cells[0], domain.Ready)
 	}
 	if cmd == nil {
@@ -928,7 +930,9 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 	model := NewModel([]domain.CommanderCell{
 		func() domain.CommanderCell {
 			cell := viewTestCell("cell-1", "123", "default")
-			cell.ToggleDone()
+			if err := cell.MarkDone(); err != nil {
+				t.Fatalf("MarkDoneでエラーが返った: %v", err)
+			}
 			return cell
 		}(),
 	})
