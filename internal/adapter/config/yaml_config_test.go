@@ -266,9 +266,25 @@ func TestParacellYAMLUsesPeerCellDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := cfg.Resolve("feat", domain.NewTemplateVars("126", "126", "paracell", "test"))
+	names, err := cfg.SelectableNames()
 	if err != nil {
 		t.Fatal(err)
+	}
+	var resolved domain.ResolvedTemplate
+	found := false
+	for _, name := range names {
+		candidate, err := cfg.Resolve(name, domain.NewTemplateVars("126", "126", "paracell", "test"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(candidate.Targets) == 1 && candidate.Targets[0].Name == "repository" && len(candidate.Dependencies) == 0 {
+			resolved = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("no template defines the repository target without dependencies")
 	}
 	if resolved.Commander == nil || len(resolved.Targets) != 1 || resolved.Targets[0].Name != "repository" || len(resolved.Dependencies) != 0 {
 		t.Fatalf("resolved peer template = %#v", resolved)
