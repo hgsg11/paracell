@@ -1,4 +1,4 @@
 interface:
-  display_name: "Paracell Code Change Dispatcher"
-  short_description: "Dispatch outside cells; deliver issue work by PR inside cells"
-  default_prompt: "Use $paracell outside a cell to dispatch issue-backed work. Inside a cell, implement an identified issue directly and deliver a PR unless the user requests otherwise."
+  display_name: "Paracell Dispatcher"
+  short_description: "Prepare development tickets and dispatch Paracell cells"
+  default_prompt: "Use $paracell to prepare and dispatch this development ticket outside a cell."
