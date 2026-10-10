@@ -13,6 +13,22 @@ type Templates struct {
 	ContainerDriverType    ContainerDriverType
 	SourceDriverType       SourceDriverType
 	NotificationDriverType NotificationDriverType
+	Prefixes               map[string]string
+}
+
+const (
+	FeatPrefix = "feat"
+	FixPrefix  = "fix"
+)
+
+var defaultPrefixes = map[string]string{FeatPrefix: "feat/", FixPrefix: "fix/"}
+
+func (t Templates) BranchPrefix(name string) (string, error) {
+	prefix, ok := t.Prefixes[name]
+	if !ok {
+		return "", fmt.Errorf("prefix %q not found", name)
+	}
+	return prefix, nil
 }
 
 func (t Templates) Resolve(name string, vars TemplateVars) (ResolvedTemplate, error) {
@@ -99,7 +115,7 @@ func (t Templates) resolveDefinition(name string) (Template, error) {
 	return resolve(name)
 }
 
-func NewTemplates(projectName string, templates []Template, workspaceDriverType WorkspaceDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType) (Templates, error) {
+func NewTemplates(projectName string, templates []Template, workspaceDriverType WorkspaceDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType, prefixes map[string]string) (Templates, error) {
 	names := make(map[string]struct{}, len(templates))
 	for _, item := range templates {
 		if item.Name == "" {
@@ -110,9 +126,16 @@ func NewTemplates(projectName string, templates []Template, workspaceDriverType 
 		}
 		names[item.Name] = struct{}{}
 	}
+	resolvedPrefixes := make(map[string]string, len(defaultPrefixes)+len(prefixes))
+	for name, value := range defaultPrefixes {
+		resolvedPrefixes[name] = value
+	}
+	for name, value := range prefixes {
+		resolvedPrefixes[name] = value
+	}
 	return Templates{
 		ProjectName: projectName, Templates: append([]Template(nil), templates...),
-		WorkspaceDriverType: workspaceDriverType, ContainerDriverType: containerDriverType,
+		WorkspaceDriverType: workspaceDriverType, ContainerDriverType: containerDriverType, Prefixes: resolvedPrefixes,
 		SourceDriverType: sourceDriverType, NotificationDriverType: notificationDriverType,
 	}, nil
 }

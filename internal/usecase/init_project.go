@@ -37,7 +37,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 	names := []string{"feat", "update", "fix", "review"}
 	items := make([]domain.Template, 0, len(names))
 	for _, name := range names {
-		source, err := domain.NewSourceTemplate(".", "main", name+"/")
+		source, err := domain.NewSourceTemplate(".", "main")
 		if err != nil {
 			return domain.Templates{}, err
 		}
@@ -55,7 +55,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 		}
 		items = append(items, template)
 	}
-	cfg, err := domain.NewTemplates("", items, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	cfg, err := domain.NewTemplates("", items, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil)
 	if err != nil {
 		return domain.Templates{}, err
 	}

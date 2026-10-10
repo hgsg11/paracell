@@ -4,6 +4,9 @@ providers:
     source: git
     workspace: tmux
     notifications: tmux
+prefixes:
+    feat: feat/
+    fix: fix/
 templates:
     feat:
         commanderCell:
@@ -15,7 +18,6 @@ templates:
         targets:
             repository:
                 source:
-                    branchPrefix: feat/
                     base: origin/main
     fix:
         commanderCell:
@@ -27,5 +29,4 @@ templates:
         targets:
             repository:
                 source:
-                    branchPrefix: fix/
                     base: origin/main

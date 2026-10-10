@@ -72,7 +72,7 @@ var (
 		}
 		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.WorkspaceName()), nil
 	}
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, prefix string, command string, note *string, root string) (domain.CommanderCell, error) {
 		uc := usecase.ForkCellUseCase{
 			Config:           cfg,
 			Cells:            cells,
@@ -81,7 +81,7 @@ var (
 			WorkspaceFactory: session,
 			IDs:              id.RandomGenerator{},
 		}
-		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Command: command, Note: note})
+		return uc.Execute(ctx, usecase.ForkCellInput{Issue: issue, Template: template, Prefix: prefix, Command: command, Note: note})
 	}
 )
 
@@ -118,7 +118,7 @@ const (
 const usage = "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|exit|version|help]\n"
 
 const (
-	forkUsage     = "usage: paracell fork <issue> --template <template> [--command <command>] [--note <note>]"
+	forkUsage     = "usage: paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]"
 	annotateUsage = "usage: paracell annotate <cell> --note <note>"
 )
 
@@ -132,6 +132,7 @@ type Command struct {
 	Kind     CommandKind
 	Issue    string
 	Template string
+	Prefix   string
 	Command  string
 	Note     *string
 	Cell     string
@@ -224,6 +225,11 @@ func parseForkCommand(args []string) (Command, error) {
 				return Command{}, errors.New(forkUsage)
 			}
 			cmd.Template = value
+		case "--prefix":
+			if value == "" {
+				return Command{}, errors.New(forkUsage)
+			}
+			cmd.Prefix = value
 		case "--command":
 			cmd.Command = value
 		case "--note":
@@ -342,7 +348,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				factory := provider.NewFactory(viewRunner, workdir)
-				cell, err := runFork(ctx, configAdapter, factory, factory, factory, cellsAdapter, issue, template, "", nil, workdir)
+				cell, err := runFork(ctx, configAdapter, factory, factory, factory, cellsAdapter, issue, template, "", "", nil, workdir)
 				return viewadapter.ForkResultCmd(cell, err)()
 			}
 		})
@@ -359,7 +365,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			WorkspaceFactory: provider.NewFactory(runner, workdir),
 			IDs:              id.RandomGenerator{},
 		}
-		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Command: cmd.Command, Note: cmd.Note})
+		_, err = uc.Execute(ctx, usecase.ForkCellInput{Issue: cmd.Issue, Template: cmd.Template, Prefix: cmd.Prefix, Command: cmd.Command, Note: cmd.Note})
 		return err
 	case CommandClean:
 		uc := usecase.CleanCellUseCase{

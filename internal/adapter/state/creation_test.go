@@ -23,14 +23,14 @@ type creationPorts struct {
 
 func newCreationPorts(t *testing.T, failedStage domain.CreationStage) *creationPorts {
 	t.Helper()
-	source, _ := domain.NewSourceTemplate(".", "main", "verify/")
+	source, _ := domain.NewSourceTemplate(".", "main")
 	repository, _ := domain.NewTargetCellSpec("repository", &source, nil)
 	web, _ := domain.NewContainerTemplate("web", domain.Target, nil, nil)
 	target, _ := domain.NewTargetCellSpec("web", nil, []domain.ContainerTemplate{web})
 	dependency, _ := domain.NewDependencyCellSpec("database")
 	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
 	template, _ := domain.NewUnresolvedTemplate("verify", "", false, &commander, []domain.TargetCellSpec{repository, target}, []domain.DependencyCellSpec{dependency})
-	config, err := domain.NewTemplates("verify", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification)
+	config, err := domain.NewTemplates("verify", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

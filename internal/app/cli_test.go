@@ -67,7 +67,7 @@ func testTemplates() domain.Templates {
 	sessionDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
-	templates, _ := domain.NewTemplates("myapp", nil, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver)
+	templates, _ := domain.NewTemplates("myapp", nil, sessionDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil)
 	return templates
 }
 
@@ -119,6 +119,16 @@ func TestForkコマンドを解析できる(t *testing.T) {
 	}
 	if cmd.Template != "webapp" {
 		t.Fatalf("template = %q, want %q", cmd.Template, "webapp")
+	}
+}
+
+func TestForkコマンドはPrefixを解析できる(t *testing.T) {
+	cmd, err := ParseCommand([]string{"fork", "123", "--template", "fix", "--prefix", "feat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Template != "fix" || cmd.Prefix != "feat" {
+		t.Fatalf("command = %#v", cmd)
 	}
 }
 
@@ -810,7 +820,7 @@ templates:
 	defer func() { runFork = originalFork }()
 
 	var called bool
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, prefix string, command string, note *string, root string) (domain.CommanderCell, error) {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -881,7 +891,7 @@ templates:
 	originalFork := runFork
 	defer func() { runFork = originalFork }()
 
-	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
+	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, prefix string, command string, note *string, root string) (domain.CommanderCell, error) {
 		_ = ctx
 		_ = cfg
 		_ = cells

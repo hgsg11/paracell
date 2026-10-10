@@ -46,9 +46,12 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
 	}
 	for _, template := range cfg.Templates {
-		if template.Commander == nil || len(template.Targets) != 1 || template.Targets[0].Source == nil || template.Targets[0].Source.Base != "main" || template.Targets[0].Source.Prefix != template.Name+"/" {
+		if template.Commander == nil || len(template.Targets) != 1 || template.Targets[0].Source == nil || template.Targets[0].Source.Base != "main" {
 			t.Fatalf("template = %#v", template)
 		}
+	}
+	if cfg.Prefixes[domain.FeatPrefix] != "feat/" || cfg.Prefixes[domain.FixPrefix] != "fix/" {
+		t.Fatalf("prefixes = %#v", cfg.Prefixes)
 	}
 }
 
