@@ -14,7 +14,7 @@ func FormatCellList(cells []domain.CommanderCell) string {
 		label, templateName := cell.ListLabels()
 		creationStatus := cell.CellGroup.CreationStatus()
 		status := domain.Ready
-		if cell.HasStatus(domain.Pending) {
+		if cell.Status == domain.Pending {
 			status = domain.Pending
 		}
 		done := cell.EnsureCanBeCleaned() == nil

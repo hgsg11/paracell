@@ -50,19 +50,11 @@ func (c CommanderCell) ListLabels() (string, string) {
 	return c.DisplayLabel(), c.CellGroup.Template
 }
 
-func (c CommanderCell) HasStatus(status CellStatus) bool {
-	return c.Status == status
-}
-
 func (c CommanderCell) EnsureCanBeCleaned() error {
 	if !c.Done {
 		return fmt.Errorf("完了済みではないので消せない")
 	}
 	return nil
-}
-
-func (c CommanderCell) SameIdentity(other CommanderCell) bool {
-	return c.ID == other.ID
 }
 
 func (c CommanderCell) Matches(identifier string) bool {
@@ -139,12 +131,4 @@ func (c CommanderCell) Clone() CommanderCell {
 
 func (c *CommanderCell) ToggleDone() {
 	c.Done = !c.Done
-}
-
-func (c *CommanderCell) MarkDone() error {
-	if c.Done {
-		return fmt.Errorf("cell is already done")
-	}
-	c.Done = true
-	return nil
 }

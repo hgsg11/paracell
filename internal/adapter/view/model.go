@@ -276,7 +276,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.SameIdentity(msg.cell) {
+			if cell.ID == msg.cell.ID {
 				index = i
 				break
 			}
@@ -301,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		index := -1
 		for i, cell := range m.Cells {
-			if cell.SameIdentity(msg.cell) {
+			if cell.ID == msg.cell.ID {
 				index = i
 				break
 			}
@@ -349,7 +349,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Cells = cells
 		if hasSelectedCell {
 			for i, cell := range m.Cells {
-				if cell.SameIdentity(selectedCell) {
+				if cell.ID == selectedCell.ID {
 					m.Selected = i
 					break
 				}
@@ -566,9 +566,9 @@ func cellWidths(cells []domain.CommanderCell) (int, int) {
 
 func renderCellStatus(cell domain.CommanderCell, frame int) string {
 	switch {
-	case cell.HasStatus(domain.Pending):
+	case cell.Status == domain.Pending:
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
-	case cell.HasStatus(domain.Ready):
+	case cell.Status == domain.Ready:
 		return ""
 	default:
 		return "  "

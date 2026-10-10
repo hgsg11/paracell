@@ -238,14 +238,12 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CellGroup.CreationStatus() != domain.CreationReady {
 		t.Fatalf("commands/status/note not preserved: %#v", first)
 	}
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
-		t.Fatal(err)
-	}
+	ports.cells.Commanders[0].ToggleDone()
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroup.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if len(ports.cells.Commanders) != 1 || !ports.cells.Commanders[0].SameIdentity(second) || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
+	if len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
 		t.Fatalf("wrong group deleted: %#v", ports.cells)
 	}
 	if len(ports.cleanedSources) != 2 {
