@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 type loggerContextKey struct{}
@@ -23,8 +24,8 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 	return tea.NewProgram(model, opts...)
 }
 
-func Run(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, delete func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (Result, error) {
-	model := NewModel(cells, templates)
+func Run(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, delete func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (Result, error) {
+	model := NewModelFromCellSet(cells, templates)
 	model.Logger, _ = ctx.Value(loggerContextKey{}).(*logging.Logger)
 	model.CurrentCell = currentCell
 	model.Reload = reload

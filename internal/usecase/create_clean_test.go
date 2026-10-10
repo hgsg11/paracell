@@ -18,10 +18,11 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CellGroup.CreationStatus() != domain.CreationReady {
+	group, _ := ports.cells.CellGroup(cell.CellGroupID)
+	if group.Template != "feat" || len(ports.cells.Targets) != 1 || group.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
-	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
+	if got, want := group.ResourceDrivers(cell.Workspace.Driver), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
 		t.Fatalf("drivers = %#v, want %#v", got, want)
 	}
 	wantCalls := []string{
@@ -48,11 +49,12 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if len(ports.cells.Commanders) != 1 {
 		t.Fatalf("commanders = %d", len(ports.cells.Commanders))
 	}
-	failedStage, _ := ports.cells.Commanders[0].CellGroup.CreationFailure()
-	if ports.cells.Commanders[0].CellGroup.CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+	group, _ := ports.cells.CellGroup(ports.cells.Commanders[0].CellGroupID)
+	failedStage, _ := group.CreationFailure()
+	if group.CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
 		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
-	for _, resource := range domain.BuildSourceResourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
+	for _, resource := range domain.BuildSourceResourcesService(group, ports.cells.Targets) {
 		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
@@ -98,15 +100,15 @@ func (f *fakePorts) Load(context.Context) (domain.Templates, error) {
 }
 
 func (f *fakePorts) LoadCells(context.Context) (CellSet, error) {
-	return NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies), nil
+	return NewCellSet(f.cells.Commanders, f.cells.Groups, f.cells.Targets, f.cells.Dependencies), nil
 }
 
 func (f *fakePorts) UpdateCells(_ context.Context, update func(CellSet) (CellSet, error)) error {
-	before := NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies)
+	before := NewCellSet(f.cells.Commanders, f.cells.Groups, f.cells.Targets, f.cells.Dependencies)
 	for i := range before.Commanders {
 		before.Commanders[i] = before.Commanders[i].Clone()
 	}
-	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies))
+	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Groups, f.cells.Targets, f.cells.Dependencies))
 	if err != nil {
 		return err
 	}
@@ -195,11 +197,24 @@ func newUsecaseTestCell(t *testing.T, id string, issue string, templateName stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	cell, err := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
+	cell, err := domain.NewCommanderCell(id, group.ID, domain.NewWorkspace(workspaceDriver, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return cell
+}
+
+func newUsecaseTestGroup(t *testing.T, id string, issue string, templateName string) domain.CellGroup {
+	t.Helper()
+	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, domain.Git, domain.None, domain.NoNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return group
+}
+
+func newUsecaseTestSet(t *testing.T, id string, issue string, templateName string) CellSet {
+	return NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, id, issue, templateName)}, []domain.CellGroup{newUsecaseTestGroup(t, id, issue, templateName)}, nil, nil)
 }
 
 func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) {
@@ -231,16 +246,18 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroup.ID, ports.cells.Targets, ports.cells.Dependencies)
-	if first.CellGroup.ID == first.ID || first.CellGroup.ID == second.CellGroup.ID || len(targets) != 2 || len(dependencies) != 1 {
+	firstGroup, _ := ports.cells.CellGroup(first.CellGroupID)
+	secondGroup, _ := ports.cells.CellGroup(second.CellGroupID)
+	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroupID, ports.cells.Targets, ports.cells.Dependencies)
+	if first.CellGroupID == first.ID || first.CellGroupID == second.CellGroupID || len(targets) != 2 || len(dependencies) != 1 {
 		t.Fatalf("invalid grouping: %#v, %#v", first, ports.cells)
 	}
-	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CellGroup.CreationStatus() != domain.CreationReady {
+	if firstGroup.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || firstGroup.CreationStatus() != domain.CreationReady || secondGroup.ID == "" {
 		t.Fatalf("commands/status/note not preserved: %#v", first)
 	}
 	ports.cells.Commanders[0].ToggleDone()
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
-	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroup.ID}); err != nil {
+	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroupID}); err != nil {
 		t.Fatal(err)
 	}
 	if len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {

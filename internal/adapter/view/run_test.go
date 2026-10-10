@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 type fakeProgram struct {
@@ -40,10 +41,10 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	cells := []domain.CommanderCell{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.CommanderCell, error) {
-		return cells, nil
+	result, err := Run(context.Background(), viewTestSet(cells...), nil, "123", func() (usecase.CellSet, error) {
+		return viewTestSet(cells...), nil
 	}, func(cell domain.CommanderCell) tea.Cmd {
-		if cell.Name().Value != "123" {
+		if viewTestGroup(cell).Name().Value != "123" {
 			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
 		}
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
@@ -51,7 +52,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name().Value != "123" {
+	if len(got.Cells) != 1 || viewTestGroup(got.Cells[0]).Name().Value != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
 	if got.CurrentCell != "123" {
@@ -60,7 +61,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
-	if result.Cell.Name().Value != "123" {
+	if viewTestGroup(result.Cell).Name().Value != "123" {
 		t.Fatalf("cell = %#v, want name %q", result.Cell, "123")
 	}
 }
@@ -83,8 +84,8 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 	cells := []domain.CommanderCell{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.CommanderCell, error) {
-		return cells, nil
+	result, err := Run(context.Background(), viewTestSet(cells...), nil, "", func() (usecase.CellSet, error) {
+		return viewTestSet(cells...), nil
 	}, func(cell domain.CommanderCell) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
 	}, func() error { return nil }, func(cell domain.CommanderCell) error { return nil }, func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil }, nil)
@@ -121,10 +122,10 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	}
 	result, err := Run(
 		context.Background(),
-		cells,
+		viewTestSet(cells...),
 		nil,
 		"",
-		func() ([]domain.CommanderCell, error) { return cells, nil },
+		func() (usecase.CellSet, error) { return viewTestSet(cells...), nil },
 		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error { return nil },
 		func(cell domain.CommanderCell) error { return nil },
@@ -165,11 +166,11 @@ func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 
 	result, err := Run(
 		context.Background(),
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		viewTestSet(viewTestCell("cell-1", "123", "default")),
 		nil,
 		"",
-		func() ([]domain.CommanderCell, error) {
-			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
+		func() (usecase.CellSet, error) {
+			return viewTestSet(viewTestCell("cell-1", "123", "default")), nil
 		},
 		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error {
@@ -215,12 +216,12 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 
 	_, err := Run(
 		context.Background(),
-		nil,
+		usecase.CellSet{},
 		[]string{"default"},
 		"",
-		func() ([]domain.CommanderCell, error) {
+		func() (usecase.CellSet, error) {
 			reloaded = true
-			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
+			return viewTestSet(viewTestCell("cell-1", "123", "default")), nil
 		},
 		func(cell domain.CommanderCell) tea.Cmd { return nil },
 		func() error { return nil },

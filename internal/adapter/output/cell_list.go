@@ -5,14 +5,19 @@ import (
 	"strings"
 
 	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
-func FormatCellList(cells []domain.CommanderCell) string {
+func FormatCellList(cells usecase.CellSet) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
-	for _, cell := range cells {
-		label, templateName := cell.ListLabels()
-		creationStatus := cell.CellGroup.CreationStatus()
+	for _, cell := range cells.Commanders {
+		group, ok := cells.CellGroup(cell.CellGroupID)
+		if !ok {
+			continue
+		}
+		label, templateName := group.DisplayLabel(), group.Template
+		creationStatus := group.CreationStatus()
 		status := domain.Ready
 		if cell.Status == domain.Pending {
 			status = domain.Pending
@@ -21,7 +26,7 @@ func FormatCellList(cells []domain.CommanderCell) string {
 		failedStage := "-"
 		lastError := "-"
 		if creationStatus == domain.CreationFailed {
-			stage, message := cell.CellGroup.CreationFailure()
+			stage, message := group.CreationFailure()
 			failedStage = string(stage)
 			lastError = singleLine(message, 120)
 		}

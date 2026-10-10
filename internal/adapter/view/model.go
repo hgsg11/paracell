@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
 	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/usecase"
 )
 
 type Action string
@@ -44,6 +45,7 @@ type forkResultMsg struct {
 
 type Model struct {
 	Cells            []domain.CommanderCell
+	Groups           []domain.CellGroup
 	Templates        []string
 	CurrentCell      string
 	Focus            FocusArea
@@ -66,7 +68,7 @@ type Model struct {
 	Fork             func(issue string, template string) tea.Cmd
 	Delete           func(domain.CommanderCell) error
 	MarkDone         func(domain.CommanderCell) (domain.CommanderCell, error)
-	Reload           func() ([]domain.CommanderCell, error)
+	Reload           func() (usecase.CellSet, error)
 	Logger           *logging.Logger
 }
 
@@ -79,6 +81,21 @@ func NewModel(cells []domain.CommanderCell, templates ...[]string) Model {
 		model.Templates = append([]string(nil), templates[0]...)
 	}
 	return model
+}
+
+func NewModelFromCellSet(cells usecase.CellSet, templates []string) Model {
+	model := NewModel(cells.Commanders, templates)
+	model.Groups = append([]domain.CellGroup(nil), cells.Groups...)
+	return model
+}
+
+func (m Model) cellGroup(id string) (domain.CellGroup, bool) {
+	for _, group := range m.Groups {
+		if group.ID == id {
+			return group, true
+		}
+	}
+	return domain.CellGroup{}, false
 }
 
 var pendingStatusFrames = []string{"..", "o.", ".o"}
@@ -321,7 +338,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				reloadErr = err
 			} else {
-				m.Cells = cells
+				m.Cells, m.Groups = cells.Commanders, cells.Groups
 			}
 		}
 		if msg.err != nil || reloadErr != nil {
@@ -346,7 +363,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			selectedCell = m.Cells[m.Selected]
 			hasSelectedCell = true
 		}
-		m.Cells = cells
+		m.Cells, m.Groups = cells.Commanders, cells.Groups
 		if hasSelectedCell {
 			for i, cell := range m.Cells {
 				if cell.ID == selectedCell.ID {
@@ -446,14 +463,15 @@ func renderCellsPane(m Model, width int, height int) []string {
 	if len(m.Cells) == 0 {
 		lines = append(lines, "no cells")
 	} else {
-		nameWidth, templateWidth := cellWidths(m.Cells)
+		nameWidth, templateWidth := cellWidths(m.Cells, m.Groups)
 		for _, cell := range m.Cells {
-			label, templateName := cell.ListLabels()
+			group, _ := m.cellGroup(cell.CellGroupID)
+			label, templateName := group.DisplayLabel(), group.Template
 			done := "[ ]"
 			if cell.EnsureCanBeCleaned() == nil {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(templateName, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.Groups, m.CurrentCell), padded(ellipsize(label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(templateName, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -553,11 +571,12 @@ func maxLineWidth(lines []string) int {
 	return width
 }
 
-func cellWidths(cells []domain.CommanderCell) (int, int) {
+func cellWidths(cells []domain.CommanderCell, groups []domain.CellGroup) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		label, templateName := cell.ListLabels()
+		group := groupByID(groups, cell.CellGroupID)
+		label, templateName := group.DisplayLabel(), group.Template
 		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(label, maxIssueDisplayWidth)))
 		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(templateName, maxTemplateDisplayWidth)))
 	}
@@ -602,11 +621,21 @@ func resetForkInput(m Model) Model {
 	return m
 }
 
-func currentCellMarker(cell domain.CommanderCell, currentCell string) string {
-	if currentCell != "" && cell.Name().Value == currentCell {
+func currentCellMarker(cell domain.CommanderCell, groups []domain.CellGroup, currentCell string) string {
+	group := groupByID(groups, cell.CellGroupID)
+	if currentCell != "" && group.Name().Value == currentCell {
 		return "*"
 	}
 	return " "
+}
+
+func groupByID(groups []domain.CellGroup, id string) domain.CellGroup {
+	for _, group := range groups {
+		if group.ID == id {
+			return group
+		}
+	}
+	return domain.CellGroup{}
 }
 
 func ellipsize(value string, width int) string {

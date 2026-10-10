@@ -75,6 +75,8 @@ func (p staticConfigPort) Load(context.Context) (domain.Templates, error) {
 	return p.config, nil
 }
 
+var appTestGroups = map[string]*domain.CellGroup{}
+
 func appTestCell(id string, issue string, templateName string) domain.CommanderCell {
 	if templateName == "" {
 		templateName = "default"
@@ -82,25 +84,40 @@ func appTestCell(id string, issue string, templateName string) domain.CommanderC
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
-	cell, _ := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
+	appTestGroups[group.ID] = &group
+	cell, _ := domain.NewCommanderCell(id, group.ID, domain.NewWorkspace(workspaceDriver, nil))
 	return cell
+}
+
+func appTestSet(cells ...domain.CommanderCell) usecase.CellSet {
+	groups := make([]domain.CellGroup, 0, len(cells))
+	for _, cell := range cells {
+		if group := appTestGroups[cell.CellGroupID]; group != nil {
+			groups = append(groups, *group)
+		}
+	}
+	return usecase.NewCellSet(cells, groups, nil, nil)
 }
 
 func TestRunEnterCmdは復元設定後にWorkspace環境を保持して切り替える(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	cell := appTestCell("cell-1", "123", "default")
 	session := &prepareWorkspace{}
+	cells := state.NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
+	if err := cells.SaveCells(context.Background(), appTestSet(cell)); err != nil {
+		t.Fatal(err)
+	}
 	cmd, err := runEnterCmd(context.Background(), staticConfigPort{
 		config: testTemplates(),
-	}, prepareWorkspaceFactory{session: session}, cell)
+	}, prepareWorkspaceFactory{session: session}, cells, cell)
 	if err != nil {
 		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
 	}
-	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.WorkspaceName()}
+	wantArgs := []string{"tmux", "switch-client", "-E", "-t", appTestGroups[cell.CellGroupID].WorkspaceName()}
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}
-	if session.prepared.CellName != cell.Name().Value {
+	if session.prepared.CellName != appTestGroups[cell.CellGroupID].Name().Value {
 		t.Fatalf("prepared resource = %#v, want cell %#v", session.prepared, cell)
 	}
 }
@@ -429,14 +446,14 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		func() domain.CommanderCell {
 			c := appTestCell("cell-1", "123", "default")
-			_ = c.CellGroup.SetNote("PostgreSQL案")
+			_ = appTestGroups[c.CellGroupID].SetNote("PostgreSQL案")
 			return c
 		}(),
 		appTestCell("cell-2", "456", "webapp"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 
@@ -461,7 +478,7 @@ func TestRunはAnnotateでStateを更新しTmuxWorkspaceなしを成功扱いに
 		t.Fatal(err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{appTestCell("cell-1", "123", "default")}); err != nil {
+	if err := store.SaveCells(context.Background(), appTestSet(appTestCell("cell-1", "123", "default"))); err != nil {
 		t.Fatal(err)
 	}
 	binDir := t.TempDir()
@@ -478,7 +495,7 @@ func TestRunはAnnotateでStateを更新しTmuxWorkspaceなしを成功扱いに
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cells.Commanders) != 1 || cells.Commanders[0].CellGroup.Note != "API 実装 中" {
+	if len(cells.Commanders) != 1 || cells.Groups[0].Note != "API 実装 中" {
 		t.Fatalf("cells = %#v", cells)
 	}
 }
@@ -507,10 +524,10 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	cellSource := filepath.Join(dir, ".paracell", "cells", "123", "source")
@@ -534,10 +551,10 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootのStateを読む(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	t.Setenv("PARACELL_ROOT", dir)
@@ -577,10 +594,10 @@ func TestRunはViewでCell一覧をTUIに渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
 		appTestCell("cell-2", "456", "webapp"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -611,7 +628,7 @@ templates:
 	defer func() { runClean = originalClean }()
 
 	var got []domain.CommanderCell
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -621,10 +638,10 @@ templates:
 		_ = clean
 		_ = markDone
 		_ = fork
-		got = append([]domain.CommanderCell(nil), cells...)
+		got = append([]domain.CommanderCell(nil), cells.Commanders...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
@@ -717,7 +734,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -763,7 +780,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -831,7 +848,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default"), nil
 	}
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -913,7 +930,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default"), nil
 	}
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -978,7 +995,7 @@ templates: {}
 		gotProject = loaded.ProjectName
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
@@ -1045,7 +1062,7 @@ templates: {}
 func TestRunはViewコマンドで引き続きTUIを起動する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{}); err != nil {
+	if err := store.SaveCells(context.Background(), appTestSet()); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1075,7 +1092,7 @@ templates:
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1102,9 +1119,9 @@ func TestRunはViewでEnterしたCellをEnter処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1129,7 +1146,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered domain.CommanderCell
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1138,28 +1155,30 @@ templates: {}
 		_ = clean
 		_ = markDone
 		_ = fork
-		cmd := enter(cells[0])
+		cmd := enter(cells.Commanders[0])
 		if cmd == nil {
 			t.Fatal("enterでコマンドが返らなかった")
 		}
 		_ = cmd
-		entered = cells[0]
+		entered = cells.Commanders[0]
 		return viewadapter.Result{
 			Action: viewadapter.ActionEnter,
-			Cell:   cells[0],
+			Cell:   cells.Commanders[0],
 		}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
+		_ = cells
 		entered = cell
 		return nil
 	}
-	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) (*exec.Cmd, error) {
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) (*exec.Cmd, error) {
 		_ = ctx
 		_ = cfg
 		_ = factory
+		_ = cells
 		entered = cell
 		return exec.Command("true"), nil
 	}
@@ -1177,7 +1196,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if entered.Name().Value != "123" {
+	if entered.CellGroupID != "group-cell-1" {
 		t.Fatalf("entered cell = %#v, want name %q", entered, "123")
 	}
 }
@@ -1186,9 +1205,9 @@ func TestRunはViewでddしたCellをClean処理に渡す(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1211,7 +1230,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted domain.CommanderCell
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, exit func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1220,13 +1239,13 @@ templates: {}
 		_ = exit
 		_ = markDone
 		_ = fork
-		if err := clean(cells[0]); err != nil {
+		if err := clean(cells.Commanders[0]); err != nil {
 			t.Fatalf("cleanでエラーが返った: %v", err)
 		}
-		deleted = cells[0]
+		deleted = cells.Commanders[0]
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = ctx
 		_ = cfg
 		_ = factory
@@ -1247,7 +1266,7 @@ templates: {}
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if deleted.Name().Value != "123" {
+	if appTestGroups[deleted.CellGroupID].Name().Value != "123" {
 		t.Fatalf("deleted cell = %#v, want name %q", deleted, "123")
 	}
 }
@@ -1255,7 +1274,7 @@ templates: {}
 func TestRunはViewのGoRoot選択でRootWorkspaceEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{appTestCell("cell-1", "123", "default")}); err != nil {
+	if err := store.SaveCells(context.Background(), appTestSet(appTestCell("cell-1", "123", "default"))); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 	configPath := filepath.Join(dir, "paracell.yaml")
@@ -1288,7 +1307,7 @@ templates:
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells usecase.CellSet, templates []string, currentCell string, reload func() (usecase.CellSet, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, clean func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1387,9 +1406,9 @@ templates: {}
 		t.Fatalf("設定を書けなかった: %v", err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 
@@ -1422,9 +1441,9 @@ templates:
 		t.Fatalf("config保存でエラーが返った: %v", err)
 	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
-	if err := store.SaveCells(context.Background(), []domain.CommanderCell{
+	if err := store.SaveCells(context.Background(), appTestSet(
 		appTestCell("cell-1", "123", "default"),
-	}); err != nil {
+	)); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
 

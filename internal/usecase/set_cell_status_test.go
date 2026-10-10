@@ -10,7 +10,7 @@ import (
 
 func TestSetCellStatusはReady時に通知する(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil),
+		cells: newUsecaseTestSet(t, "cell-1", "123", "feat"),
 	}
 
 	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
@@ -29,7 +29,7 @@ func TestSetCellStatusはReady時に通知する(t *testing.T) {
 
 func TestSetCellStatusはPending時に通知しない(t *testing.T) {
 	ports := &setStatusTestPorts{
-		cells: NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil),
+		cells: newUsecaseTestSet(t, "cell-1", "123", "feat"),
 	}
 
 	uc := SetCellStatusUseCase{Cells: ports, NotificationFactory: ports}
@@ -50,12 +50,12 @@ type setStatusTestPorts struct {
 
 func (p *setStatusTestPorts) LoadCells(ctx context.Context) (CellSet, error) {
 	_ = ctx
-	return NewCellSet(p.cells.Commanders, p.cells.Targets, p.cells.Dependencies), nil
+	return NewCellSet(p.cells.Commanders, p.cells.Groups, p.cells.Targets, p.cells.Dependencies), nil
 }
 
 func (p *setStatusTestPorts) UpdateCells(ctx context.Context, update func(CellSet) (CellSet, error)) error {
 	_ = ctx
-	cells, err := update(NewCellSet(p.cells.Commanders, p.cells.Targets, p.cells.Dependencies))
+	cells, err := update(NewCellSet(p.cells.Commanders, p.cells.Groups, p.cells.Targets, p.cells.Dependencies))
 	if err != nil {
 		return err
 	}

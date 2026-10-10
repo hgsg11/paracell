@@ -7,33 +7,17 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
-// decodeCellRecord reads the current record and the preceding Commander-owned
-// format. Legacy membership is checked before replacing it with CellGroup IDs;
-// a normal transactional update subsequently writes only the current format.
+// decodeCellRecord migrates Commander-owned persisted groups to the independent
+// CellGroup member while preserving legacy target and dependency membership.
 func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	var record stateCellRecord
 	if err := json.Unmarshal(data, &record); err != nil {
 		return stateCellRecord{}, err
 	}
-	var oldTargets struct {
-		Targets []struct {
-			Container *domain.Container
-		}
-	}
-	if err := json.Unmarshal(data, &oldTargets); err != nil {
-		return stateCellRecord{}, err
-	}
-	for i := range record.Targets {
-		if len(record.Targets[i].Containers) == 0 && i < len(oldTargets.Targets) && oldTargets.Targets[i].Container != nil {
-			container := *oldTargets.Targets[i].Container
-			record.Targets[i].Containers = []*domain.Container{&container}
-		}
-	}
-	if record.Commander.CellGroup != nil {
-		return record, nil
-	}
 	var legacy struct {
 		Commander struct {
+			CellGroup          *domain.CellGroup
+			Creation           domain.CellCreation
 			Issue              string
 			Project            string
 			Note               string
@@ -50,6 +34,34 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return stateCellRecord{}, err
 	}
+	var oldTargets struct {
+		Targets []struct{ Container *domain.Container }
+	}
+	if err := json.Unmarshal(data, &oldTargets); err != nil {
+		return stateCellRecord{}, err
+	}
+	for i := range record.Targets {
+		if len(record.Targets[i].Containers) == 0 && i < len(oldTargets.Targets) && oldTargets.Targets[i].Container != nil {
+			container := *oldTargets.Targets[i].Container
+			record.Targets[i].Containers = []*domain.Container{&container}
+		}
+	}
+	if record.Group.ID != "" {
+		return record, nil
+	}
+	if legacy.Commander.CellGroup != nil {
+		group, err := domain.RestoreCellGroup(*legacy.Commander.CellGroup)
+		if err != nil {
+			return stateCellRecord{}, err
+		}
+		if legacy.Commander.Creation.Status != "" {
+			group.Creation = legacy.Commander.Creation
+		}
+		record.Group = group
+		record.Commander.CellGroupID = group.ID
+		return record, nil
+	}
+
 	old := legacy.Commander
 	group, err := domain.NewCellGroup(record.Commander.ID, old.Issue, old.Project, old.Template, old.SourceDriver, old.ContainerDriver, old.NotificationDriver)
 	if err != nil {
@@ -59,6 +71,9 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 		if err := group.SetNote(old.Note); err != nil {
 			return stateCellRecord{}, err
 		}
+	}
+	if old.Creation.Status != "" {
+		group.Creation = old.Creation
 	}
 	targetIDs := make(map[string]bool, len(old.Targets))
 	for _, id := range old.Targets {
@@ -70,7 +85,7 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	}
 	for i := range record.Targets {
 		target := &record.Targets[i]
-		if legacy.Targets[i].CommanderID != record.Commander.ID || !targetIDs[target.ID] {
+		if i >= len(legacy.Targets) || legacy.Targets[i].CommanderID != record.Commander.ID || !targetIDs[target.ID] {
 			return stateCellRecord{}, fmt.Errorf("invalid legacy TargetCell membership %q", target.ID)
 		}
 		delete(targetIDs, target.ID)
@@ -78,7 +93,7 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	}
 	for i := range record.Dependencies {
 		dependency := &record.Dependencies[i]
-		if legacy.Dependencies[i].CommanderID != record.Commander.ID || !dependencyIDs[dependency.ID] {
+		if i >= len(legacy.Dependencies) || legacy.Dependencies[i].CommanderID != record.Commander.ID || !dependencyIDs[dependency.ID] {
 			return stateCellRecord{}, fmt.Errorf("invalid legacy DependencyCell membership %q", dependency.ID)
 		}
 		delete(dependencyIDs, dependency.ID)
@@ -87,6 +102,7 @@ func decodeCellRecord(data []byte) (stateCellRecord, error) {
 	if len(targetIDs) != 0 || len(dependencyIDs) != 0 {
 		return stateCellRecord{}, fmt.Errorf("legacy CommanderCell references missing Cells")
 	}
-	record.Commander.CellGroup = &group
+	record.Group = group
+	record.Commander.CellGroupID = group.ID
 	return record, nil
 }

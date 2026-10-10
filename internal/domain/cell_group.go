@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 )
@@ -37,6 +38,36 @@ func NewCellGroup(id, issue, project, template string, source SourceDriverType, 
 	return CellGroup{ID: id, Issue: issue, Project: project, Template: template, SourceDriver: source, ContainerDriver: container, NotificationDriver: validatedNotification, Creation: NewCellCreation()}, nil
 }
 
+func RestoreCellGroup(stored CellGroup) (CellGroup, error) {
+	group, err := NewCellGroup(stored.ID, stored.Issue, stored.Project, stored.Template, stored.SourceDriver, stored.ContainerDriver, stored.NotificationDriver)
+	if err != nil {
+		return CellGroup{}, err
+	}
+	if stored.Note != "" {
+		if err := group.SetNote(stored.Note); err != nil {
+			return CellGroup{}, err
+		}
+	}
+	if stored.Creation.Status == "" {
+		stored.Creation = NewCellCreation()
+	} else {
+		status, err := NewCreationStatus(string(stored.Creation.Status))
+		if err != nil {
+			return CellGroup{}, err
+		}
+		stored.Creation.Status = status
+	}
+	if stored.Creation.FailedStage != "" {
+		stage, err := NewCreationStage(string(stored.Creation.FailedStage))
+		if err != nil {
+			return CellGroup{}, err
+		}
+		stored.Creation.FailedStage = stage
+	}
+	group.Creation = stored.Creation
+	return group, nil
+}
+
 func (c *CellGroup) BeginCreation() {
 	c.Creation = CellCreation{Status: CreationCreating}
 }
@@ -58,6 +89,37 @@ func (c CellGroup) CreationStatus() CreationStatus { return c.Creation.Status }
 
 func (c CellGroup) CreationFailure() (CreationStage, string) {
 	return c.Creation.FailedStage, c.Creation.LastError
+}
+
+func (c CellGroup) Name() CellName { return NewCellName(c.Issue) }
+
+func (c CellGroup) DisplayLabel() string {
+	if c.Note != "" {
+		return c.Note
+	}
+	return c.Name().Value
+}
+
+func (c CellGroup) ResourcePrefix() string {
+	return fmt.Sprintf("paracell-%s-%s", SafeResourceName(c.Project, "project"), c.Name().Value)
+}
+
+func (c CellGroup) ResourceDrivers(workspace WorkspaceDriverType) CellDrivers {
+	return NewCellDrivers(c.SourceDriver, c.ContainerDriver, workspace, c.NotificationDriver)
+}
+
+func (c CellGroup) WorkspaceName() string {
+	return SafeResourceName(c.Project, "project") + "-" + c.Name().Value
+}
+
+func (c CellGroup) WorkspaceResource(workspace Workspace) WorkspaceResource {
+	windows := make([]WorkspaceWindow, len(workspace.Windows))
+	copy(windows, workspace.Windows)
+	return NewWorkspaceResource(c.WorkspaceName(), c.Name().Value, c.Project, c.DisplayLabel(), filepath.Join(".paracell", "cells", c.Name().Value), windows)
+}
+
+func (c CellGroup) SourceWorktreePath(targetName string) string {
+	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
 }
 
 func (c *CellGroup) SetNote(note string) error {

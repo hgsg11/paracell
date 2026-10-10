@@ -104,7 +104,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 			}
 			saved := stored.Commanders[0]
 			if failedStage == "" {
-				if saved.CellGroup.CreationStatus() != domain.CreationReady || !reflect.DeepEqual(commander.Stored(), saved.Stored()) {
+				if stored.Groups[0].CreationStatus() != domain.CreationReady || !reflect.DeepEqual(commander.Stored(), saved.Stored()) {
 					t.Fatalf("returned/persisted commander mismatch: %#v / %#v", commander, saved)
 				}
 				if !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace"}) {
@@ -114,8 +114,8 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 					t.Fatal("container networks not persisted")
 				}
 			} else {
-				stage, message := saved.CellGroup.CreationFailure()
-				if saved.CellGroup.CreationStatus() != domain.CreationFailed || stage != failedStage || message != string(failedStage)+" failed" {
+				stage, message := stored.Groups[0].CreationFailure()
+				if stored.Groups[0].CreationStatus() != domain.CreationFailed || stage != failedStage || message != string(failedStage)+" failed" {
 					t.Fatalf("failure not persisted: %#v", saved)
 				}
 				if failedStage == domain.CreationStageWorkspace && !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace", "clean containers"}) {

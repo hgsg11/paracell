@@ -27,12 +27,34 @@ type CellPort interface {
 // CellSet is a state snapshot of runtime Cells associated by CellGroup ID.
 type CellSet struct {
 	Commanders   []domain.CommanderCell
+	Groups       []domain.CellGroup
 	Targets      []domain.TargetCell
 	Dependencies []domain.DependencyCell
 }
 
-func NewCellSet(commanders []domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) CellSet {
-	return CellSet{Commanders: append([]domain.CommanderCell(nil), commanders...), Targets: append([]domain.TargetCell(nil), targets...), Dependencies: append([]domain.DependencyCell(nil), dependencies...)}
+func NewCellSet(commanders []domain.CommanderCell, groups []domain.CellGroup, targets []domain.TargetCell, dependencies []domain.DependencyCell) CellSet {
+	return CellSet{Commanders: append([]domain.CommanderCell(nil), commanders...), Groups: append([]domain.CellGroup(nil), groups...), Targets: append([]domain.TargetCell(nil), targets...), Dependencies: append([]domain.DependencyCell(nil), dependencies...)}
+}
+
+func (s CellSet) CellGroup(id string) (domain.CellGroup, bool) {
+	for _, group := range s.Groups {
+		if group.ID == id {
+			return group, true
+		}
+	}
+	return domain.CellGroup{}, false
+}
+
+func (s CellSet) FindCommander(identifier string) (domain.CommanderCell, bool) {
+	for _, cell := range s.Commanders {
+		if cell.ID == identifier || cell.CellGroupID == identifier {
+			return cell, true
+		}
+		if group, ok := s.CellGroup(cell.CellGroupID); ok && group.Issue == identifier {
+			return cell, true
+		}
+	}
+	return domain.CommanderCell{}, false
 }
 
 type SourcePort interface {

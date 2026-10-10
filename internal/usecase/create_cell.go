@@ -42,7 +42,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
-	if err := domain.EnsureCommanderCellUnique(current.Commanders, input.Issue, name); err != nil {
+	if err := domain.EnsureUniqueCellGroupIssueService(current.Groups, input.Issue); err != nil {
 		return domain.CommanderCell{}, err
 	}
 	group, err := domain.NewCellGroup(u.IDs.NewID(), input.Issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
@@ -54,7 +54,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 			return domain.CommanderCell{}, err
 		}
 	}
-	commander, targets, dependencies, err := domain.InstantiateCellsService(&group, *resolved.Commander, resolved.Targets, resolved.Dependencies, cfg.WorkspaceDriverType, commanderID, u.IDs)
+	commander, targets, dependencies, err := domain.InstantiateCellsService(group.ID, group.Issue, *resolved.Commander, resolved.Targets, resolved.Dependencies, cfg.WorkspaceDriverType, commanderID, u.IDs)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
@@ -70,19 +70,19 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
-	commander.CellGroup.BeginCreation()
-	cellSet := NewCellSet(append(current.Commanders, commander), append(current.Targets, targets...), append(current.Dependencies, dependencies...))
+	group.BeginCreation()
+	cellSet := NewCellSet(append(current.Commanders, commander), append(current.Groups, group), append(current.Targets, targets...), append(current.Dependencies, dependencies...))
 	if err := u.Cells.UpdateCells(ctx, func(latest CellSet) (CellSet, error) {
-		if err := domain.EnsureCommanderCellUnique(latest.Commanders, input.Issue, name); err != nil {
+		if err := domain.EnsureUniqueCellGroupIssueService(latest.Groups, input.Issue); err != nil {
 			return CellSet{}, err
 		}
-		return NewCellSet(append(latest.Commanders, commander), append(latest.Targets, targets...), append(latest.Dependencies, dependencies...)), nil
+		return NewCellSet(append(latest.Commanders, commander), append(latest.Groups, group), append(latest.Targets, targets...), append(latest.Dependencies, dependencies...)), nil
 	}); err != nil {
 		return domain.CommanderCell{}, err
 	}
 	runner := cellCreationRunner{
 		Cells: u.Cells, Source: source, Containers: containers, Workspace: workspace,
-		Commander: &commander, Targets: targets, Dependencies: dependencies,
+		Commander: &commander, Group: &group, Targets: targets, Dependencies: dependencies,
 		ContainerTemplates: containerTemplates(resolved.Targets),
 	}
 	if err := runner.run(ctx, &cellSet); err != nil {
@@ -107,6 +107,7 @@ type cellCreationRunner struct {
 	Containers         ContainerPort
 	Workspace          WorkspacePort
 	Commander          *domain.CommanderCell
+	Group              *domain.CellGroup
 	Targets            []domain.TargetCell
 	Dependencies       []domain.DependencyCell
 	ContainerTemplates map[string]domain.ContainerTemplate
@@ -126,7 +127,7 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 					return r.fail(ctx, cells, stage, err)
 				}
 			}
-			r.Commander.CellGroup.FinishCreation()
+			r.Group.FinishCreation()
 		}
 		saveCtx := ctx
 		if stage == domain.CreationStageWorkspace && r.BeforeTerminal != nil {
@@ -144,14 +145,14 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		for _, resource := range domain.BuildSourceResourcesService(*r.Commander, r.Targets) {
+		for _, resource := range domain.BuildSourceResourcesService(*r.Group, r.Targets) {
 			if err := r.Source.CreateSource(ctx, resource); err != nil {
 				return err
 			}
 		}
 		return nil
 	case domain.CreationStageContainers:
-		resources := domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, r.ContainerTemplates)
+		resources := domain.BuildContainerResourcesService(*r.Group, r.Targets, r.Dependencies, r.ContainerTemplates)
 		networks, err := r.Containers.CreateContainers(ctx, resources)
 		if err != nil {
 			return err
@@ -167,31 +168,31 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 		}
 		return nil
 	case domain.CreationStageWorkspace:
-		return r.Workspace.CreateWorkspace(ctx, r.Commander.WorkspaceResource())
+		return r.Workspace.CreateWorkspace(ctx, r.Group.WorkspaceResource(r.Commander.Workspace))
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}
 }
 
 func (r cellCreationRunner) rollbackContainers(ctx context.Context, failedStage domain.CreationStage) error {
-	if failedStage != domain.CreationStageWorkspace || r.Commander.ResourceDrivers().Container != domain.Docker {
+	if failedStage != domain.CreationStageWorkspace || r.Group.ContainerDriver != domain.Docker {
 		return nil
 	}
-	return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
+	return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Group, r.Targets, r.Dependencies, nil)))
 }
 
 func (r cellCreationRunner) cleanupUnpersistedStage(ctx context.Context, stage domain.CreationStage) error {
 	if stage == domain.CreationStageWorkspace {
-		return ignoreNotFound(r.Workspace.CleanWorkspace(ctx, r.Commander.WorkspaceResource()))
+		return ignoreNotFound(r.Workspace.CleanWorkspace(ctx, r.Group.WorkspaceResource(r.Commander.Workspace)))
 	}
 	if stage == domain.CreationStageContainers {
-		return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Commander, r.Targets, r.Dependencies, nil)))
+		return ignoreNotFound(r.Containers.CleanContainers(ctx, domain.BuildContainerResourcesService(*r.Group, r.Targets, r.Dependencies, nil)))
 	}
 	return nil
 }
 
 func (r cellCreationRunner) fail(ctx context.Context, cells *CellSet, stage domain.CreationStage, createErr error) error {
-	r.Commander.CellGroup.FailCreation(stage, createErr)
+	r.Group.FailCreation(stage, createErr)
 	if err := r.save(context.WithoutCancel(ctx), cells); err != nil {
 		return errors.Join(createErr, fmt.Errorf("save failed CommanderCell: %w", err))
 	}
@@ -203,20 +204,26 @@ func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
 		for index := range latest.Commanders {
 			if latest.Commanders[index].ID == r.Commander.ID {
 				latest.Commanders[index] = r.Commander.Clone()
+				for groupIndex := range latest.Groups {
+					if latest.Groups[groupIndex].ID == r.Group.ID {
+						latest.Groups[groupIndex] = *r.Group
+						break
+					}
+				}
 				for childIndex := range latest.Targets {
-					if latest.Targets[childIndex].CellGroupID == r.Commander.CellGroup.ID {
+					if latest.Targets[childIndex].CellGroupID == r.Group.ID {
 						latest.Targets[childIndex] = targetByID(r.Targets, latest.Targets[childIndex].ID)
 					}
 				}
 				for childIndex := range latest.Dependencies {
-					if latest.Dependencies[childIndex].CellGroupID == r.Commander.CellGroup.ID {
+					if latest.Dependencies[childIndex].CellGroupID == r.Group.ID {
 						latest.Dependencies[childIndex] = dependencyByID(r.Dependencies, latest.Dependencies[childIndex].ID)
 					}
 				}
-				return latest, nil
+				return NewCellSet(latest.Commanders, latest.Groups, latest.Targets, latest.Dependencies), nil
 			}
 		}
-		return CellSet{}, fmt.Errorf("CommanderCell %q not found", r.Commander.Name().Value)
+		return CellSet{}, fmt.Errorf("CommanderCell %q not found", r.Group.Name().Value)
 	}); err != nil {
 		return err
 	}
@@ -228,7 +235,7 @@ func (r cellCreationRunner) save(ctx context.Context, cells *CellSet) error {
 	}
 	commander, ok := domain.ResolveCommanderCell(stored.Commanders, r.Commander.ID)
 	if !ok {
-		return fmt.Errorf("CommanderCell %q not found", r.Commander.Name().Value)
+		return fmt.Errorf("CommanderCell %q not found", r.Commander.ID)
 	}
 	*r.Commander = commander
 	*cells = stored

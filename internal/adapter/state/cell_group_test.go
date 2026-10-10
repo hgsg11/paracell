@@ -18,23 +18,44 @@ func TestCellGroupRoundTripAndRejectedUpdateIsolation(t *testing.T) {
 	commander := persistedTestCell(t)
 	source, _ := domain.NewSource(".", "main", "feat/42")
 	container, _ := domain.NewContainer([]string{"original"}, "postgres", domain.Dependency)
-	dependency, _ := domain.NewDependencyCell("db", commander.CellGroup.ID, "database", container)
-	target, _ := domain.NewTargetCell("api", commander.CellGroup.ID, "api", &source, nil)
-	want := usecase.NewCellSet([]domain.CommanderCell{commander}, []domain.TargetCell{target}, []domain.DependencyCell{dependency})
+	group := persistedTestGroup(t)
+	dependency, _ := domain.NewDependencyCell("db", group.ID, "database", container)
+	target, _ := domain.NewTargetCell("api", group.ID, "api", &source, nil)
+	want := usecase.NewCellSet([]domain.CommanderCell{commander}, []domain.CellGroup{group}, []domain.TargetCell{target}, []domain.DependencyCell{dependency})
 	if err := adapter.UpdateCells(ctx, func(usecase.CellSet) (usecase.CellSet, error) { return want, nil }); err != nil {
 		t.Fatal(err)
+	}
+	var data []byte
+	db, err := adapter.open(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.QueryRowContext(ctx, "SELECT record FROM cells").Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	var record map[string]json.RawMessage
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	var commanderRecord map[string]json.RawMessage
+	if err := json.Unmarshal(record["commander"], &commanderRecord); err != nil {
+		t.Fatal(err)
+	}
+	if len(commanderRecord["cellGroupId"]) == 0 || len(commanderRecord["cellGroup"]) != 0 || len(commanderRecord["creation"]) != 0 || len(record["cellGroup"]) == 0 {
+		t.Fatalf("CellGroup was not stored independently: %s", data)
 	}
 	got, err := adapter.LoadCells(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, dependencies := domain.SelectCellGroupMembersService(got.Commanders[0].CellGroup.ID, got.Targets, got.Dependencies)
-	if len(targets) != 1 || len(dependencies) != 1 || got.Commanders[0].CellGroup.ID == got.Commanders[0].ID {
+	targets, dependencies := domain.SelectCellGroupMembersService(got.Groups[0].ID, got.Targets, got.Dependencies)
+	if len(targets) != 1 || len(dependencies) != 1 || got.Commanders[0].CellGroupID == got.Commanders[0].ID {
 		t.Fatalf("group associations were not preserved: %#v", got)
 	}
 	rejected := errors.New("reject")
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
-		if err := set.Commanders[0].CellGroup.SetNote("not saved"); err != nil {
+		if err := set.Groups[0].SetNote("not saved"); err != nil {
 			t.Fatal(err)
 		}
 		return set, rejected
@@ -42,7 +63,7 @@ func TestCellGroupRoundTripAndRejectedUpdateIsolation(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 	got, err = adapter.LoadCells(ctx)
-	if err != nil || got.Commanders[0].CellGroup.Note != "" {
+	if err != nil || got.Groups[0].Note != "" {
 		t.Fatalf("rejected note persisted: %#v, %v", got, err)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
@@ -108,14 +129,14 @@ func TestLegacyCommanderRecordLoadsAndUpdatesAsCellGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	cell := set.Commanders[0]
-	if cell.CellGroup.ID != "old" || cell.CellGroup.Note != "old note" || cell.Version != 3 || cell.Status != domain.Pending || !cell.Done || cell.Workspace.Windows[0].Command != "codex implement" {
+	if cell.CellGroupID != "old" || set.Groups[0].Note != "old note" || cell.Version != 3 || cell.Status != domain.Pending || !cell.Done || cell.Workspace.Windows[0].Command != "codex implement" {
 		t.Fatalf("legacy runtime information changed: %#v", cell)
 	}
 	if set.Targets[0].CellGroupID != "old" || set.Dependencies[0].CellGroupID != "old" || set.Dependencies[0].Container.Network[0] != "original" {
 		t.Fatalf("legacy membership/resources changed: %#v", set)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
-		return set, set.Commanders[0].CellGroup.SetNote("new note")
+		return set, set.Groups[0].SetNote("new note")
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +148,7 @@ func TestLegacyCommanderRecordLoadsAndUpdatesAsCellGroup(t *testing.T) {
 		t.Fatalf("not rewritten: %s", data)
 	}
 	set, err = adapter.LoadCells(ctx)
-	if err != nil || set.Commanders[0].CellGroup.Note != "new note" || set.Commanders[0].Version != 4 {
+	if err != nil || set.Groups[0].Note != "new note" || set.Commanders[0].Version != 4 {
 		t.Fatalf("updated group = %#v, error = %v", set, err)
 	}
 }
@@ -149,12 +170,12 @@ func TestDeleteCellGroupPreservesOtherGroups(t *testing.T) {
 	adapter := NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
 	first := persistedTestCell(t)
 	group, _ := domain.NewCellGroup("another-group", "43", "sample", "feat", domain.Git, domain.None, domain.NoNotification)
-	second, _ := domain.NewCommanderCell("another-commander", &group, domain.NewWorkspace(domain.Tmux, nil))
-	if err := adapter.SaveCells(ctx, []domain.CommanderCell{first, second}); err != nil {
+	second, _ := domain.NewCommanderCell("another-commander", group.ID, domain.NewWorkspace(domain.Tmux, nil))
+	if err := adapter.SaveCells(ctx, usecase.NewCellSet([]domain.CommanderCell{first, second}, []domain.CellGroup{persistedTestGroup(t), group}, nil, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
-		return usecase.NewCellSet(set.Commanders[1:], nil, nil), nil
+		return usecase.NewCellSet(set.Commanders[1:], set.Groups[1:], nil, nil), nil
 	}); err != nil {
 		t.Fatal(err)
 	}

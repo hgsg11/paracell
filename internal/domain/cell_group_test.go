@@ -7,12 +7,12 @@ func TestCellGroupPreservesNotificationDefaultAndValidatesIdentity(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	commander, err := NewCommanderCell("commander", &group, NewWorkspace(Tmux, nil))
+	commander, err := NewCommanderCell("commander", group.ID, NewWorkspace(Tmux, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if commander.ResourceDrivers().Notification != NoNotification {
-		t.Fatalf("notification driver = %q", commander.ResourceDrivers().Notification)
+	if group.ResourceDrivers(commander.Workspace.Driver).Notification != NoNotification {
+		t.Fatalf("notification driver = %q", group.ResourceDrivers(commander.Workspace.Driver).Notification)
 	}
 	for _, input := range [][3]string{{"", "118", "feat"}, {"group", "", "feat"}, {"group", "118", ""}} {
 		if _, err := NewCellGroup(input[0], input[1], "sample", input[2], Git, None, NoNotification); err == nil {
@@ -21,17 +21,11 @@ func TestCellGroupPreservesNotificationDefaultAndValidatesIdentity(t *testing.T)
 	}
 }
 
-func TestCommanderCloneIsolatesGroupNote(t *testing.T) {
+func TestCommanderStoresCellGroupID(t *testing.T) {
 	group, _ := NewCellGroup("group", "118", "sample", "feat", Git, None, NoNotification)
-	cell, _ := NewCommanderCell("commander", &group, NewWorkspace(Tmux, nil))
+	cell, _ := NewCommanderCell("commander", group.ID, NewWorkspace(Tmux, nil))
 	clone := cell.Clone()
-	if err := clone.CellGroup.SetNote(" API\t実装 "); err != nil {
-		t.Fatal(err)
-	}
-	if label, template := clone.ListLabels(); label != "API 実装" || template != "feat" {
-		t.Fatalf("labels = %q, %q", label, template)
-	}
-	if cell.DisplayLabel() != "118" {
-		t.Fatal("updating the snapshot changed the original group")
+	if clone.CellGroupID != group.ID || cell.CellGroupID != group.ID {
+		t.Fatalf("CellGroup references = %q and %q, want %q", clone.CellGroupID, cell.CellGroupID, group.ID)
 	}
 }

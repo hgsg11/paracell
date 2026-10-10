@@ -20,18 +20,23 @@ type AnnotateCellUseCase struct {
 
 func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.CommanderCell, error) {
 	var updated domain.CommanderCell
+	var updatedGroup domain.CellGroup
 	if err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
-		for i, cell := range cells.Commanders {
-			if cell.Matches(input.Cell) {
-				if err := cell.CellGroup.SetNote(input.Note); err != nil {
+		cell, ok := cells.FindCommander(input.Cell)
+		if !ok {
+			return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
+		}
+		for i := range cells.Groups {
+			if cells.Groups[i].ID == cell.CellGroupID {
+				if err := cells.Groups[i].SetNote(input.Note); err != nil {
 					return CellSet{}, err
 				}
-				cells.Commanders[i] = cell
+				updatedGroup = cells.Groups[i]
 				updated = cell
 				return cells, nil
 			}
 		}
-		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
+		return CellSet{}, fmt.Errorf("CellGroup %q not found", cell.CellGroupID)
 	}); err != nil {
 		return domain.CommanderCell{}, err
 	}
@@ -42,11 +47,11 @@ func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInpu
 	if u.WorkspaceFactory == nil {
 		return updated, nil
 	}
-	session, err := u.WorkspaceFactory.Workspace(updated.ResourceDrivers().Workspace)
+	session, err := u.WorkspaceFactory.Workspace(updatedGroup.ResourceDrivers(updated.Workspace.Driver).Workspace)
 	if err != nil {
 		return updated, err
 	}
-	if err := session.UpdateStatusLabel(ctx, updated.WorkspaceResource()); err != nil {
+	if err := session.UpdateStatusLabel(ctx, updatedGroup.WorkspaceResource(updated.Workspace)); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}
