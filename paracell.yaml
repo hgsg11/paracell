@@ -1,32 +1,23 @@
 project:
-    name: "paracell"
+    name: ""
 providers:
     source: git
+    container: none
     workspace: tmux
     notifications: tmux
 prefixes:
     feat: feat/
     fix: fix/
 templates:
-    feat:
+    paracell:
         commanderCell:
             name: workspace
             workspace:
                 windows:
-                    - name: takt
-                      command: 'codex "{{.Command}}"'
+                    - name: agent
+                      command: codex
         targets:
             repository:
                 source:
-                    base: origin/main
-    fix:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows:
-                    - name: takt
-                      command: 'codex "{{.Command}}"'
-        targets:
-            repository:
-                source:
-                    base: origin/main
+                    path: .
+                    base: main
