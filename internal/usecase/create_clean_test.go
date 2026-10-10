@@ -18,7 +18,7 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
+	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CellGroup.CreationStatus() != domain.CreationReady {
 		t.Fatalf("cell = %#v", cell)
 	}
 	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
@@ -48,8 +48,8 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if len(ports.cells.Commanders) != 1 {
 		t.Fatalf("commanders = %d", len(ports.cells.Commanders))
 	}
-	failedStage, _ := ports.cells.Commanders[0].CreationFailure()
-	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
+	failedStage, _ := ports.cells.Commanders[0].CellGroup.CreationFailure()
+	if ports.cells.Commanders[0].CellGroup.CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
 		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
 	}
 	for _, resource := range domain.BuildSourceResourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
@@ -235,17 +235,15 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if first.CellGroup.ID == first.ID || first.CellGroup.ID == second.CellGroup.ID || len(targets) != 2 || len(dependencies) != 1 {
 		t.Fatalf("invalid grouping: %#v, %#v", first, ports.cells)
 	}
-	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CreationStatus() != domain.CreationReady {
+	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CellGroup.CreationStatus() != domain.CreationReady {
 		t.Fatalf("commands/status/note not preserved: %#v", first)
 	}
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
-		t.Fatal(err)
-	}
+	ports.cells.Commanders[0].ToggleDone()
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroup.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if len(ports.cells.Commanders) != 1 || !ports.cells.Commanders[0].SameIdentity(second) || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
+	if len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
 		t.Fatalf("wrong group deleted: %#v", ports.cells)
 	}
 	if len(ports.cleanedSources) != 2 {

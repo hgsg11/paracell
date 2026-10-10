@@ -159,7 +159,7 @@ func TestDeleteCellGroupPreservesOtherGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := adapter.LoadCells(ctx)
-	if err != nil || len(got.Commanders) != 1 || !got.Commanders[0].SameIdentity(second) {
+	if err != nil || len(got.Commanders) != 1 || got.Commanders[0].ID != second.ID {
 		t.Fatalf("remaining groups = %#v, %v", got, err)
 	}
 }

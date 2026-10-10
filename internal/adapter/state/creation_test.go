@@ -104,7 +104,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 			}
 			saved := stored.Commanders[0]
 			if failedStage == "" {
-				if saved.CreationStatus() != domain.CreationReady || !reflect.DeepEqual(commander.Stored(), saved.Stored()) {
+				if saved.CellGroup.CreationStatus() != domain.CreationReady || !reflect.DeepEqual(commander.Stored(), saved.Stored()) {
 					t.Fatalf("returned/persisted commander mismatch: %#v / %#v", commander, saved)
 				}
 				if !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace"}) {
@@ -114,8 +114,8 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 					t.Fatal("container networks not persisted")
 				}
 			} else {
-				stage, message := saved.CreationFailure()
-				if saved.CreationStatus() != domain.CreationFailed || stage != failedStage || message != string(failedStage)+" failed" {
+				stage, message := saved.CellGroup.CreationFailure()
+				if saved.CellGroup.CreationStatus() != domain.CreationFailed || stage != failedStage || message != string(failedStage)+" failed" {
 					t.Fatalf("failure not persisted: %#v", saved)
 				}
 				if failedStage == domain.CreationStageWorkspace && !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace", "clean containers"}) {
@@ -123,7 +123,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 				}
 			}
 			// Both completed and failed groups remain cleanable through the normal use case.
-			if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) { return set, set.Commanders[0].MarkDone() }); err != nil {
+			if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) { set.Commanders[0].ToggleDone(); return set, nil }); err != nil {
 				t.Fatal(err)
 			}
 			clean := usecase.CleanCellUseCase{Cells: adapter, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}

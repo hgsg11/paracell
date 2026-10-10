@@ -129,7 +129,8 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		func() error { return nil },
 		func(cell domain.CommanderCell) error { return nil },
 		func(cell domain.CommanderCell) (domain.CommanderCell, error) {
-			return cell, cell.MarkDone()
+			cell.ToggleDone()
+			return cell, nil
 		},
 		nil,
 	)

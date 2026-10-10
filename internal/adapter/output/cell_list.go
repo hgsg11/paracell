@@ -12,16 +12,16 @@ func FormatCellList(cells []domain.CommanderCell) string {
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
 		label, templateName := cell.ListLabels()
-		creationStatus := cell.CreationStatus()
+		creationStatus := cell.CellGroup.CreationStatus()
 		status := domain.Ready
-		if cell.HasStatus(domain.Pending) {
+		if cell.Status == domain.Pending {
 			status = domain.Pending
 		}
 		done := cell.EnsureCanBeCleaned() == nil
 		failedStage := "-"
 		lastError := "-"
 		if creationStatus == domain.CreationFailed {
-			stage, message := cell.CreationFailure()
+			stage, message := cell.CellGroup.CreationFailure()
 			failedStage = string(stage)
 			lastError = singleLine(message, 120)
 		}
