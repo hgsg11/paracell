@@ -42,13 +42,15 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if cfg.NotificationDriverType != domain.TmuxNotification {
 		t.Fatalf("providers.notifications = %q, want %q", cfg.NotificationDriverType, domain.TmuxNotification)
 	}
-	if len(cfg.Templates) != 4 {
-		t.Fatalf("templates length = %d, want 4", len(cfg.Templates))
+	if len(cfg.Templates) != 1 {
+		t.Fatalf("templates length = %d, want 1", len(cfg.Templates))
 	}
-	for _, template := range cfg.Templates {
-		if template.Commander == nil || len(template.Targets) != 1 || template.Targets[0].Source == nil || template.Targets[0].Source.Base != "main" {
-			t.Fatalf("template = %#v", template)
-		}
+	template := cfg.Templates[0]
+	if template.Name != "example" {
+		t.Fatalf("template name = %q, want example", template.Name)
+	}
+	if template.Commander == nil || len(template.Targets) != 1 || template.Targets[0].Name != "repository" || template.Targets[0].Source == nil || template.Targets[0].Source.Base != "main" {
+		t.Fatalf("template = %#v", template)
 	}
 	if cfg.Prefixes[domain.FeatPrefix] != "feat/" || cfg.Prefixes[domain.FixPrefix] != "fix/" {
 		t.Fatalf("prefixes = %#v", cfg.Prefixes)
