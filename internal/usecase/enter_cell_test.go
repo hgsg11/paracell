@@ -11,9 +11,10 @@ func TestEnterCellはWorkspaceにEnterを依頼する(t *testing.T) {
 	ports := newFakePorts()
 	cell := newUsecaseTestCell(t, "cell-1", "123", "webapp")
 
-	uc := EnterCellUseCase{WorkspaceFactory: ports}
+	ports.cells = newUsecaseTestSet(t, "cell-1", "123", "webapp")
+	uc := EnterCellUseCase{Cells: ports, WorkspaceFactory: ports}
 
-	got, err := uc.Execute(ctx, EnterCellInput{Cell: cell})
+	got, err := uc.Execute(ctx, EnterCellInput{Cell: cell.CellGroupID})
 	if err != nil {
 		t.Fatalf("EnterCellでエラーが返った: %v", err)
 	}

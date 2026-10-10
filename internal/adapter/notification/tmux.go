@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"os"
 	"strings"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -17,14 +18,28 @@ func (n TmuxNotifier) NotifyReady(ctx context.Context, sessionName string, messa
 	if message == "" {
 		return nil
 	}
-	clients, err := n.Runner.Output(ctx, "tmux", "list-clients", "-t", sessionName, "-F", "#{client_tty}")
-	if err != nil {
-		return err
+	args := []string{"display-message"}
+	if client := n.targetClient(ctx, sessionName); client != "" {
+		args = append(args, "-c", client)
 	}
-	for _, client := range strings.Fields(clients) {
-		if err := n.Runner.Run(ctx, "tmux", "display-message", "-c", client, message); err != nil {
-			return err
+	args = append(args, message)
+	return n.Runner.Run(ctx, "tmux", args...)
+}
+
+func (n TmuxNotifier) targetClient(ctx context.Context, sessionName string) string {
+	if os.Getenv("TMUX") != "" {
+		client, err := n.Runner.Output(ctx, "tmux", "display-message", "-p", "#{client_tty}")
+		if err == nil {
+			return strings.TrimSpace(client)
 		}
 	}
-	return nil
+	client, err := n.Runner.Output(ctx, "tmux", "list-clients", "-t", sessionName, "-F", "#{client_tty}")
+	if err != nil {
+		return ""
+	}
+	lines := strings.Split(client, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(lines[0])
 }

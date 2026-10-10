@@ -24,12 +24,10 @@ import (
 
 var (
 	runView  = viewadapter.Run
-	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) error {
+	runEnter = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) error {
 		_ = cfg
-		uc := usecase.EnterCellUseCase{
-			WorkspaceFactory: factory,
-		}
-		_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell})
+		uc := usecase.EnterCellUseCase{Cells: cells, WorkspaceFactory: factory}
+		_, err := uc.Execute(ctx, usecase.EnterCellInput{Cell: cell.CellGroupID})
 		return err
 	}
 	runEnterRoot = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory) error {
@@ -48,15 +46,23 @@ var (
 	}
 	runMarkDone = func(ctx context.Context, cells usecase.CellPort, cell domain.CommanderCell) (domain.CommanderCell, error) {
 		uc := usecase.MarkCellDoneUseCase{Cells: cells}
-		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.Name().Value})
+		return uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cell.CellGroupID})
 	}
 	runSetStatus = func(ctx context.Context, cells usecase.CellPort, notifications usecase.NotificationProviderFactory, cellName string, status domain.CellStatus) (domain.CommanderCell, error) {
 		uc := usecase.SetCellStatusUseCase{Cells: cells, NotificationFactory: notifications}
 		return uc.Execute(ctx, usecase.SetCellStatusInput{Cell: cellName, Status: status})
 	}
-	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cell domain.CommanderCell) (*exec.Cmd, error) {
+	runEnterCmd = func(ctx context.Context, cfg usecase.ConfigPort, factory usecase.WorkspaceProviderFactory, cells usecase.CellPort, cell domain.CommanderCell) (*exec.Cmd, error) {
 		_ = cfg
-		driver := cell.ResourceDrivers().Workspace
+		set, err := cells.LoadCells(ctx)
+		if err != nil {
+			return nil, err
+		}
+		group, ok := set.CellGroup(cell.CellGroupID)
+		if !ok {
+			return nil, fmt.Errorf("CellGroup %q not found", cell.CellGroupID)
+		}
+		driver := group.ResourceDrivers(cell.Workspace.Driver).Workspace
 		if driver != domain.Tmux {
 			return nil, fmt.Errorf("unsupported session driver %q", driver)
 		}
@@ -64,13 +70,13 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		if err := session.PrepareWorkspace(ctx, cell.WorkspaceResource()); err != nil {
+		if err := session.PrepareWorkspace(ctx, group.WorkspaceResource(cell.Workspace)); err != nil {
 			return nil, err
 		}
 		if os.Getenv("TMUX") != "" {
-			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", cell.WorkspaceName()), nil
+			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", group.WorkspaceName()), nil
 		}
-		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.WorkspaceName()), nil
+		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", group.WorkspaceName()), nil
 	}
 	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, command string, note *string, root string) (domain.CommanderCell, error) {
 		uc := usecase.ForkCellUseCase{
@@ -93,7 +99,7 @@ var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.
 		ContainerFactory: container,
 		WorkspaceFactory: session,
 	}
-	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.Name().Value})
+	return uc.Execute(ctx, usecase.CleanCellInput{Cell: cell.CellGroupID})
 }
 
 type CommandKind string
@@ -323,11 +329,10 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		_, err = runView(viewContext, cells, names, os.Getenv("PARACELL_CELL"), func() ([]domain.CommanderCell, error) {
-			loaded, err := cellsAdapter.LoadCells(ctx)
-			return loaded.Commanders, err
+		_, err = runView(viewContext, cells, names, os.Getenv("PARACELL_CELL"), func() (usecase.CellSet, error) {
+			return cellsAdapter.LoadCells(ctx)
 		}, func(cell domain.CommanderCell) tea.Cmd {
-			cmd, err := runEnterCmd(ctx, configAdapter, provider.NewFactory(viewRunner, workdir), cell)
+			cmd, err := runEnterCmd(ctx, configAdapter, provider.NewFactory(viewRunner, workdir), cellsAdapter, cell)
 			if err != nil {
 				return viewadapter.EnterFailureCmd(cell, err)
 			}

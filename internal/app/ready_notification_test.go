@@ -38,16 +38,17 @@ func TestReadyTerminalNotifier(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cell, err := domain.NewCommanderCell("cell-1", &group, domain.NewWorkspace(domain.Tmux, nil))
+			cell, err := domain.NewCommanderCell("cell-1", group.ID, domain.NewWorkspace(domain.Tmux, nil))
 			if err != nil {
 				t.Fatal(err)
 			}
+			appTestGroups[group.ID] = &group
 			// Shell metacharacters must remain part of the single message argument.
-			if err := cell.CellGroup.SetNote("done; $(echo unsafe)"); err != nil {
+			if err := group.SetNote("done; $(echo unsafe)"); err != nil {
 				t.Fatal(err)
 			}
 			store := state.NewSQLiteCellAdapter(filepath.Join(dir, ".paracell", "state.db"))
-			if err := store.SaveCells(context.Background(), []domain.CommanderCell{cell}); err != nil {
+			if err := store.SaveCells(context.Background(), appTestSet(cell)); err != nil {
 				t.Fatal(err)
 			}
 			err = Run(context.Background(), []string{"ready"}, dir)
@@ -68,7 +69,7 @@ func TestReadyTerminalNotifier(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := "call\n-message\nReady: " + cell.Name().Value + "\n"
+				want := "call\n-message\nReady: " + group.Name().Value + "\n"
 				if string(got) != want {
 					t.Fatalf("calls = %q, want %q", got, want)
 				}

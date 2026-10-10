@@ -15,14 +15,15 @@ func TestAnnotateCellはIDIssueNameでNoteを設定上書きする(t *testing.T)
 		t.Run(selector, func(t *testing.T) {
 			ports := newFakePorts()
 			cell := newUsecaseTestCell(t, "cell-1", "123", "feat")
-			_ = cell.CellGroup.SetNote("旧案")
-			ports.cells = NewCellSet([]domain.CommanderCell{cell}, nil, nil)
-			updated, err := (AnnotateCellUseCase{Cells: ports, WorkspaceFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: selector, Note: "  API\t実装\n中 "})
+			group := newUsecaseTestGroup(t, "cell-1", "123", "feat")
+			_ = group.SetNote("旧案")
+			ports.cells = NewCellSet([]domain.CommanderCell{cell}, []domain.CellGroup{group}, nil, nil)
+			_, err := (AnnotateCellUseCase{Cells: ports, WorkspaceFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: selector, Note: "  API\t実装\n中 "})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if updated.CellGroup.Note != "API 実装 中" || ports.cells.Commanders[0].CellGroup.Note != "API 実装 中" {
-				t.Fatalf("updated note = %q, stored = %q", updated.CellGroup.Note, ports.cells.Commanders[0].CellGroup.Note)
+			if ports.cells.Groups[0].Note != "API 実装 中" {
+				t.Fatalf("updated note = %q, stored = %q", ports.cells.Groups[0].Note, ports.cells.Groups[0].Note)
 			}
 			if got := ports.calls[len(ports.calls)-1]; got != "workspace:label:API 実装 中" {
 				t.Fatalf("last call = %q", got)
@@ -33,23 +34,23 @@ func TestAnnotateCellはIDIssueNameでNoteを設定上書きする(t *testing.T)
 
 func TestAnnotateCellはWorkspaceなしを成功扱いにする(t *testing.T) {
 	ports := newFakePorts()
-	ports.cells = NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil)
+	ports.cells = newUsecaseTestSet(t, "cell-1", "123", "feat")
 	ports.updateStatusLabelErr = domain.ErrNotFound
 	updated, err := (AnnotateCellUseCase{Cells: ports, WorkspaceFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
-	if err != nil || updated.CellGroup.Note != "検証中" || ports.cells.Commanders[0].CellGroup.Note != "検証中" {
+	if err != nil || ports.cells.Groups[0].Note != "検証中" {
 		t.Fatalf("updated = %#v, stored = %#v, error = %v", updated, ports.cells, err)
 	}
 }
 
 func TestAnnotateCellはStatus更新失敗時に保存済みと伝える(t *testing.T) {
 	ports := newFakePorts()
-	ports.cells = NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil)
+	ports.cells = newUsecaseTestSet(t, "cell-1", "123", "feat")
 	ports.updateStatusLabelErr = errors.New("tmux unavailable")
 	updated, err := (AnnotateCellUseCase{Cells: ports, WorkspaceFactory: ports}).Execute(context.Background(), AnnotateCellInput{Cell: "123", Note: "検証中"})
 	if err == nil || !strings.Contains(err.Error(), "cell note was saved") {
 		t.Fatalf("error = %v", err)
 	}
-	if updated.CellGroup.Note != "検証中" || ports.cells.Commanders[0].CellGroup.Note != "検証中" {
+	if ports.cells.Groups[0].Note != "検証中" {
 		t.Fatalf("note was not preserved: updated=%#v stored=%#v", updated, ports.cells)
 	}
 }
@@ -61,7 +62,7 @@ func TestAnnotateCellは不正Noteと存在しないCellを保存しない(t *te
 		{Cell: "missing", Note: "検証中"},
 	} {
 		ports := newFakePorts()
-		ports.cells = NewCellSet([]domain.CommanderCell{newUsecaseTestCell(t, "cell-1", "123", "feat")}, nil, nil)
+		ports.cells = newUsecaseTestSet(t, "cell-1", "123", "feat")
 		_, err := (AnnotateCellUseCase{Cells: ports, WorkspaceFactory: ports}).Execute(context.Background(), input)
 		if err == nil {
 			t.Fatalf("input %#v returned no error", input)

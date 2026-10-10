@@ -131,19 +131,6 @@ func TestUpdateStatusLabelはNoteを優先しWorkspaceなしを識別する(t *t
 	}
 }
 
-func TestUpdateStatusLabelは既存window名から繰り返されたlabelを除く(t *testing.T) {
-	const target = "paracell-myapp-123"
-	runner := &fakeRunner{outputs: map[string]string{
-		"tmux list-windows -t " + target + " -F #{window_id}\t#{window_name}": "%9\tnote:note:note:editor\n",
-	}}
-	if err := (TmuxAdapter{Runner: runner}).UpdateStatusLabel(context.Background(), cellWorkspaceResource("note", nil)); err != nil {
-		t.Fatalf("UpdateStatusLabelでエラーが返った: %v", err)
-	}
-	if !containsCall(runner.calls, "tmux rename-window -t %9 editor") {
-		t.Fatalf("繰り返されたprefixを除くrenameがない: calls = %#v", runner.calls)
-	}
-}
-
 func TestPrepareWorkspaceはNoteをStatusLabelへ反映する(t *testing.T) {
 	for _, note := range []string{"API実装中", "root", ""} {
 		t.Run(note, func(t *testing.T) {
@@ -218,26 +205,6 @@ func TestConfigureWorkspaceは時刻表示を重複追加しない(t *testing.T)
 	}
 }
 
-func TestConfigureWorkspaceはwindow名から重複したstatusLabelを除く(t *testing.T) {
-	const target = "paracell-myapp-123"
-	runner := &fakeRunner{outputs: map[string]string{
-		"tmux show-option -v -t " + target + " status-right":                  paracellClockFormat + "\n",
-		"tmux list-windows -t " + target + " -F #{window_id}\t#{window_name}": "%9\tnote:editor\n%10\tserver\n",
-	}}
-	if err := (TmuxAdapter{Runner: runner}).configureWorkspace(context.Background(), target, "paracell-myapp", "note", nil); err != nil {
-		t.Fatalf("configureWorkspaceでエラーが返った: %v", err)
-	}
-	for _, want := range []string{
-		"tmux rename-window -t %9 editor",
-		"tmux set-window-option -t %9 window-status-format #W#{?window_flags,#{window_flags}, }",
-		"tmux set-window-option -t %10 window-status-format #W#{?window_flags,#{window_flags}, }",
-	} {
-		if !containsCall(runner.calls, want) {
-			t.Fatalf("window label call not found: calls = %#v, want %q", runner.calls, want)
-		}
-	}
-}
-
 func TestCreateWorkspaceは途中失敗時に部分Workspaceを削除して再試行可能にする(t *testing.T) {
 	createErr := errors.New("new window failed")
 	runner := &fakeRunner{errors: map[string]error{
@@ -261,7 +228,7 @@ func TestEnterWorkspaceはResurrectで復元された全Windowを再設定する
 	t.Setenv("TMUX", "")
 	const target = "paracell-myapp-123"
 	runner := &fakeRunner{outputs: map[string]string{
-		"tmux list-windows -t " + target + " -F #{window_id}\t#{window_name}": "%9\n%10\n",
+		"tmux list-windows -t " + target + " -F #{window_id}": "%9\n%10\n",
 	}}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := cellWorkspaceResource("", nil)
@@ -555,8 +522,8 @@ func TestCreateWorkspaceは指定Windowを作る(t *testing.T) {
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := namedWorkspaceResource("123", []domain.WorkspaceWindow{
-		{Name: "123:editor"},
-		{Name: "123:server"},
+		{Name: "editor"},
+		{Name: "server"},
 	})
 
 	if err := adapter.CreateWorkspace(context.Background(), cell); err != nil {
@@ -595,9 +562,9 @@ func TestCreateWorkspaceはWindow作成後にCommandをEnterで実行する(t *t
 	runner := &fakeRunner{}
 	adapter := TmuxAdapter{Runner: runner, Root: "/project"}
 	cell := namedWorkspaceResource("123", []domain.WorkspaceWindow{
-		{Name: "123:editor", Command: "nvim ."},
+		{Name: "editor", Command: "nvim ."},
 		{Name: "server"},
-		{Name: "123:test", Command: "go test ./..."},
+		{Name: "test", Command: "go test ./..."},
 	})
 
 	if err := adapter.CreateWorkspace(context.Background(), cell); err != nil {

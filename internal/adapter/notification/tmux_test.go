@@ -7,40 +7,71 @@ import (
 	"testing"
 )
 
-func TestTmuxNotifierはメッセージ未設定なら何もしない(t *testing.T) {
+func TestTmuxNotifierはdisplayMessageを実行する(t *testing.T) {
+	t.Setenv("TMUX", "")
 	runner := &recordingRunner{}
 	notifier := TmuxNotifier{Runner: runner}
-	if err := notifier.NotifyReady(context.Background(), "paracell-demo-123", ""); err != nil {
-		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
-	}
-	if len(runner.calls) != 0 {
-		t.Fatalf("calls = %#v, want none", runner.calls)
-	}
-}
+	runner.output = "/dev/ttys009"
 
-func TestTmuxNotifierは対象sessionの各clientへstatusMessageを送る(t *testing.T) {
-	runner := &recordingRunner{outputByArgs: map[string]outputResult{
-		"tmux list-clients -t cell-130 -F #{client_tty}": {value: "/dev/pts/4\n/dev/pts/7\n"},
-	}}
-	notifier := TmuxNotifier{Runner: runner}
-	if err := notifier.NotifyReady(context.Background(), "cell-130", "Ready: cell's name"); err != nil {
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
+	if err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
+
 	want := []runnerCall{
-		{name: "tmux", args: []string{"display-message", "-c", "/dev/pts/4", "Ready: cell's name"}},
-		{name: "tmux", args: []string{"display-message", "-c", "/dev/pts/7", "Ready: cell's name"}},
+		{name: "tmux", args: []string{"display-message", "-c", "/dev/ttys009", "ready 123"}},
 	}
 	if !reflect.DeepEqual(runner.calls, want) {
 		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
 	}
 }
 
-func TestTmuxNotifierは対象sessionにclientがいないとき通知しない(t *testing.T) {
-	runner := &recordingRunner{outputByArgs: map[string]outputResult{
-		"tmux list-clients -t cell-130 -F #{client_tty}": {},
-	}}
+func TestTmuxNotifierはTmux内では現在のclientを使う(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-123/default,123,0")
+	runner := &recordingRunner{}
 	notifier := TmuxNotifier{Runner: runner}
-	if err := notifier.NotifyReady(context.Background(), "cell-130", "Ready: cell"); err != nil {
+	runner.output = "/dev/ttys010"
+
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
+	if err != nil {
+		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
+	}
+
+	want := []runnerCall{
+		{name: "tmux", args: []string{"display-message", "-c", "/dev/ttys010", "ready 123"}},
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestTmuxNotifierは現在clientが取れない場合sessionのclientへフォールバックする(t *testing.T) {
+	t.Setenv("TMUX", "/tmp/tmux-123/default,123,0")
+	runner := &recordingRunner{
+		outputByArgs: map[string]outputResult{
+			"tmux display-message -p #{client_tty}":                   {err: context.DeadlineExceeded},
+			"tmux list-clients -t paracell-demo-123 -F #{client_tty}": {value: "/dev/ttys011\n/dev/ttys012"},
+		},
+	}
+	notifier := TmuxNotifier{Runner: runner}
+
+	err := notifier.NotifyReady(context.Background(), "paracell-demo-123", "ready 123")
+	if err != nil {
+		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
+	}
+
+	want := []runnerCall{
+		{name: "tmux", args: []string{"display-message", "-c", "/dev/ttys011", "ready 123"}},
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestTmuxNotifierはメッセージ未設定なら何もしない(t *testing.T) {
+	runner := &recordingRunner{}
+	notifier := TmuxNotifier{Runner: runner}
+	if err := notifier.NotifyReady(context.Background(), "paracell-demo-123", ""); err != nil {
 		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
 	}
 	if len(runner.calls) != 0 {
