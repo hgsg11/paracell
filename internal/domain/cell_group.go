@@ -17,7 +17,6 @@ type CellGroup struct {
 	NotificationDriver NotificationDriverType
 	SourceDriver       SourceDriverType
 	ContainerDriver    ContainerDriverType
-	Creation           CellCreation
 }
 
 func NewCellGroup(id, issue, project, template string, source SourceDriverType, container ContainerDriverType, notification NotificationDriverType) (CellGroup, error) {
@@ -34,30 +33,7 @@ func NewCellGroup(id, issue, project, template string, source SourceDriverType, 
 	if err != nil {
 		return CellGroup{}, err
 	}
-	return CellGroup{ID: id, Issue: issue, Project: project, Template: template, SourceDriver: source, ContainerDriver: container, NotificationDriver: validatedNotification, Creation: NewCellCreation()}, nil
-}
-
-func (c *CellGroup) BeginCreation() {
-	c.Creation = CellCreation{Status: CreationCreating}
-}
-
-func (c *CellGroup) FailCreation(stage CreationStage, err error) {
-	c.Creation.Status = CreationFailed
-	c.Creation.FailedStage = stage
-	c.Creation.LastError = ""
-	if err != nil {
-		c.Creation.LastError = err.Error()
-	}
-}
-
-func (c *CellGroup) FinishCreation() {
-	c.Creation = NewCellCreation()
-}
-
-func (c CellGroup) CreationStatus() CreationStatus { return c.Creation.Status }
-
-func (c CellGroup) CreationFailure() (CreationStage, string) {
-	return c.Creation.FailedStage, c.Creation.LastError
+	return CellGroup{ID: id, Issue: issue, Project: project, Template: template, SourceDriver: source, ContainerDriver: container, NotificationDriver: validatedNotification}, nil
 }
 
 func (c *CellGroup) SetNote(note string) error {

@@ -12,6 +12,7 @@ type CommanderCell struct {
 	Version   CellVersion
 	Workspace Workspace
 	Status    CellStatus
+	Creation  CellCreation
 	Done      bool
 }
 
@@ -26,7 +27,7 @@ func NewCommanderCell(id string, group *CellGroup, workspace Workspace) (Command
 	return CommanderCell{
 		ID: id, CellGroup: group, Version: version,
 		Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
-		Status:    Ready,
+		Status:    Ready, Creation: NewCellCreation(),
 	}, nil
 }
 
@@ -50,11 +51,19 @@ func (c CommanderCell) ListLabels() (string, string) {
 	return c.DisplayLabel(), c.CellGroup.Template
 }
 
+func (c CommanderCell) HasStatus(status CellStatus) bool {
+	return c.Status == status
+}
+
 func (c CommanderCell) EnsureCanBeCleaned() error {
 	if !c.Done {
 		return fmt.Errorf("完了済みではないので消せない")
 	}
 	return nil
+}
+
+func (c CommanderCell) SameIdentity(other CommanderCell) bool {
+	return c.ID == other.ID
 }
 
 func (c CommanderCell) Matches(identifier string) bool {
@@ -109,6 +118,35 @@ func (c CommanderCell) SourceWorktreePath(targetName string) string {
 	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
 }
 
+func (c CommanderCell) CreationStatus() CreationStatus {
+	return c.Creation.Status
+}
+
+func (c CommanderCell) CreationFailure() (CreationStage, string) {
+	return c.Creation.FailedStage, c.Creation.LastError
+}
+
+func (c *CommanderCell) BeginCreation() {
+	creation := NewCellCreation()
+	creation.Status = CreationCreating
+	c.Creation = creation
+}
+
+func (c *CommanderCell) FailCreation(stage CreationStage, err error) {
+	c.Creation.Status = CreationFailed
+	c.Creation.FailedStage = stage
+	c.Creation.LastError = ""
+	if err != nil {
+		c.Creation.LastError = err.Error()
+	}
+}
+
+func (c *CommanderCell) FinishCreation() {
+	c.Creation.Status = CreationReady
+	c.Creation.FailedStage = ""
+	c.Creation.LastError = ""
+}
+
 func (c *CommanderCell) AdvanceVersion() error {
 	version, err := c.Version.Add()
 	if err != nil {
@@ -119,7 +157,7 @@ func (c *CommanderCell) AdvanceVersion() error {
 }
 
 func (c CommanderCell) Stored() StoredCommanderCell {
-	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.CellGroup.Creation, string(c.Status), c.Done)
+	return NewStoredCommanderCell(uint64(c.Version), c.ID, c.CellGroup, c.Workspace, c.Creation, string(c.Status), c.Done)
 }
 
 func (c CommanderCell) Clone() CommanderCell {
@@ -131,4 +169,12 @@ func (c CommanderCell) Clone() CommanderCell {
 
 func (c *CommanderCell) ToggleDone() {
 	c.Done = !c.Done
+}
+
+func (c *CommanderCell) MarkDone() error {
+	if c.Done {
+		return fmt.Errorf("cell is already done")
+	}
+	c.Done = true
+	return nil
 }

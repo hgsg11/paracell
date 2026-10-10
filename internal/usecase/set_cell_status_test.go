@@ -18,7 +18,7 @@ func TestSetCellStatusはReady時に通知する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetCellStatusでエラーが返った: %v", err)
 	}
-	if cell.Status != domain.Ready {
+	if !cell.HasStatus(domain.Ready) {
 		t.Fatalf("cell = %#v, want status %q", cell, domain.Ready)
 	}
 	want := []string{"save:1", "factory:notification:none", "notify:myapp-123:Ready: 123"}
