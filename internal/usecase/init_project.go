@@ -45,7 +45,11 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		commander, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+		agent, err := domain.NewWindow("agent", `claude "{{.Command}}"`)
+		if err != nil {
+			return domain.Templates{}, err
+		}
+		commander, err := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate([]domain.Window{agent}))
 		if err != nil {
 			return domain.Templates{}, err
 		}

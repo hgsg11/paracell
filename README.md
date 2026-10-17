@@ -89,7 +89,7 @@ paracell fork 123 --template self --note "PostgreSQL案"
 paracell annotate 123 --note "API実装中"
 ```
 
-`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。生成される template は、このリポジトリ自身を worktree として 1 つ複製する `self` だけです。template を編集して、作りたい cell の形を決めます。
+`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。生成される template は、このリポジトリ自身を worktree として 1 つ複製する `self` だけで、CommanderCell の `agent` window は `claude "{{.Command}}"` で起動します。`paracell fork 123 --template self --command "..."` で、`claude` に初期命令を渡して開始できます。template を編集して、作りたい cell の形を決めます。
 
 branch prefix の既定値は `feat: feat/`、`update: update/`、`fix: fix/` です。`prefixes` を書いていない project にも適用され、`paracell.yaml` に書いた prefix は既定値より優先されます。`fork` で `--prefix` を省略すると `feat` を使います。
 

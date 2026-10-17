@@ -52,6 +52,9 @@ func TestInitは現在のProject情報から設定を作成して保存する(t 
 	if template.Commander == nil || len(template.Targets) != 1 || template.Targets[0].Name != "repository" || template.Targets[0].Source == nil || template.Targets[0].Source.Base != "main" {
 		t.Fatalf("template = %#v", template)
 	}
+	if windows := template.Commander.Workspace.Windows; len(windows) != 1 || windows[0].Name != "agent" || windows[0].Command != `claude "{{.Command}}"` {
+		t.Fatalf("commander windows = %#v", windows)
+	}
 	if cfg.Prefixes[domain.FeatPrefix] != "feat/" || cfg.Prefixes[domain.UpdatePrefix] != "update/" || cfg.Prefixes[domain.FixPrefix] != "fix/" {
 		t.Fatalf("prefixes = %#v", cfg.Prefixes)
 	}
