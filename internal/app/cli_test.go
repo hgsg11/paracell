@@ -600,10 +600,7 @@ providers:
   source: git
   workspace: tmux
 templates:
-  base:
-    abstract: true
   default:
-    extends: base
     commanderCell:
       name: workspace
       workspace:
@@ -705,10 +702,7 @@ providers:
   source: git
   workspace: tmux
 templates:
-  base:
-    abstract: true
   default:
-    extends: base
     commanderCell:
       name: workspace
       workspace:

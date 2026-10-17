@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hgsg11/paracell/internal/domain"
@@ -71,35 +72,35 @@ templates:
 	}
 }
 
-func TestYAMLConfigは未解決Templateを返す(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "paracell.yaml")
-	data := []byte(`project:
+func TestYAMLConfigは削除された継承フィールドを移行方法付きで拒否する(t *testing.T) {
+	for _, field := range []string{"extends: base", "abstract: true"} {
+		path := filepath.Join(t.TempDir(), "paracell.yaml")
+		data := []byte(`project:
   name: sample
 providers:
   source: git
   workspace: tmux
 templates:
   feat:
-    extends: missing
+    ` + field + `
     commanderCell:
       name: workspace
       workspace:
-        windows:
-          - name: shell
-            command: echo {{.Command}}
+        windows: []
 `)
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := NewYAMLConfigAdapter(path).Load(context.Background())
-	if err != nil {
-		t.Fatalf("Load resolved inheritance unexpectedly: %v", err)
-	}
-	if got.Templates[0].Extends != "missing" || got.Templates[0].Commander.Workspace.Windows[0].Command != "echo {{.Command}}" {
-		t.Fatalf("template was resolved during load: %#v", got.Templates[0])
-	}
-	if _, err := got.Resolve("feat", domain.NewTemplateVars("", "", "sample", "work")); err == nil {
-		t.Fatal("domain resolution must reject the missing parent")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := NewYAMLConfigAdapter(path).Load(context.Background())
+		name := strings.SplitN(field, ":", 2)[0]
+		if err == nil {
+			t.Fatalf("%s: Load must fail", field)
+		}
+		for _, want := range []string{`template "feat"`, `"` + name + `"`, "removed", "directly in each template"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s: error %q does not contain %q", field, err, want)
+			}
+		}
 	}
 }
 

@@ -35,8 +35,6 @@ type yamlConfig struct {
 }
 
 type rawYAMLTemplate struct {
-	Extends      string                       `yaml:"extends,omitempty"`
-	Abstract     bool                         `yaml:"abstract,omitempty"`
 	Commander    *rawCommanderCellSpec        `yaml:"commanderCell,omitempty"`
 	Targets      map[string]rawTargetCellSpec `yaml:"targets,omitempty"`
 	Dependencies []string                     `yaml:"dependencies,omitempty"`
@@ -47,7 +45,7 @@ func (raw *rawYAMLTemplate) UnmarshalYAML(node *yaml.Node) error {
 	if err := node.Decode((*plain)(raw)); err != nil {
 		return err
 	}
-	return validateYAMLFields(node, "extends", "abstract", "commanderCell", "targets", "dependencies")
+	return validateYAMLFields(node, "commanderCell", "targets", "dependencies")
 }
 
 type rawCommanderCellSpec struct {
@@ -74,6 +72,34 @@ func (raw *rawTargetCellSpec) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	return validateYAMLFields(node, "source", "containers")
+}
+
+// rejectRemovedTemplateFields reports the removed inheritance fields with a
+// migration hint instead of the generic unsupported-field error.
+func rejectRemovedTemplateFields(data []byte) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil || len(doc.Content) == 0 {
+		return nil
+	}
+	root := doc.Content[0]
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value != "templates" || root.Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		templates := root.Content[i+1]
+		for j := 0; j+1 < len(templates.Content); j += 2 {
+			body := templates.Content[j+1]
+			if body.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k+1 < len(body.Content); k += 2 {
+				if field := body.Content[k].Value; field == "extends" || field == "abstract" {
+					return fmt.Errorf("template %q: field %q was removed because template inheritance is no longer supported; migrate by writing the parent's commanderCell, targets and dependencies directly in each template, then delete the parent template", templates.Content[j].Value, field)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateYAMLFields(node *yaml.Node, allowed ...string) error {
@@ -113,6 +139,9 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 	_ = ctx
 	data, err := os.ReadFile(a.Path)
 	if err != nil {
+		return domain.Templates{}, err
+	}
+	if err := rejectRemovedTemplateFields(data); err != nil {
 		return domain.Templates{}, err
 	}
 	var raw yamlConfig
@@ -191,7 +220,7 @@ func (raw rawYAMLTemplate) toDomain(name string) (domain.Template, error) {
 		}
 		dependencies = append(dependencies, dependency)
 	}
-	return domain.NewUnresolvedTemplate(name, raw.Extends, raw.Abstract, commander, targets, dependencies)
+	return domain.NewUnresolvedTemplate(name, commander, targets, dependencies)
 }
 
 func (raw rawCommanderCellSpec) toDomain() (domain.CommanderCellSpec, error) {
@@ -267,7 +296,7 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 	}
 	raw.Project.Name = cfg.ProjectName
 	for _, item := range cfg.Templates {
-		entry := rawYAMLTemplate{Extends: item.Extends, Abstract: item.Abstract}
+		entry := rawYAMLTemplate{}
 		entry.Targets = make(map[string]rawTargetCellSpec, len(item.Targets))
 		for _, target := range item.Targets {
 			rawTarget := rawTargetCellSpec{Containers: make(map[string]rawContainer, len(target.Containers))}

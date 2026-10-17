@@ -51,8 +51,7 @@ providers:
   session: tmux
   notifications: tmux
 templates:
-  base:
-    abstract: true
+  feat:
     repository:
       base: main
       branchMode: create
@@ -65,21 +64,15 @@ templates:
       windows:
         - name: agent
           command: 'worker "{{.Command}}"'
-  feat:
-    extends: base
-    repository:
-      branchPrefix: feat/
 ```
 
 `providers.container` is optional when the project needs no Docker-backed services. Current providers are `git` for source, `docker` for containers, and `tmux` for sessions and notifications.
 
 ## Template Selection Fields
 
-Evaluate the fully resolved fields of every concrete template:
+Evaluate the fields of every template:
 
 - Template key and `repository.branchPrefix` indicate intended use such as feature, fix, or review, but field compatibility takes precedence.
-- `extends` names one parent. Inheritance chains are allowed; missing parents and cycles are invalid.
-- `abstract: true` marks a reusable parent that cannot be selected for a fork.
 - `repository.base` is an explicit branch or `current`.
 - `repository.branchMode` controls branch handling:
   - omitted or `create`: require creation of a new branch;
@@ -89,8 +82,6 @@ Evaluate the fully resolved fields of every concrete template:
 - `containers.network` is `isolated` or `shared`.
 - `containers.services` declares copied runtime services.
 - `session.windows` defines tmux windows and startup commands. A dispatch-capable template must consume `{{.Command}}` in the appropriate worker command.
-
-An omitted child scalar or struct field inherits its parent value. A supplied child scalar replaces the parent, including an explicit empty value. Supplied slices and maps such as `files`, `session.windows`, and `containers.services` replace the whole inherited collection; they are not appended or deep-merged. Explicit `[]` and `{}` clear inherited collections.
 
 Eliminate templates that violate task hard constraints. Among compatible templates, prefer the closest intent and branch-prefix match, fewer unnecessary copied files and runtime resources, then the more semantically specific template and declaration order. Do not mutate configuration when no template fits.
 
@@ -132,7 +123,7 @@ When behavior may have changed, inspect these checked-out files:
 
 - `internal/app/cli.go` for commands, project-root behavior, and environment handling.
 - `internal/domain/template.go` for template fields, variables, branch modes, networks, and database shape.
-- `internal/adapter/config/yaml_config.go` for YAML mapping, inheritance, rendering, and validation.
+- `internal/adapter/config/yaml_config.go` for YAML mapping, rendering, and validation.
 - `internal/usecase/create_cell.go` and `internal/usecase/retry_cell.go` for creation and retry behavior.
 - `internal/usecase/init_project.go` for generated defaults.
 - `README.md` for the current user-visible workflow.

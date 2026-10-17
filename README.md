@@ -101,8 +101,7 @@ providers:
   workspace: tmux
   notifications: tmux
 templates:
-  base:
-    abstract: true
+  feat:
     commanderCell:
       name: workspace
       workspace:
@@ -114,15 +113,13 @@ templates:
         source:
           base: main
           branchMode: create
-  feat:
-    extends: base
 ```
 
-template は `extends` で一つの親を継承できます。親自身も別のtemplateを継承できます。共通設定だけを持つtemplateには `abstract: true` を付けます。abstract templateは継承元には使えますが、`fork --template` とTUIの選択肢には表示されません。
+各templateは自分の定義だけで内容が決まります。他のtemplateからの継承はありません。
 
-子templateでは `commanderCell`、`targets`、`dependencies` はそれぞれ親の定義を引き継げます。ターゲットと依存セルは CommanderCell の子ではなく、同階層に定義します。DependencyCell は Compose service 名だけを列挙し、Container 設定を持ちません。
+`commanderCell`、`targets`、`dependencies` はtemplateごとに定義します。ターゲットと依存セルは CommanderCell の子ではなく、同階層に定義します。DependencyCell は Compose service 名だけを列挙し、Container 設定を持ちません。
 
-存在しない親、自己参照、循環参照は設定読込時にエラーになります。循環エラーには `"a" -> "b" -> "a"` のように参照経路が含まれます。継承されたtemplate変数は、選択した具体templateの `issue`、`name`、`project`、`Command` で展開され、その後に通常の設定validationが実行されます。
+`extends` または `abstract` を含む設定は、削除されたフィールドとして読込時にエラーになります。親の定義を各templateに直接書いて移行してください。template変数は、選択したtemplateの `issue`、`name`、`project`、`Command` で展開されます。
 
 ## Container gateway
 
@@ -277,8 +274,6 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 
 ## 設定メモ
 
-- `extends`: 一つの親templateを指定する。複数段継承は可能だが多重継承は不可
-- `abstract: true`: 共通設定用templateとして宣言し、CLI/TUIの選択肢から除外する
 - `repository.base: current`: 現在の branch から cell branch を作る
 - `repository.base`: cell branch の作成元を指定する。`main` や `feature/111` など任意の branch を指定できる
 - `repository.branchMode: create`: cell branch を新規作成する。既存 branch があれば失敗する
