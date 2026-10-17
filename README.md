@@ -78,18 +78,20 @@ go build -o paracell ./cmd/paracell
 
 ```sh
 paracell init
-paracell fork 123 --template feat
+paracell fork 123 --template self
 paracell
 ```
 
 作業一式の用途を短く示したい場合は、fork 時または作成後に CellGroup 全体の note を設定できます。
 
 ```sh
-paracell fork 123 --template feat --note "PostgreSQL案"
+paracell fork 123 --template self --note "PostgreSQL案"
 paracell annotate 123 --note "API実装中"
 ```
 
-`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。template を編集して、作りたい cell の形を決めます。
+`paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。生成される template は、このリポジトリ自身を worktree として 1 つ複製する `self` だけです。template を編集して、作りたい cell の形を決めます。
+
+branch prefix の既定値は `feat: feat/`、`update: update/`、`fix: fix/` です。`prefixes` を書いていない project にも適用され、`paracell.yaml` に書いた prefix は既定値より優先されます。`fork` で `--prefix` を省略すると `feat` を使います。
 
 `fork` が source、files、containers、workspace の途中で失敗した場合、CommanderCell は `failed` として残ります。
 

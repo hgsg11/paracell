@@ -16,11 +16,12 @@ type Templates struct {
 }
 
 const (
-	FeatPrefix = "feat"
-	FixPrefix  = "fix"
+	FeatPrefix   = "feat"
+	UpdatePrefix = "update"
+	FixPrefix    = "fix"
 )
 
-var defaultPrefixes = map[string]string{FeatPrefix: "feat/", FixPrefix: "fix/"}
+var defaultPrefixes = map[string]string{FeatPrefix: "feat/", UpdatePrefix: "update/", FixPrefix: "fix/"}
 
 func (t Templates) BranchPrefix(name string) (string, error) {
 	prefix, ok := t.Prefixes[name]
