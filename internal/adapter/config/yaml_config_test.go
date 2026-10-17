@@ -57,6 +57,9 @@ templates:
 	if got.Prefixes[domain.FeatPrefix] != "feature/" || got.Prefixes[domain.FixPrefix] != "fix/" || got.Prefixes["urgent"] != "urgent/" {
 		t.Fatalf("prefixes = %#v", got.Prefixes)
 	}
+	if got.Prefixes[domain.UpdatePrefix] != "update/" {
+		t.Fatalf("default update prefix = %q, want update/", got.Prefixes[domain.UpdatePrefix])
+	}
 	resolved, err := got.Resolve("feat", domain.NewTemplateVars("42", "42", "", ""))
 	if err != nil {
 		t.Fatal(err)
