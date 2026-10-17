@@ -1,0 +1,355 @@
+// PostToolUse hook (Bash matcher): Dispatch `aidlc-runtime.ts compile`
+// after every transition-class audit emit.
+//
+// Fires after every Bash tool call from the agent. Filters cheaply on
+// the command — only direct transition tools plus `aidlc-orchestrate.ts report`
+// get past the early exit. On match, tail-reads the LAST 3
+// audit blocks (one approve writes up to 3 audit rows in a single Bash
+// call), regex-matches `**Event**: (GATE_APPROVED|STAGE_STARTED|
+// AUDIT_MERGED|WORKFLOW_COMPLETED)` against any of them, and dispatches
+// `aidlc-runtime.ts compile` on match.
+//
+// WORKFLOW_COMPLETED is in the transition set so the final-stage approve
+// fires the compile (handleCompleteWorkflow at aidlc-state.ts:572-590
+// emits 5 audit rows ending with WORKFLOW_COMPLETED — without it in the
+// regex, the last 3 blocks would be PHASE_COMPLETED + PHASE_VERIFIED +
+// WORKFLOW_COMPLETED, none in the original transition set, and the
+// runtime-graph would never record the final stage as approved).
+//
+// Recursion guard: `aidlc-runtime.ts` is excluded from the command-regex
+// matcher set, AND MEMORY_EMPTY is not in the event-class regex. The
+// compile's own audit emits cannot re-trigger the compile.
+//
+// Engine error relay: before the command filter, when this Bash call was one
+// literal framework engine orchestrate invocation whose stdout is exactly the
+// canonical `error` directive the engine emitted, the message is handed to the
+// human byte for byte through the harness's hook-to-human channel (a
+// `systemMessage` on Claude Code and Codex, a toast via the opencode plugin).
+// The same line carries a PostToolUse `additionalContext` note telling the
+// model the person has seen it; the Claude and Codex skills then add no copy
+// of their own. It needs no workflow state: the engine errors before any
+// intent exists too.
+
+import { LONG_SUBPROCESS_TIMEOUT_MS } from "../tools/aidlc-runtime-budget.ts";
+import { statSync } from "node:fs";
+import { join } from "node:path";
+import {
+  consumeCreationReceipt,
+  clearSessionIntentUuid,
+  isTrustedBindingSource,
+  readSessionBinding,
+  workflowParticipation,
+  auditShards,
+  classifyRuntimeCompileCommand,
+  type ClaudeCodeHookInput,
+  engineErrorRelayMessage,
+  errorMessage,
+  hookChildEnv,
+  hookDebug,
+  hooksHealthDir,
+  writeHookStatusFile,
+  isClaudeCodeHookInput,
+  isoTimestamp,
+  listIntents,
+  readAllAuditShards,
+  readSessionIntentUuid,
+  recordHookDrop,
+  resolveWorkflowSelection,
+  resolveProjectDirFromHook,
+  runtimeGraphPath,
+  validSessionId,
+  harnessDir,
+  writeEngineErrorRelay,
+  writeSessionIntentHandoff,
+  writeSessionBinding,
+  writeSessionIntentUuid,
+} from "../tools/aidlc-lib.ts";
+import { aidlcEngineCommand } from "../tools/aidlc-runtime-paths.ts";
+
+
+// intent-create runs before a workflow exists, so SessionStart cannot stamp that
+// conversation yet. PostToolUse is the first boundary that carries both the
+// exact host session_id and the successful creation result. Bind from that pair,
+// never from the workspace-global `.current-session` marker: another
+// pre-workflow conversation may have started more recently. A second creation
+// moves binding and attribution to the created intent; the transient handoff
+// receipt retains the prior UUID for the Stop-hook continuation boundary.
+function bindCreatedIntentToInvokingSession(
+  projectDir: string,
+  parsed: ClaudeCodeHookInput,
+): void {
+  const sessionId = validSessionId(parsed.session_id);
+  if (!sessionId) return;
+  const command = parsed.tool_input?.command ?? "";
+  const ideAuditMode = (parsed.tool_input?.source ?? "") === "ide-audit-sync";
+  if (!ideAuditMode && !/(?:intent-create|intent\s+create)/.test(command)) return;
+
+  let response = "";
+  try {
+    response =
+      typeof parsed.tool_response === "string"
+        ? parsed.tool_response
+        : JSON.stringify(parsed.tool_response ?? "");
+  } catch {
+    return;
+  }
+  const match = response.match(
+    /(?:Intent created:|Migrated flat workspace into intent:)\s*([A-Za-z0-9._-]+)\s+\(space:\s*([A-Za-z0-9._-]+)\)/,
+  );
+  if (!match) return;
+
+  const [, dirName, space] = match;
+  const created = listIntents(projectDir, space).find(
+    (intent) => intent.dirName === dirName,
+  );
+  const existingUuid = readSessionIntentUuid(projectDir, sessionId);
+  hookDebug(projectDir, "rebuild-stage-graph", "session-bind", {
+    sessionId,
+    dirName,
+    space,
+    resolvedUuid: created?.uuid ?? "",
+    existingUuid: existingUuid ?? "",
+  });
+  if (!created?.uuid) return;
+  // Hosts whose tool processes cannot name the session bind the creator here.
+  // The response text alone proves nothing; the creation receipt intent create
+  // left on this machine does, once. A binding intent create already wrote for
+  // this record keeps its source.
+  const source = consumeCreationReceipt(projectDir, space, dirName) ? "create" : "observed-create";
+  const existing = readSessionBinding(projectDir, sessionId);
+  // Unproven text cannot move a session that takes part in another record, by
+  // any evidence participation accepts: its binding, handoff and stamp stay.
+  if (
+    source === "observed-create" &&
+    existing !== null &&
+    existing.intent !== null &&
+    (existing.space !== space || existing.intent !== dirName) &&
+    workflowParticipation(projectDir, {
+      space: existing.space,
+      intent: existing.intent,
+      sessionId,
+      binding: existing,
+    }) === "participant"
+  ) {
+    return;
+  }
+  if (existing?.space !== space || existing.intent !== dirName || existing.source === undefined) {
+    writeSessionBinding(projectDir, sessionId, space, dirName, source);
+  }
+  if (existingUuid && existingUuid !== created.uuid) {
+    writeSessionIntentHandoff(projectDir, sessionId, existingUuid, created.uuid);
+  }
+  // A stamp joins the session on resume, so only a session this creation joined
+  // is stamped; an observed creation clears the older stamp instead.
+  const bound = readSessionBinding(projectDir, sessionId);
+  if (bound?.intent === dirName && isTrustedBindingSource(bound.source)) {
+    writeSessionIntentUuid(projectDir, sessionId, created.uuid);
+  } else {
+    clearSessionIntentUuid(projectDir, sessionId);
+  }
+}
+
+// Both relay gates live in engineErrorRelayMessage (aidlc-lib.ts): one literal
+// engine orchestrate command, and stdout that is exactly the canonical `error`
+// directive. writeEngineErrorRelay decides per harness whether any channel
+// would show the line; where none does, the skill's verbatim-print rule stands.
+function relayEngineError(projectDir: string, parsed: ClaudeCodeHookInput): void {
+  const message = engineErrorRelayMessage(
+    parsed.tool_input?.command ?? "",
+    parsed.tool_response,
+  );
+  if (message === null) return;
+  hookDebug(projectDir, "rebuild-stage-graph", "engine-error-relay", {
+    bytes: Buffer.byteLength(message, "utf-8"),
+  });
+  writeEngineErrorRelay(message);
+}
+
+export async function run(input: string): Promise<number> {
+const projectDir = resolveProjectDirFromHook(import.meta.url);
+hookDebug(projectDir, "rebuild-stage-graph", "invoked");
+
+// 1. TTY guard — exit cleanly when invoked outside a piped stdin context
+//    (interactive shell, test harness running under `bash -x`).
+if (process.stdin.isTTY) return 0;
+
+// 2. Stdin parse — read JSON payload from Claude Code; exit on malformed.
+let parsed: ClaudeCodeHookInput;
+try {
+  const raw: unknown = JSON.parse(input);
+  if (!isClaudeCodeHookInput(raw)) return 0;
+  parsed = raw;
+} catch {
+  return 0;
+}
+const command: string = parsed.tool_input?.command ?? "";
+
+// 2b. Engine error relay - independent of runtime-graph compilation and of any
+//     workflow state, so it runs before the command/audit filters below. An
+//     orchestrate `next` is not a transition-class command and exits at the
+//     next gate; its error directive must already have been relayed by then.
+relayEngineError(projectDir, parsed);
+
+// Session ownership is independent of runtime-graph compilation and must run
+// before the command/audit filters below. Most intent-create calls are not
+// transition-class commands, so they intentionally exit at the next gate.
+bindCreatedIntentToInvokingSession(projectDir, parsed);
+
+// 3. Command filter - only dispatch on the audit-emit-side seam for both
+//    legacy tool-file commands and the new `aidlc ...` grammar.
+//    aidlc-runtime.ts / aidlc runtime is rejected explicitly (recursion guard
+//    at the command level - a positive-only allowlist would let composites like
+//    `aidlc engine runtime compile && aidlc engine state approve` through and
+//    loop). aidlc-log.ts emits only chatty in-stage events
+//    (DECISION_RECORDED / QUESTION_ANSWERED / ERROR_LOGGED), none
+//    transition-class. aidlc-worktree.ts emits only WORKTREE_* events.
+//    `aidlc-orchestrate.ts report` is included because the conductor calls it
+//    as the public transition surface; the state-tool emit happens in its
+//    subprocess, which PostToolUse cannot see as a separate Bash command. The
+//    new report allowlist keeps that same public-transition surface.
+// IDE audit-tail mode: Kiro IDE does not surface the shell command, so the
+// command-based filter cannot run. The adapter sets source="ide-audit-sync" to
+// signal "skip the command filter and gate purely on the audit tail" (steps
+// 6-7). The audit-tail transition check is the real gate; the command filter is
+// only a cheap pre-filter that needs a command string to work.
+const ideAuditMode = (parsed.tool_input?.source ?? "") === "ide-audit-sync";
+hookDebug(projectDir, "rebuild-stage-graph", "command-gate", { ideAuditMode, command: command.slice(0, 120) });
+if (!ideAuditMode) {
+  const commandDecision = classifyRuntimeCompileCommand(command);
+  if (commandDecision === "reject") return 0;
+  if (commandDecision === "pass") {
+    hookDebug(projectDir, "rebuild-stage-graph", "exit: command not a transition tool");
+    return 0;
+  }
+}
+
+// 4. Audit read — across EVERY per-clone shard of the ACTIVE intent, NOT this
+//    hook process's own PID/clone shard. The state tool that wrote the
+//    transition runs in a SEPARATE process; on the new layout a bare
+//    auditFilePath(projectDir) would resolve a per-process/PID shard the hook
+//    never wrote, so the transition would be invisible and the runtime-graph
+//    would never refresh after a transition (the major). Resolve the active
+//    intent (cursor / lone-intent → null = flat-legacy) and glob-merge its
+//    shards. Exit cleanly before init (no audit yet → "").
+const selection = resolveWorkflowSelection(projectDir, {
+  sessionId: validSessionId(parsed.session_id) ?? undefined,
+});
+// A conversation that has not joined this workflow does not recompile its graph.
+if (selection.intent !== null && workflowParticipation(projectDir, selection) !== "participant") return 0;
+const space = selection.space;
+const intent = selection.intent ?? undefined;
+const audit = readAllAuditShards(projectDir, intent, space).replace(/\r\n/g, "\n");
+if (audit.length === 0) {
+  hookDebug(projectDir, "rebuild-stage-graph", "exit: audit empty");
+  return 0;
+}
+
+// 5. Heartbeat — doctor reads this file's mtime to detect silent-hook failure.
+//    Kept at the bare (workspace-level) health dir to match where --doctor reads
+//    it (aidlc-utility.ts) and where recordHookDrop writes drops — the heartbeat
+//    is a per-hook liveness probe, not per-intent state.
+const healthDir = hooksHealthDir(projectDir, intent, space);
+writeHookStatusFile(healthDir, "rebuild-stage-graph.last", isoTimestamp());
+
+// 6. Tail-read last 3 audit blocks. Three is the upper bound: a normal
+//    approve writes GATE_APPROVED + STAGE_COMPLETED + STAGE_STARTED in
+//    one Bash call. Terminal-WORKFLOW approve writes 5 rows; the last 3
+//    are PHASE_COMPLETED + PHASE_VERIFIED + WORKFLOW_COMPLETED. In the common
+//    single-clone case the merged buffer is one shard, so the last 3 blocks are
+//    the just-written transition rows.
+const blocks = audit.split(/\n---\n/);
+const last3 = blocks.slice(-3);
+
+// 7. Event-class filter — recursion guard + scope filter combined.
+//    A single Bash call can append multiple transition rows in one go
+//    (approve emits GATE_APPROVED + STAGE_COMPLETED + STAGE_STARTED).
+//    Any of the last 3 blocks may carry the transition.
+//    STAGE_AWAITING_APPROVAL is in the set so the compile refreshes the
+//    runtime-graph at gate-start — without it, the gate ritual reads a
+//    stale memory_entries count snapshotted at STAGE_STARTED time
+//    (before the orchestrator wrote any §13 entries).
+const transitionRegex = /^\*\*Event\*\*:[ \t]*(GATE_APPROVED|STAGE_STARTED|STAGE_AWAITING_APPROVAL|AUDIT_MERGED|UNIT_MERGED|WORKFLOW_COMPLETED)[ \t]*$/m;
+const hasTransition = last3.some((b) => transitionRegex.test(b));
+hookDebug(projectDir, "rebuild-stage-graph", "transition-gate", { hasTransition, last3count: last3.length });
+// Nothing to do from this record's files: the Kiro IDE front gate skips the
+// next shell command's call until one of them changes (the mark's name is
+// aidlc-hook-front-gate.ts noopMarkName; the hook names it without importing).
+const noop = (): number => {
+  if (ideAuditMode) writeHookStatusFile(healthDir, "rebuild-stage-graph.noop", isoTimestamp());
+  return 0;
+};
+if (!hasTransition) {
+  hookDebug(projectDir, "rebuild-stage-graph", "exit: no transition in audit tail");
+  return noop();
+}
+
+// 7b. Idempotency guard (IDE audit-tail mode only). On the CLI the command
+//     filter (step 3) already bounds compiles to the one Bash call that emitted
+//     the transition. In ide-audit-sync mode that filter is skipped, so the
+//     transition sits in the tail across EVERY subsequent shell command — and
+//     after WORKFLOW_COMPLETED the tail never changes again, which would make
+//     every future shell command pay a blocking recompile forever. Bound it by
+//     mtime: if runtime-graph.json is already at least as new as the newest
+//     audit shard, the tail hasn't changed since the last compile — skip. A real
+//     new transition bumps a shard's mtime past the graph and re-enables the
+//     compile. Cheap stat calls; no new marker file.
+if (ideAuditMode) {
+  try {
+    const graphMtime = statSync(runtimeGraphPath(projectDir, intent, space)).mtimeMs;
+    let newestShard = 0;
+    for (const shard of auditShards(projectDir, intent, space)) {
+      try {
+        const m = statSync(shard).mtimeMs;
+        if (m > newestShard) newestShard = m;
+      } catch {
+        // shard vanished mid-read — ignore
+      }
+    }
+    if (graphMtime >= newestShard) {
+      hookDebug(projectDir, "rebuild-stage-graph", "skip: graph newer than audit (idempotent)", {
+        graphMtime,
+        newestShard,
+      });
+      return noop();
+    }
+  } catch {
+    // runtime-graph.json absent (never compiled) → fall through and compile.
+  }
+}
+
+// 8. Dispatch — sync subprocess. Hook waits for completion. On non-zero
+//    exit, record the drop for `--doctor` to surface; never block the
+//    parent Bash call (mirrors aidlc-write-audit-log.ts:95-101).
+const runtimeTs = join(projectDir, harnessDir(), "tools", "aidlc-runtime.ts");
+try {
+  // Same reason as the Stop hook: a bare "bun" child never exists in a native
+  // install, and spawnSync reports that as status null with an ENOENT error -
+  // which the status check below cannot tell apart from a real failure.
+  const [command, ...args] = aidlcEngineCommand(
+    "runtime",
+    ["compile"],
+    runtimeTs,
+  );
+  const result = spawnSync(command, args, {
+    cwd: projectDir,
+    env: hookChildEnv(projectDir, parsed.session_id),
+    timeout: LONG_SUBPROCESS_TIMEOUT_MS,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.status !== 0) {
+    recordHookDrop(
+      projectDir,
+      "rebuild-stage-graph",
+      `exit ${result.status}: ${result.stderr?.toString() ?? ""}`
+    );
+  }
+} catch (e) {
+  recordHookDrop(projectDir, "rebuild-stage-graph", errorMessage(e));
+}
+return 0;
+}
+
+if (import.meta.main) {
+  process.exit(await run(await Bun.stdin.text()));
+}
+import { spawnSync } from "node:child_process";

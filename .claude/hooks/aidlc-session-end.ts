@@ -1,0 +1,130 @@
+// SessionEnd hook: Emit SESSION_ENDED when a Claude Code conversation ends.
+// The workflow lifecycle is independent of session lifecycle — ending a
+// session does NOT complete the workflow. This event is observability only.
+//
+// No-op if aidlc-state.md is absent in cwd (the canonical "active workflow"
+// signal — matches session-start.ts and the plan definition).
+import { existsSync } from "node:fs";
+import { appendAuditEntry } from "../tools/aidlc-audit.ts";
+import {
+  workflowParticipation,
+  resolveWorkflowSelection,
+  enterHookWorkflow,
+  readSessionBinding,
+  activeIntentUuid,
+  errorMessage,
+  findIntentByUuid,
+  hooksHealthDir,
+  writeHookStatusFile,
+  isClaudeCodeHookInput,
+  isoTimestamp,
+  readSessionIntentUuid,
+  recordHookDrop,
+  resolveProjectDirFromHook,
+  stateFilePath,
+  validSessionId,
+} from "../tools/aidlc-lib.ts";
+
+export async function run(input: string): Promise<number> {
+const projectDir = resolveProjectDirFromHook(import.meta.url);
+
+// Read stdin for the reason and session identity. The session stamp preserves
+// attribution when intent-create has already moved the shared active cursor.
+// Guard on isTTY — if stdin is a terminal (test / direct-run / debug-mode pipeline
+// that inherits TTY), skip the read to avoid blocking forever.
+let reason = "unknown";
+let sessionId = "";
+if (!process.stdin.isTTY) {
+  try {
+    if (input) {
+      const raw: unknown = JSON.parse(input);
+      if (isClaudeCodeHookInput(raw)) {
+        if (raw.reason) reason = String(raw.reason);
+        if (typeof raw.session_id === "string") {
+          sessionId = validSessionId(raw.session_id) ?? "";
+        }
+      }
+    }
+  } catch {
+    // Treat malformed/missing stdin as unknown
+  }
+}
+
+let intent: string | undefined;
+let space: string | undefined;
+// One identity per session: a binding that names a record decides where the end
+// goes, and a binding to no record means an older stamp is not read either.
+const binding = sessionId ? readSessionBinding(projectDir, sessionId) : null;
+if (binding?.intent) {
+  intent = binding.intent;
+  space = binding.space;
+} else if (binding) {
+  // No record takes the end of a session bound to none; only a flat workspace's
+  // root workflow can. Pinning the session makes every path helper below read
+  // this binding rather than the shared cursor, however that cursor moves.
+  enterHookWorkflow(projectDir, sessionId);
+  space = binding.space;
+} else if (sessionId) {
+  const stampedUuid = readSessionIntentUuid(projectDir, sessionId);
+  if (stampedUuid) {
+    const stampedIntent = findIntentByUuid(projectDir, stampedUuid);
+    if (!stampedIntent) {
+      recordHookDrop(
+        projectDir,
+        "session-end",
+        `session ${sessionId} is stamped to unknown intent ${stampedUuid}; refusing active-cursor fallback`,
+      );
+      return 0;
+    }
+    intent = stampedIntent.dirName;
+    space = stampedIntent.space;
+  } else if (activeIntentUuid(projectDir)) {
+    // A UUID-backed workflow has exact per-session ownership. Falling back to
+    // the shared cursor here can attribute a concurrent pre-workflow session's
+    // end to an intent it never invoked. Missing identity therefore fails
+    // closed; flat/legacy workspaces (no active UUID) retain cursor fallback.
+    return 0;
+  }
+}
+
+// A conversation that has not joined the workflow does not end a session in it.
+// Without a binding the stamp names where the session worked; SessionStart turns
+// it into a join on resume, and until then this end needs other evidence.
+try {
+  const ended = intent !== undefined && space !== undefined
+    ? {
+        space,
+        intent,
+        sessionId: sessionId || null,
+        binding,
+      }
+    : resolveWorkflowSelection(projectDir, sessionId ? { sessionId } : {});
+  // A binding that records staying out of a workflow outweighs a stamp.
+  const source = ended.binding?.source;
+  if (source === "unjoined") return 0;
+  if (ended.intent !== null && workflowParticipation(projectDir, ended) !== "participant") return 0;
+} catch {
+  return 0;
+}
+
+// No workflow active for the resolved session intent — do nothing (consistent
+// with session-start.ts). A session without an id, or a flat legacy workflow,
+// retains cursor fallback.
+if (!existsSync(stateFilePath(projectDir, intent, space))) return 0;
+
+// Health heartbeat follows the same session-owned intent as the audit event.
+const healthDir = hooksHealthDir(projectDir, intent, space);
+writeHookStatusFile(healthDir, "session-end.last", isoTimestamp());
+
+try {
+  appendAuditEntry("SESSION_ENDED", { Reason: reason }, projectDir, intent, space);
+} catch (e) {
+  recordHookDrop(projectDir, "session-end", errorMessage(e), intent, space);
+  return 0;
+}
+return 0;
+}
+
+if (import.meta.main) {
+  process.exit(await run(await Bun.stdin.text()));
+}
