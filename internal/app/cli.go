@@ -64,13 +64,7 @@ var (
 		if err != nil {
 			return nil, err
 		}
-		if err := session.PrepareWorkspace(ctx, cell.WorkspaceResource()); err != nil {
-			return nil, err
-		}
-		if os.Getenv("TMUX") != "" {
-			return exec.CommandContext(ctx, "tmux", "switch-client", "-E", "-t", cell.WorkspaceName()), nil
-		}
-		return exec.CommandContext(ctx, "tmux", "attach-session", "-E", "-t", cell.WorkspaceName()), nil
+		return session.EnterCommand(ctx, cell.WorkspaceResource())
 	}
 	runFork = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, issue string, template string, prefix string, command string, note *string, root string) (domain.CommanderCell, error) {
 		uc := usecase.ForkCellUseCase{

@@ -43,7 +43,7 @@ func (u SetCellStatusUseCase) Execute(ctx context.Context, input SetCellStatusIn
 		if err != nil {
 			return domain.CommanderCell{}, err
 		}
-		if err := notifier.NotifyReady(ctx, updated.WorkspaceName(), "Ready: "+updated.Name().Value); err != nil {
+		if err := notifier.NotifyReady(ctx, updated.WorkspaceResource(), "Ready: "+updated.Name().Value); err != nil {
 			return domain.CommanderCell{}, err
 		}
 	}

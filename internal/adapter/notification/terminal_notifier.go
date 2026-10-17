@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/hgsg11/paracell/internal/adapter/system"
+	"github.com/hgsg11/paracell/internal/domain"
 )
 
 type TerminalNotifier struct {
@@ -14,6 +15,6 @@ func NewTerminalNotifier(runner system.Runner) TerminalNotifier {
 	return TerminalNotifier{Runner: runner}
 }
 
-func (n TerminalNotifier) NotifyReady(ctx context.Context, _ string, message string) error {
+func (n TerminalNotifier) NotifyReady(ctx context.Context, _ domain.WorkspaceResource, message string) error {
 	return n.Runner.Run(ctx, "terminal-notifier", "-message", message)
 }

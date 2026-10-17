@@ -202,7 +202,7 @@ TUI と単独 CLI のどちらから実行しても、コマンドの開始・�
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
-`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は対象 cell の tmux session に接続している各 client のステータスラインへ `tmux display-message` で表示します。別 session の client には通知しません。desktop 通知やベル音は出しません。`none` または省略で通知を無効にできます。
+`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は対象 cell の tmux session に接続している各 client のステータスラインへ `tmux display-message` で表示します。対象 cell の client に加えて、root session（`<project>-root`、default server）に接続している client にも同じメッセージを表示します（root session がなければ無視します）。それ以外の session の client には通知しません。desktop 通知やベル音は出しません。`none` または省略で通知を無効にできます。
 
 macOS のデスクトップ通知には、次のように設定します。
 
@@ -222,6 +222,8 @@ paracell が作成した tmux session の中では、`C-p` で `paracell view` �
 paracell の root / cell tmux session ではマウス操作が有効です。ドラッグした文字列は tmux のバッファにコピーされ、OSC 52 対応の terminal では system clipboard にも反映されます。ホイールで copy mode に入り、履歴をスクロールできます。
 
 tmux session 名は、root が `<project>-root`、cell が `<project>-<issue>` です。
+
+root session は通常の（default）tmux server に作られ、`tmux ls` などの一覧に表示されます。cell session は project ごとの専用 tmux server（`tmux -L paracell-<project>`）に作られるため、通常の `tmux ls`、`prefix+s`、choose-tree には表示されません。cell の一覧は `tmux -L paracell-<project> ls` で確認できます。server をまたぐ移動（root → cell、cell → root）は、`detach-client -E` で同じ端末の client を付け替えるため tmux が入れ子になりません。cell → cell は従来どおり `switch-client` です。この変更より前に default server に作られた cell は、専用 server に見つからない場合に default server を探して、enter・clean・note 反映・ready 通知の対象にします（自動では移し替えません）。
 
 paracell が管理する tmux session では、ターミナルのタブタイトルを `<project>` に固定します。ステータスラインの左側は、root session が `root`、cell session が note（未設定なら `<issue>`）です。window 表示は root / cell session ともに window name のみです。cell session では左側の label に続けて `note window1 window2`（note 未設定なら `<issue> window1 window2`）と並び、各 window に label を繰り返しません。window name が現在の label（note、または note 未設定時の issue 番号）と `:` で始まる場合は、連続した重複 prefix をすべて除きます（例: `note:note:window1` は `window1`、`123:123:window1` は `window1`）。current / non-current window と起動後に追加した window に同じ形式を適用し、window flags は維持します。右側は tmux の既存表示を保ちながら時刻と日付を追加します。それ以外のステータスライン設定は tmux の現在の設定を引き継ぎます。note を更新すると、起動中の session へ即時反映されます。
 

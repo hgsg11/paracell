@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"os/exec"
 
 	"github.com/hgsg11/paracell/internal/domain"
 )
@@ -48,7 +49,8 @@ type ContainerPort interface {
 type WorkspacePort interface {
 	CreateWorkspace(context.Context, domain.WorkspaceResource) error
 	CleanWorkspace(context.Context, domain.WorkspaceResource) error
-	PrepareWorkspace(context.Context, domain.WorkspaceResource) error
+	// EnterCommand prepares the cell session and returns the command that moves this terminal to it.
+	EnterCommand(context.Context, domain.WorkspaceResource) (*exec.Cmd, error)
 	UpdateStatusLabel(context.Context, domain.WorkspaceResource) error
 	EnterWorkspace(context.Context, domain.WorkspaceResource) error
 	EnterRootWorkspace(context.Context, string) error
@@ -56,7 +58,7 @@ type WorkspacePort interface {
 }
 
 type Notifier interface {
-	NotifyReady(ctx context.Context, sessionName string, message string) error
+	NotifyReady(ctx context.Context, resource domain.WorkspaceResource, message string) error
 }
 
 type NotificationProviderFactory interface {

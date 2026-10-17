@@ -69,8 +69,8 @@ func (p *setStatusTestPorts) Notification(driver domain.NotificationDriverType) 
 	return p, nil
 }
 
-func (p *setStatusTestPorts) NotifyReady(ctx context.Context, sessionName string, message string) error {
+func (p *setStatusTestPorts) NotifyReady(ctx context.Context, resource domain.WorkspaceResource, message string) error {
 	_ = ctx
-	p.calls = append(p.calls, "notify:"+sessionName+":"+message)
+	p.calls = append(p.calls, "notify:"+resource.Name+":"+message)
 	return nil
 }
