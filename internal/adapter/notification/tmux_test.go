@@ -79,6 +79,36 @@ func TestTmuxNotifierはどのserverにもsessionがなければエラーを返�
 	}
 }
 
+func TestTmuxNotifierはrootSessionのclientにも通知する(t *testing.T) {
+	runner := &recordingRunner{outputByArgs: map[string]outputResult{
+		"tmux -L paracell-demo list-clients -t cell-130 -F #{client_tty}": {value: "/dev/pts/4\n"},
+		"tmux list-clients -t demo-root -F #{client_tty}":                 {value: "/dev/pts/9\n"},
+	}}
+	if err := (TmuxNotifier{Runner: runner}).NotifyReady(context.Background(), testResource("cell-130"), "Ready: cell"); err != nil {
+		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
+	}
+	want := []runnerCall{
+		{name: "tmux", args: []string{"-L", "paracell-demo", "display-message", "-c", "/dev/pts/4", "Ready: cell"}},
+		{name: "tmux", args: []string{"display-message", "-c", "/dev/pts/9", "Ready: cell"}},
+	}
+	if !reflect.DeepEqual(runner.calls, want) {
+		t.Fatalf("calls = %#v, want %#v", runner.calls, want)
+	}
+}
+
+func TestTmuxNotifierはrootSessionがなくてもエラーにしない(t *testing.T) {
+	runner := &recordingRunner{outputByArgs: map[string]outputResult{
+		"tmux -L paracell-demo list-clients -t cell-130 -F #{client_tty}": {value: "/dev/pts/4\n"},
+		"tmux list-clients -t demo-root -F #{client_tty}":                 {err: errors.New("no server running")},
+	}}
+	if err := (TmuxNotifier{Runner: runner}).NotifyReady(context.Background(), testResource("cell-130"), "Ready: cell"); err != nil {
+		t.Fatalf("NotifyReadyでエラーが返った: %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %#v, want only the cell client", runner.calls)
+	}
+}
+
 type runnerCall struct {
 	name string
 	args []string

@@ -391,5 +391,5 @@ func (a TmuxAdapter) configureRootWorkspace(ctx context.Context, name string) er
 }
 
 func rootWorkspaceName(project string) string {
-	return project + "-root"
+	return domain.RootWorkspaceName(project)
 }

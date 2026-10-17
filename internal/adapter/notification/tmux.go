@@ -30,6 +30,19 @@ func (n TmuxNotifier) NotifyReady(ctx context.Context, resource domain.Workspace
 		}
 		socket, clients = "", legacyClients
 	}
+	if err := n.display(ctx, socket, clients, message); err != nil {
+		return err
+	}
+	// The root session lives on the default server; its clients get the
+	// message too. A missing root session or server is not an error.
+	rootClients, err := n.listClients(ctx, "", domain.RootWorkspaceName(resource.Project))
+	if err != nil {
+		return nil
+	}
+	return n.display(ctx, "", rootClients, message)
+}
+
+func (n TmuxNotifier) display(ctx context.Context, socket string, clients string, message string) error {
 	for _, client := range strings.Fields(clients) {
 		if err := n.Runner.Run(ctx, "tmux", withSocket(socket, "display-message", "-c", client, message)...); err != nil {
 			return err

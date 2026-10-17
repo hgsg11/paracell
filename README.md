@@ -202,7 +202,7 @@ TUI と単独 CLI のどちらから実行しても、コマンドの開始・�
 
 tmux の中で `paracell pending` / `paracell ready` を実行すると、現在の cell の `STATUS` が変わります。`view` は自動で state を読み直します。
 
-`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は対象 cell の tmux session に接続している各 client のステータスラインへ `tmux display-message` で表示します。別 session の client には通知しません。desktop 通知やベル音は出しません。`none` または省略で通知を無効にできます。
+`paracell ready` は `Ready: {{.name}}` を通知します。`providers.notifications: tmux` は対象 cell の tmux session に接続している各 client のステータスラインへ `tmux display-message` で表示します。対象 cell の client に加えて、root session（`<project>-root`、default server）に接続している client にも同じメッセージを表示します（root session がなければ無視します）。それ以外の session の client には通知しません。desktop 通知やベル音は出しません。`none` または省略で通知を無効にできます。
 
 macOS のデスクトップ通知には、次のように設定します。
 

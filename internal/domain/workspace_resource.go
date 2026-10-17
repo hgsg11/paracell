@@ -22,3 +22,8 @@ func WorkspaceSocketName(project string) string {
 func (r WorkspaceResource) SocketName() string {
 	return WorkspaceSocketName(r.Project)
 }
+
+// RootWorkspaceName is the name of the project's root session on the default tmux server.
+func RootWorkspaceName(project string) string {
+	return project + "-root"
+}
