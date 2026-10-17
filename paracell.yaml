@@ -9,13 +9,41 @@ prefixes:
     feat: feat/
     fix: fix/
 templates:
-    paracell:
+    feat:
         commanderCell:
             name: workspace
             workspace:
-                windows:
-                    - name: agent
-                      command: codex
+                windows: []
+        targets:
+            repository:
+                source:
+                    path: .
+                    base: main
+    fix:
+        commanderCell:
+            name: workspace
+            workspace:
+                windows: []
+        targets:
+            repository:
+                source:
+                    path: .
+                    base: main
+    review:
+        commanderCell:
+            name: workspace
+            workspace:
+                windows: []
+        targets:
+            repository:
+                source:
+                    path: .
+                    base: main
+    update:
+        commanderCell:
+            name: workspace
+            workspace:
+                windows: []
         targets:
             repository:
                 source:

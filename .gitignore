@@ -3,3 +3,5 @@
 docs/
 02_project/
 dist/
+# Added by code-review-graph
+.code-review-graph/
