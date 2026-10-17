@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t *testing.T) {
 	source, _ := NewSourceTemplate("services/api", "origin/main")
@@ -16,11 +13,10 @@ func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	base, _ := NewUnresolvedTemplate("base", "", true, &commander, []TargetCellSpec{target}, []DependencyCellSpec{dependency})
-	child, _ := NewUnresolvedTemplate("feat", "base", false, nil, nil, nil)
+	feat, _ := NewUnresolvedTemplate("feat", &commander, []TargetCellSpec{target}, []DependencyCellSpec{dependency})
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	config, _ := NewTemplates("sample", []Template{base, child}, workspaceDriver, Docker, sourceDriver, NoNotification, nil)
+	config, _ := NewTemplates("sample", []Template{feat}, workspaceDriver, Docker, sourceDriver, NoNotification, nil)
 
 	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "make test"))
 	if err != nil {
@@ -38,21 +34,16 @@ func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t 
 	}
 }
 
-func TestResolveTemplateはInheritanceCycleとAbstractTemplateを拒否する(t *testing.T) {
+func TestResolveTemplateは存在しないTemplateとCommanderCell未定義を拒否する(t *testing.T) {
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	a, _ := NewUnresolvedTemplate("a", "b", false, nil, nil, nil)
-	b, _ := NewUnresolvedTemplate("b", "a", false, nil, nil, nil)
-	config, _ := NewTemplates("sample", []Template{a, b}, workspaceDriver, None, sourceDriver, NoNotification, nil)
-	if _, err := config.Resolve("a", NewTemplateVars("", "", "", "")); err == nil || !strings.Contains(err.Error(), "cycle") {
-		t.Fatalf("cycle error = %v", err)
+	bare, _ := NewUnresolvedTemplate("bare", nil, nil, nil)
+	config, _ := NewTemplates("sample", []Template{bare}, workspaceDriver, None, sourceDriver, NoNotification, nil)
+	if _, err := config.Resolve("bare", NewTemplateVars("", "", "", "")); err == nil {
+		t.Fatal("template without CommanderCell must be rejected")
 	}
-	window, _ := NewWindow("agent", "")
-	commander, _ := NewCommanderCellSpec("workspace", NewWorkspaceTemplate([]Window{window}))
-	base, _ := NewUnresolvedTemplate("base", "", true, &commander, nil, nil)
-	config, _ = NewTemplates("sample", []Template{base}, workspaceDriver, None, sourceDriver, NoNotification, nil)
-	if _, err := config.Resolve("base", NewTemplateVars("", "", "", "")); err == nil {
-		t.Fatal("abstract template must not be selectable")
+	if _, err := config.SelectableNames(); err == nil {
+		t.Fatal("template without CommanderCell must not be selectable")
 	}
 	if _, err := config.Resolve("missing", NewTemplateVars("", "", "", "")); err == nil {
 		t.Fatal("missing template must be rejected")

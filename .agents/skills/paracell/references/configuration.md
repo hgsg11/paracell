@@ -32,8 +32,7 @@ prefixes:
   feat: feat/
   fix: fix/
 templates:
-  base:
-    abstract: true
+  feat:
     repository:
       base: main
       branchMode: create
@@ -45,10 +44,6 @@ templates:
       windows:
         - name: agent
           command: 'codex "{{.Command}}"'
-  feat:
-    extends: base
-    repository:
-      base: origin/main
 ```
 
 `providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
@@ -58,9 +53,8 @@ A fresh `paracell init` creates one starter template named `example` for the `re
 ## Template Selection Fields
 
 - `prefixes`: optional map from a key to a branch-name prefix. Keys and values control branch naming only; they do not select templates. Pass `--prefix <key>` when the configured prefix key for the intended branch naming is known and should be used, regardless of which template was selected. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never derive the prefix from a template key.
-- Template key: identifies a configured template. To select by target, resolve inheritance and match explicitly requested target names against the names under each compatible template's `targets` map by exact equality; do not compare target names to template keys. With one requested target, a candidate must contain that target entry. With several, a candidate must contain all of them. Choose the lexicographically smallest matching template key (case-sensitive byte order); if none match or no target is named, choose the lexicographically smallest compatible template key overall. Do not infer a match from a task kind, prefix, semantic closeness, or YAML declaration order.
-- `extends`: names one parent template. A parent may itself extend one parent; multiple inheritance is not supported.
-- `abstract: true`: marks a reusable template that is excluded from both `fork --template` and the TUI template list.
+- Template key: identifies a configured template. To select by target, match explicitly requested target names against the names under each compatible template's `targets` map by exact equality; do not compare target names to template keys. With one requested target, a candidate must contain that target entry. With several, a candidate must contain all of them. Choose the lexicographically smallest matching template key (case-sensitive byte order); if none match or no target is named, choose the lexicographically smallest compatible template key overall. Do not infer a match from a task kind, prefix, semantic closeness, or YAML declaration order.
+- Templates do not inherit. `extends` and `abstract` were removed; a `paracell.yaml` containing either fails to load with an error naming the template and field. Migrate by writing the parent's definition directly into each template and deleting the parent template.
 - `repository.base`: accepts an explicit branch or `current`.
 - `repository.branchMode`:
   - Omitted or `create`: require a new branch.
@@ -73,44 +67,6 @@ A fresh `paracell init` creates one starter template named `example` for the `re
 The issue's example configuration has prefix keys `feat` and `fix`, and template keys `feat`, `fix`, `review`, and `update`. These are independent namespaces even though two keys happen to be identical. If all four compatible templates contain `targets.repository`, a request for target `repository` matches all four and selects template `feat` by key order. If only `templates.update` contains `targets.web`, a request for `web` selects `update`; the template key itself is not the target match. For branch naming, pass `--prefix fix` to use `fix/` regardless of the selected template, or omit `--prefix` only when the CLI's default `feat/` is intended.
 
 Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
-
-## Template Inheritance
-
-Inheritance is resolved before template variables are rendered and before concrete-template validation:
-
-1. An omitted scalar or struct field inherits the resolved parent value.
-2. A scalar explicitly supplied by the child replaces the parent value, including an empty string.
-3. Structs such as `repository`, `containers`, and `session` are resolved field by field.
-4. A supplied slice or map replaces the entire parent collection. Values are never appended or deep-merged.
-5. `[]` and `{}` explicitly replace an inherited collection with an empty collection.
-6. Object/pointer fields replace the complete object unless the field belongs to a structure explicitly resolved field by field above.
-
-For example, this child keeps `repository.base` but replaces both inherited collections rather than combining them:
-
-```yaml
-templates:
-  base:
-    abstract: true
-    repository:
-      base: origin/main
-      branchMode: create
-    files: [.env, config/base.yaml]
-    containers:
-      services:
-        web:
-          sourceContainer: app-web
-  feat:
-    extends: base
-    repository:
-      base: origin/main
-    files: [config/feat.yaml]
-    containers:
-      services: {}
-```
-
-Here `feat.files` contains only `config/feat.yaml`, and `feat.containers.services` is empty. An abstract template may be partial because only the fully resolved concrete template is validated. Variables inherited in environment values and session commands are rendered with the selected child's runtime values.
-
-Loading fails deterministically when a parent does not exist or inheritance is cyclic. Errors identify the child and missing parent (`template "feat" extends unknown template "base"`) or include the complete cycle (`template inheritance cycle: "a" -> "b" -> "a"`).
 
 ## Ticket-Backed Dispatch
 

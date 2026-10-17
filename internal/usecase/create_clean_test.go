@@ -106,7 +106,7 @@ func newFakePorts() *fakePorts {
 	source, _ := domain.NewSourceTemplate(".", "main")
 	target, _ := domain.NewTargetCellSpec("repository", &source, nil)
 	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
-	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &commander, []domain.TargetCellSpec{target}, nil)
+	template, _ := domain.NewUnresolvedTemplate("feat", &commander, []domain.TargetCellSpec{target}, nil)
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
@@ -246,7 +246,7 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	template, _ := domain.NewUnresolvedTemplate("feat", "", false, &spec, []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
+	template, _ := domain.NewUnresolvedTemplate("feat", &spec, []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
 	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil)
 	if err != nil {
 		t.Fatal(err)

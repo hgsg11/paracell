@@ -5,8 +5,6 @@ import "fmt"
 // Template groups the peer Cell specifications used to create one CellGroup.
 type Template struct {
 	Name         string
-	Extends      string
-	Abstract     bool
 	Commander    *CommanderCellSpec
 	Targets      []TargetCellSpec
 	Dependencies []DependencyCellSpec
@@ -52,21 +50,7 @@ func (t Template) resolve(vars TemplateVars) (ResolvedTemplate, error) {
 	return NewResolvedTemplate(t.Name, resolvedCommander, targets, dependencies), nil
 }
 
-func (t Template) merge(parent Template) (Template, error) {
-	commander, targets, dependencies := parent.Commander, parent.Targets, parent.Dependencies
-	if t.Commander != nil {
-		commander = t.Commander
-	}
-	if t.Targets != nil {
-		targets = t.Targets
-	}
-	if t.Dependencies != nil {
-		dependencies = t.Dependencies
-	}
-	return NewUnresolvedTemplate(t.Name, t.Extends, t.Abstract, commander, targets, dependencies)
-}
-
-func NewUnresolvedTemplate(name, extends string, abstract bool, commander *CommanderCellSpec, targets []TargetCellSpec, dependencies []DependencyCellSpec) (Template, error) {
+func NewUnresolvedTemplate(name string, commander *CommanderCellSpec, targets []TargetCellSpec, dependencies []DependencyCellSpec) (Template, error) {
 	if name == "" {
 		return Template{}, fmt.Errorf("template name is required")
 	}
@@ -123,6 +107,6 @@ func NewUnresolvedTemplate(name, extends string, abstract bool, commander *Comma
 		dependencyNames[validated.Name] = struct{}{}
 		dependencyCopies = append(dependencyCopies, validated)
 	}
-	return Template{Name: name, Extends: extends, Abstract: abstract, Commander: copy,
+	return Template{Name: name, Commander: copy,
 		Targets: targetCopies, Dependencies: dependencyCopies}, nil
 }

@@ -49,7 +49,7 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 		if err != nil {
 			return domain.Templates{}, err
 		}
-		template, err := domain.NewUnresolvedTemplate(name, "", false, &commander, []domain.TargetCellSpec{target}, nil)
+		template, err := domain.NewUnresolvedTemplate(name, &commander, []domain.TargetCellSpec{target}, nil)
 		if err != nil {
 			return domain.Templates{}, err
 		}
