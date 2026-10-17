@@ -17,10 +17,10 @@ templates:
                 windows:
                     - name: claude
                       command: |-
-                        cd repository/source && { code-review-graph build --repo . || true; } && claude --model sonnet{{if .Command}} "$(cat <<'PARACELL_EOF'
+                        cd repository/source && { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
-                        )"{{end}}
+                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','sonnet'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
         targets:
             repository:
                 source:
