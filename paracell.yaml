@@ -17,7 +17,7 @@ templates:
                 windows:
                     - name: claude
                       command: |-
-                        cd repository/source && { code-review-graph build --repo . || true; } && claude{{if .Command}} "$(cat <<'PARACELL_EOF'
+                        cd repository/source && { code-review-graph build --repo . || true; } && claude --model sonnet{{if .Command}} "$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
                         )"{{end}}
