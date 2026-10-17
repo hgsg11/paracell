@@ -9,43 +9,28 @@ prefixes:
     feat: feat/
     fix: fix/
 templates:
+    base:
+        abstract: true
+        commanderCell:
+            name: workspace
+            workspace:
+                windows:
+                    - name: claude
+                      command: |-
+                        cd repository/source && { code-review-graph build --repo . || true; } && claude{{if .Command}} "$(cat <<'PARACELL_EOF'
+                        {{.Command}}
+                        PARACELL_EOF
+                        )"{{end}}
+        targets:
+            repository:
+                source:
+                    path: .
+                    base: main
     feat:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows: []
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
+        extends: base
     fix:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows: []
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
+        extends: base
     review:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows: []
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
+        extends: base
     update:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows: []
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
+        extends: base
