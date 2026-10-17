@@ -46,9 +46,9 @@ type prepareWorkspace struct {
 
 func (*prepareWorkspace) CreateWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
 func (*prepareWorkspace) CleanWorkspace(context.Context, domain.WorkspaceResource) error  { return nil }
-func (s *prepareWorkspace) PrepareWorkspace(_ context.Context, resource domain.WorkspaceResource) error {
+func (s *prepareWorkspace) EnterCommand(ctx context.Context, resource domain.WorkspaceResource) (*exec.Cmd, error) {
 	s.prepared = resource
-	return nil
+	return exec.CommandContext(ctx, "tmux", "enter", resource.Name), nil
 }
 func (*prepareWorkspace) UpdateStatusLabel(context.Context, domain.WorkspaceResource) error {
 	return nil
@@ -86,7 +86,7 @@ func appTestCell(id string, issue string, templateName string) domain.CommanderC
 	return cell
 }
 
-func TestRunEnterCmdは復元設定後にWorkspace環境を保持して切り替える(t *testing.T) {
+func TestRunEnterCmdはWorkspaceのEnterCommandを返す(t *testing.T) {
 	t.Setenv("TMUX", "/tmp/tmux-1000/default,123,0")
 	cell := appTestCell("cell-1", "123", "default")
 	session := &prepareWorkspace{}
@@ -96,7 +96,7 @@ func TestRunEnterCmdは復元設定後にWorkspace環境を保持して切り替
 	if err != nil {
 		t.Fatalf("runEnterCmdでエラーが返った: %v", err)
 	}
-	wantArgs := []string{"tmux", "switch-client", "-E", "-t", cell.WorkspaceName()}
+	wantArgs := []string{"tmux", "enter", cell.WorkspaceName()}
 	if !reflect.DeepEqual(cmd.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, wantArgs)
 	}

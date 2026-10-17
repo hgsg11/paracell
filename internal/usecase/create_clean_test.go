@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/hgsg11/paracell/internal/adapter/id"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -193,7 +194,9 @@ func (f *fakePorts) CleanWorkspace(context.Context, domain.WorkspaceResource) er
 	f.calls = append(f.calls, "workspace:clean")
 	return nil
 }
-func (f *fakePorts) PrepareWorkspace(context.Context, domain.WorkspaceResource) error { return nil }
+func (f *fakePorts) EnterCommand(context.Context, domain.WorkspaceResource) (*exec.Cmd, error) {
+	return nil, nil
+}
 func (f *fakePorts) UpdateStatusLabel(_ context.Context, resource domain.WorkspaceResource) error {
 	f.calls = append(f.calls, "workspace:label:"+resource.DisplayLabel)
 	return f.updateStatusLabelErr
