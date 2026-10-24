@@ -2,6 +2,8 @@ package domain
 
 import "fmt"
 
+// CellVersion is the persisted version used for optimistic locking. The domain
+// only reads it; the state adapter advances it.
 type CellVersion uint64
 
 func NewCellVersion(value uint64) (CellVersion, error) {
@@ -9,8 +11,4 @@ func NewCellVersion(value uint64) (CellVersion, error) {
 		return 0, fmt.Errorf("cell version must be greater than zero")
 	}
 	return CellVersion(value), nil
-}
-
-func (v CellVersion) Add() (CellVersion, error) {
-	return NewCellVersion(uint64(v) + 1)
 }

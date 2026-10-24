@@ -4,29 +4,31 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
-func FormatCellList(cells []domain.CommanderCell) string {
+const (
+	statusPending  = "pending"
+	statusReady    = "ready"
+	creationFailed = "failed"
+)
+
+func FormatCellList(cells []query.CellView) string {
 	var b strings.Builder
 	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
-		label, templateName := cell.ListLabels()
-		creationStatus := cell.CreationStatus()
-		status := domain.Ready
-		if cell.HasStatus(domain.Pending) {
-			status = domain.Pending
+		status := statusReady
+		if cell.Status == statusPending {
+			status = statusPending
 		}
-		done := cell.EnsureCanBeCleaned() == nil
 		failedStage := "-"
 		lastError := "-"
-		if creationStatus == domain.CreationFailed {
-			stage, message := cell.CreationFailure()
-			failedStage = string(stage)
-			lastError = singleLine(message, 120)
+		if cell.CreationStatus == creationFailed {
+			failedStage = cell.FailedStage
+			lastError = singleLine(cell.LastError, 120)
 		}
 		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
-			label, templateName, creationStatus, status, done, failedStage, lastError)
+			cell.Label, cell.Template, cell.CreationStatus, status, cell.Done, failedStage, lastError)
 	}
 	return b.String()
 }

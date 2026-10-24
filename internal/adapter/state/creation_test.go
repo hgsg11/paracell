@@ -99,13 +99,16 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(stored.Commanders) != 1 || len(stored.Targets) != 2 || len(stored.Dependencies) != 1 {
+			if len(stored.Groups) != 1 || len(stored.Commanders) != 1 || len(stored.Targets) != 2 || len(stored.Dependencies) != 1 {
 				t.Fatalf("incomplete CellGroup: %#v", stored)
 			}
-			saved := stored.Commanders[0]
+			saved, group := stored.Commanders[0], stored.Groups[0]
+			if saved.CellGroupID != group.ID || group.Issue != "120" {
+				t.Fatalf("CommanderCell %#v does not refer to CellGroup %#v", saved, group)
+			}
 			if failedStage == "" {
-				if saved.CreationStatus() != domain.CreationReady || !reflect.DeepEqual(commander.Stored(), saved.Stored()) {
-					t.Fatalf("returned/persisted commander mismatch: %#v / %#v", commander, saved)
+				if group.Creation != (domain.CellCreation{Status: domain.CreationReady}) || !reflect.DeepEqual(commander, saved) {
+					t.Fatalf("returned/persisted commander mismatch: %#v / %#v (%#v)", commander, saved, group)
 				}
 				if !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace"}) {
 					t.Fatalf("stages = %v", ports.calls)
@@ -114,9 +117,9 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 					t.Fatal("container networks not persisted")
 				}
 			} else {
-				stage, message := saved.CreationFailure()
-				if saved.CreationStatus() != domain.CreationFailed || stage != failedStage || message != string(failedStage)+" failed" {
-					t.Fatalf("failure not persisted: %#v", saved)
+				want := domain.CellCreation{Status: domain.CreationFailed, FailedStage: failedStage, LastError: string(failedStage) + " failed"}
+				if group.Creation != want {
+					t.Fatalf("failure not persisted: %#v", group)
 				}
 				if failedStage == domain.CreationStageWorkspace && !reflect.DeepEqual(ports.calls, []string{"source", "containers", "workspace", "clean containers"}) {
 					t.Fatalf("rollback calls = %v", ports.calls)

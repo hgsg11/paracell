@@ -18,35 +18,36 @@ type AnnotateCellUseCase struct {
 	WorkspaceFactory WorkspaceProviderFactory
 }
 
-func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.CommanderCell, error) {
-	var updated domain.CommanderCell
+// Execute sets the note on the CellGroup of the resolved Cell and refreshes the
+// tmux status label. It returns the CellGroup as saved.
+func (u AnnotateCellUseCase) Execute(ctx context.Context, input AnnotateCellInput) (domain.CellGroup, error) {
+	var updated domain.CellGroup
+	var commander domain.CommanderCell
 	if err := u.Cells.UpdateCells(ctx, func(cells CellSet) (CellSet, error) {
-		for i, cell := range cells.Commanders {
-			if cell.Matches(input.Cell) {
-				if err := cell.CellGroup.SetNote(input.Note); err != nil {
-					return CellSet{}, err
-				}
-				cells.Commanders[i] = cell
-				updated = cell
-				return cells, nil
-			}
+		found, group, err := cells.resolve(input.Cell)
+		if err != nil {
+			return CellSet{}, err
 		}
-		return CellSet{}, fmt.Errorf("cell %q not found", input.Cell)
+		if err := group.SetNote(input.Note); err != nil {
+			return CellSet{}, err
+		}
+		if err := cells.replaceGroup(group); err != nil {
+			return CellSet{}, err
+		}
+		updated, commander = group, found
+		return cells, nil
 	}); err != nil {
-		return domain.CommanderCell{}, err
-	}
-	if err := updated.AdvanceVersion(); err != nil {
-		return domain.CommanderCell{}, err
+		return domain.CellGroup{}, err
 	}
 
 	if u.WorkspaceFactory == nil {
 		return updated, nil
 	}
-	session, err := u.WorkspaceFactory.Workspace(updated.ResourceDrivers().Workspace)
+	session, err := u.WorkspaceFactory.Workspace(updated.ResourceDrivers(commander.Workspace.Driver).Workspace)
 	if err != nil {
 		return updated, err
 	}
-	if err := session.UpdateStatusLabel(ctx, updated.WorkspaceResource()); err != nil {
+	if err := session.UpdateStatusLabel(ctx, updated.WorkspaceResource(commander.Workspace)); err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
 			return updated, nil
 		}

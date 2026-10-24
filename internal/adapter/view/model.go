@@ -14,7 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
 type Action string
@@ -32,18 +32,23 @@ const (
 	FocusTemplates FocusArea = "templates"
 )
 
+const (
+	cellStatusPending = "pending"
+	cellStatusReady   = "ready"
+)
+
+// Result reports the action that ended the view and the name of the Cell it acted on.
 type Result struct {
 	Action Action
-	Cell   domain.CommanderCell
+	Cell   string
 }
 
 type forkResultMsg struct {
-	cell domain.CommanderCell
-	err  error
+	err error
 }
 
 type Model struct {
-	Cells            []domain.CommanderCell
+	Cells            []query.CellView
 	Templates        []string
 	CurrentCell      string
 	Focus            FocusArea
@@ -62,17 +67,19 @@ type Model struct {
 	Width            int
 	Height           int
 	Result           Result
-	Enter            func(domain.CommanderCell) tea.Cmd
-	Fork             func(issue string, template string) tea.Cmd
-	Delete           func(domain.CommanderCell) error
-	MarkDone         func(domain.CommanderCell) (domain.CommanderCell, error)
-	Reload           func() ([]domain.CommanderCell, error)
-	Logger           *logging.Logger
+	// Enter, Delete, MarkDone, and MarkUndone receive the Cell name.
+	Enter      func(cellName string) tea.Cmd
+	Fork       func(issue string, template string) tea.Cmd
+	Delete     func(cellName string) error
+	MarkDone   func(cellName string) error
+	MarkUndone func(cellName string) error
+	Reload     func() ([]query.CellView, error)
+	Logger     *logging.Logger
 }
 
-func NewModel(cells []domain.CommanderCell, templates ...[]string) Model {
+func NewModel(cells []query.CellView, templates ...[]string) Model {
 	model := Model{
-		Cells: append([]domain.CommanderCell(nil), cells...),
+		Cells: append([]query.CellView(nil), cells...),
 		Focus: FocusCells,
 	}
 	if len(templates) > 0 {
@@ -153,13 +160,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.setError("no cells available")
 					return m, nil
 				}
-				cell := m.Cells[m.Selected]
+				name := m.Cells[m.Selected].Name
 				del := m.Delete
 				return m, func() tea.Msg {
 					if del == nil {
-						return deleteResultMsg{cell: cell, err: errors.New("delete handler is not configured")}
+						return deleteResultMsg{name: name, err: errors.New("delete handler is not configured")}
 					}
-					return deleteResultMsg{cell: cell, err: del(cell)}
+					return deleteResultMsg{name: name, err: del(name)}
 				}
 			}
 		}
@@ -228,14 +235,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setError("no cells available")
 				return m, nil
 			}
+			// One key toggles completion: an undone Cell is marked done, a done Cell undone.
 			cell := m.Cells[m.Selected]
-			markDone := m.MarkDone
+			change, handlerName := m.MarkDone, "mark done"
+			if cell.Done {
+				change, handlerName = m.MarkUndone, "mark undone"
+			}
 			return m, func() tea.Msg {
-				if markDone == nil {
-					return markDoneResultMsg{cell: cell, err: errors.New("mark done handler is not configured")}
+				if change == nil {
+					return markDoneResultMsg{name: cell.Name, err: errors.New(handlerName + " handler is not configured")}
 				}
-				updated, err := markDone(cell)
-				return markDoneResultMsg{cell: updated, err: err}
+				return markDoneResultMsg{name: cell.Name, done: !cell.Done, err: change(cell.Name)}
 			}
 		case " ":
 			if m.Focus == FocusExit {
@@ -246,12 +256,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.Focus != FocusCells {
 				return m, nil
 			}
-			cell := m.Cells[m.Selected]
+			name := m.Cells[m.Selected].Name
 			enter := m.Enter
 			if enter == nil {
-				return m, EnterFailureCmd(cell, errors.New("enter handler is not configured"))
+				return m, EnterFailureCmd(name, errors.New("enter handler is not configured"))
 			}
-			return m, enter(cell)
+			return m, enter(name)
 		}
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
@@ -262,7 +272,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Error = ""
-		m.Result = Result{Action: ActionEnter, Cell: msg.cell}
+		m.Result = Result{Action: ActionEnter, Cell: msg.name}
 		m.Quitting = true
 		return m, tea.Quit
 	case deleteResultMsg:
@@ -271,24 +281,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Error = ""
-		if len(m.Cells) == 0 {
-			return m, nil
-		}
-		index := -1
-		for i, cell := range m.Cells {
-			if cell.SameIdentity(msg.cell) {
-				index = i
-				break
-			}
-		}
+		index := m.cellIndex(msg.name)
 		if index < 0 {
 			return m, nil
 		}
-		m.Cells = append(append([]domain.CommanderCell{}, m.Cells[:index]...), m.Cells[index+1:]...)
+		m.Cells = append(append([]query.CellView{}, m.Cells[:index]...), m.Cells[index+1:]...)
 		if m.Selected >= len(m.Cells) && m.Selected > 0 {
 			m.Selected--
 		}
-		m.Result = Result{Action: ActionDelete, Cell: msg.cell}
+		m.Result = Result{Action: ActionDelete, Cell: msg.name}
 		return m, nil
 	case markDoneResultMsg:
 		if msg.err != nil {
@@ -296,20 +297,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.Error = ""
-		if len(m.Cells) == 0 {
-			return m, nil
-		}
-		index := -1
-		for i, cell := range m.Cells {
-			if cell.SameIdentity(msg.cell) {
-				index = i
-				break
-			}
-		}
+		index := m.cellIndex(msg.name)
 		if index < 0 {
 			return m, nil
 		}
-		m.Cells[index] = msg.cell
+		// Show the change at once; the periodic reload corrects any other drift.
+		m.Cells = append([]query.CellView(nil), m.Cells...)
+		m.Cells[index].Done = msg.done
 		return m, nil
 	case forkResultMsg:
 		if m.ForksInProgress > 0 {
@@ -340,19 +334,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setError(err.Error())
 			return m, nil
 		}
-		var selectedCell domain.CommanderCell
+		selectedName := ""
 		hasSelectedCell := false
 		if m.Selected >= 0 && m.Selected < len(m.Cells) {
-			selectedCell = m.Cells[m.Selected]
+			selectedName = m.Cells[m.Selected].Name
 			hasSelectedCell = true
 		}
 		m.Cells = cells
 		if hasSelectedCell {
-			for i, cell := range m.Cells {
-				if cell.SameIdentity(selectedCell) {
-					m.Selected = i
-					break
-				}
+			if index := m.cellIndex(selectedName); index >= 0 {
+				m.Selected = index
 			}
 		}
 		if m.Selected >= len(m.Cells) {
@@ -368,6 +359,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitLogCmd()
 	}
 	return m, nil
+}
+
+// cellIndex returns the position of the Cell with the given name, or -1.
+func (m Model) cellIndex(name string) int {
+	for i, cell := range m.Cells {
+		if cell.Name == name {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m Model) lastTemplateIndex() int {
@@ -448,12 +449,11 @@ func renderCellsPane(m Model, width int, height int) []string {
 	} else {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
-			label, templateName := cell.ListLabels()
 			done := "[ ]"
-			if cell.EnsureCanBeCleaned() == nil {
+			if cell.Done {
 				done = "[x]"
 			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(templateName, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -553,22 +553,21 @@ func maxLineWidth(lines []string) int {
 	return width
 }
 
-func cellWidths(cells []domain.CommanderCell) (int, int) {
+func cellWidths(cells []query.CellView) (int, int) {
 	nameWidth := lipgloss.Width("NAME")
 	templateWidth := lipgloss.Width("TEMPLATE")
 	for _, cell := range cells {
-		label, templateName := cell.ListLabels()
-		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(label, maxIssueDisplayWidth)))
-		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(templateName, maxTemplateDisplayWidth)))
+		nameWidth = max(nameWidth, lipgloss.Width(ellipsize(cell.Label, maxIssueDisplayWidth)))
+		templateWidth = max(templateWidth, lipgloss.Width(ellipsize(cell.Template, maxTemplateDisplayWidth)))
 	}
 	return nameWidth, templateWidth
 }
 
-func renderCellStatus(cell domain.CommanderCell, frame int) string {
-	switch {
-	case cell.HasStatus(domain.Pending):
+func renderCellStatus(cell query.CellView, frame int) string {
+	switch cell.Status {
+	case cellStatusPending:
 		return pendingStatusFrames[frame%len(pendingStatusFrames)]
-	case cell.HasStatus(domain.Ready):
+	case cellStatusReady:
 		return ""
 	default:
 		return "  "
@@ -602,8 +601,8 @@ func resetForkInput(m Model) Model {
 	return m
 }
 
-func currentCellMarker(cell domain.CommanderCell, currentCell string) string {
-	if currentCell != "" && cell.Name().Value == currentCell {
+func currentCellMarker(cell query.CellView, currentCell string) string {
+	if currentCell != "" && cell.Name == currentCell {
 		return "*"
 	}
 	return " "
@@ -762,13 +761,13 @@ func (m Model) waitLogCmd() tea.Cmd {
 }
 
 type enterResultMsg struct {
-	cell domain.CommanderCell
+	name string
 	err  error
 }
 
-func EnterLoggedProcessCmd(cell domain.CommanderCell, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
+func EnterLoggedProcessCmd(cellName string, cmd *exec.Cmd, logger *logging.Logger) tea.Cmd {
 	return tea.Exec(newLoggedCapturedExecCommand(cmd, logger), func(err error) tea.Msg {
-		return enterResultMsg{cell: cell, err: err}
+		return enterResultMsg{name: cellName, err: err}
 	})
 }
 
@@ -889,25 +888,28 @@ func (w logChunkWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func EnterFailureCmd(cell domain.CommanderCell, err error) tea.Cmd {
+func EnterFailureCmd(cellName string, err error) tea.Cmd {
 	return func() tea.Msg {
-		return enterResultMsg{cell: cell, err: err}
+		return enterResultMsg{name: cellName, err: err}
 	}
 }
 
-func ForkResultCmd(cell domain.CommanderCell, err error) tea.Cmd {
+func ForkResultCmd(err error) tea.Cmd {
 	return func() tea.Msg {
-		return forkResultMsg{cell: cell, err: err}
+		return forkResultMsg{err: err}
 	}
 }
 
 type deleteResultMsg struct {
-	cell domain.CommanderCell
+	name string
 	err  error
 }
 
+// markDoneResultMsg reports the result of the completion key. done is the
+// completion state the Cell has when err is nil.
 type markDoneResultMsg struct {
-	cell domain.CommanderCell
+	name string
+	done bool
 	err  error
 }
 

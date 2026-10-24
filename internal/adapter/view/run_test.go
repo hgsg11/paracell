@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
 type fakeProgram struct {
@@ -26,6 +26,8 @@ func (p fakeProgram) Run() (tea.Model, error) {
 	return updated, nil
 }
 
+func noCellAction(string) error { return nil }
+
 func TestRunはspace成功で結果を返す(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
@@ -37,21 +39,21 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 		return fakeProgram{model: model}
 	}
 
-	cells := []domain.CommanderCell{
+	cells := []query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "123", func() ([]domain.CommanderCell, error) {
+	result, err := Run(context.Background(), cells, nil, "123", func() ([]query.CellView, error) {
 		return cells, nil
-	}, func(cell domain.CommanderCell) tea.Cmd {
-		if cell.Name().Value != "123" {
-			t.Fatalf("enter cell = %#v, want name %q", cell, "123")
+	}, func(name string) tea.Cmd {
+		if name != "123" {
+			t.Fatalf("enter cell = %q, want %q", name, "123")
 		}
-		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
-	}, func() error { return nil }, func(cell domain.CommanderCell) error { return nil }, func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil }, nil)
+		return func() tea.Msg { return enterResultMsg{name: name, err: nil} }
+	}, func() error { return nil }, noCellAction, noCellAction, noCellAction, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name().Value != "123" {
+	if len(got.Cells) != 1 || got.Cells[0].Name != "123" {
 		t.Fatalf("cells = %#v, want %#v", got.Cells, cells)
 	}
 	if got.CurrentCell != "123" {
@@ -60,8 +62,8 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	if result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", result.Action, ActionEnter)
 	}
-	if result.Cell.Name().Value != "123" {
-		t.Fatalf("cell = %#v, want name %q", result.Cell, "123")
+	if result.Cell != "123" {
+		t.Fatalf("cell = %q, want %q", result.Cell, "123")
 	}
 }
 
@@ -80,14 +82,14 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 		})
 	}
 
-	cells := []domain.CommanderCell{
+	cells := []query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	result, err := Run(context.Background(), cells, nil, "", func() ([]domain.CommanderCell, error) {
+	result, err := Run(context.Background(), cells, nil, "", func() ([]query.CellView, error) {
 		return cells, nil
-	}, func(cell domain.CommanderCell) tea.Cmd {
-		return func() tea.Msg { return enterResultMsg{cell: cell, err: fmt.Errorf("attach failed")} }
-	}, func() error { return nil }, func(cell domain.CommanderCell) error { return nil }, func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil }, nil)
+	}, func(name string) tea.Cmd {
+		return func() tea.Msg { return enterResultMsg{name: name, err: fmt.Errorf("attach failed")} }
+	}, func() error { return nil }, noCellAction, noCellAction, noCellAction, nil)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
@@ -103,33 +105,39 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
-	var got Model
+	var final Model
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
-		got = model.(Model)
 		return programFunc(func() (tea.Model, error) {
 			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil {
 				updated, _ = updated.(Model).Update(cmd())
 			}
+			final = updated.(Model)
 			return updated, nil
 		})
 	}
 
-	cells := []domain.CommanderCell{
+	cells := []query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	}
+	var markedDone []string
 	result, err := Run(
 		context.Background(),
 		cells,
 		nil,
 		"",
-		func() ([]domain.CommanderCell, error) { return cells, nil },
-		func(cell domain.CommanderCell) tea.Cmd { return nil },
+		func() ([]query.CellView, error) { return cells, nil },
+		func(string) tea.Cmd { return nil },
 		func() error { return nil },
-		func(cell domain.CommanderCell) error { return nil },
-		func(cell domain.CommanderCell) (domain.CommanderCell, error) {
-			return cell, cell.MarkDone()
+		noCellAction,
+		func(name string) error {
+			markedDone = append(markedDone, name)
+			return nil
+		},
+		func(name string) error {
+			t.Fatalf("mark undone was called for %q", name)
+			return nil
 		},
 		nil,
 	)
@@ -139,8 +147,8 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	if result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", result.Action, ActionNone)
 	}
-	if err := got.Cells[0].EnsureCanBeCleaned(); err != nil {
-		t.Fatal("IsDone = false, want true")
+	if len(markedDone) != 1 || markedDone[0] != "123" || !final.Cells[0].Done {
+		t.Fatalf("mark done calls = %#v, cells = %#v", markedDone, final.Cells)
 	}
 }
 
@@ -164,19 +172,20 @@ func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 
 	result, err := Run(
 		context.Background(),
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		nil,
 		"",
-		func() ([]domain.CommanderCell, error) {
-			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
+		func() ([]query.CellView, error) {
+			return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
 		},
-		func(cell domain.CommanderCell) tea.Cmd { return nil },
+		func(string) tea.Cmd { return nil },
 		func() error {
 			goRootCalled = true
 			return nil
 		},
-		func(cell domain.CommanderCell) error { return nil },
-		func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil },
+		noCellAction,
+		noCellAction,
+		noCellAction,
 		nil,
 	)
 	if err != nil {
@@ -195,6 +204,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 	defer func() { newProgram = original }()
 
 	reloaded := false
+	var final Model
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
 		return programFunc(func() (tea.Model, error) {
@@ -208,6 +218,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 				t.Fatal("issue入力のEnterでforkコマンドが返らなかった")
 			}
 			updated, _ = updated.(Model).Update(cmd())
+			final = updated.(Model)
 			return updated, nil
 		})
 	}
@@ -217,25 +228,24 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 		nil,
 		[]string{"default"},
 		"",
-		func() ([]domain.CommanderCell, error) {
+		func() ([]query.CellView, error) {
 			reloaded = true
-			return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
+			return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
 		},
-		func(cell domain.CommanderCell) tea.Cmd { return nil },
+		func(string) tea.Cmd { return nil },
 		func() error { return nil },
-		func(cell domain.CommanderCell) error { return nil },
-		func(cell domain.CommanderCell) (domain.CommanderCell, error) { return cell, nil },
+		noCellAction,
+		noCellAction,
+		noCellAction,
 		func(issue string, template string) tea.Cmd {
-			return func() tea.Msg {
-				return forkResultMsg{cell: viewTestCell("cell-1", "123", "default")}
-			}
+			return ForkResultCmd(nil)
 		},
 	)
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if !reloaded {
-		t.Fatal("reloadが呼ばれなかった")
+	if !reloaded || len(final.Cells) != 1 || final.Cells[0].Name != "123" {
+		t.Fatalf("reloaded = %t, cells = %#v", reloaded, final.Cells)
 	}
 }
 

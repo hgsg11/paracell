@@ -6,7 +6,7 @@ type RuntimeCellIDGenerator interface {
 }
 
 // InstantiateCellsService constructs independent runtime Cells from template data.
-func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, targetSpecs []TargetCellSpec, dependencySpecs []DependencyCellSpec, workspaceDriver WorkspaceDriverType, branchPrefix string, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
+func InstantiateCellsService(group CellGroup, commanderSpec CommanderCellSpec, targetSpecs []TargetCellSpec, dependencySpecs []DependencyCellSpec, workspaceDriver WorkspaceDriverType, branchPrefix string, commanderID string, ids RuntimeCellIDGenerator) (CommanderCell, []TargetCell, []DependencyCell, error) {
 	dependencies := make([]DependencyCell, 0, len(dependencySpecs))
 	for _, dependencySpec := range dependencySpecs {
 		id := ids.NewID()
@@ -54,7 +54,7 @@ func InstantiateCellsService(group *CellGroup, commanderSpec CommanderCellSpec, 
 		windows = append(windows, window)
 	}
 	workspace := NewWorkspace(workspaceDriver, windows)
-	commander, err := NewCommanderCell(commanderID, group, workspace)
+	commander, err := NewCommanderCell(commanderID, group.ID, workspace)
 	if err != nil {
 		return CommanderCell{}, nil, nil, err
 	}

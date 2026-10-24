@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
 type loggerContextKey struct{}
@@ -23,7 +23,9 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 	return tea.NewProgram(model, opts...)
 }
 
-func Run(ctx context.Context, cells []domain.CommanderCell, templates []string, currentCell string, reload func() ([]domain.CommanderCell, error), enter func(domain.CommanderCell) tea.Cmd, goRoot func() error, delete func(domain.CommanderCell) error, markDone func(domain.CommanderCell) (domain.CommanderCell, error), fork func(issue string, template string) tea.Cmd) (Result, error) {
+// Run shows the Cell list. The enter, delete, markDone, and markUndone callbacks
+// receive the selected Cell name.
+func Run(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, delete func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (Result, error) {
 	model := NewModel(cells, templates)
 	model.Logger, _ = ctx.Value(loggerContextKey{}).(*logging.Logger)
 	model.CurrentCell = currentCell
@@ -31,6 +33,7 @@ func Run(ctx context.Context, cells []domain.CommanderCell, templates []string, 
 	model.Enter = enter
 	model.Delete = delete
 	model.MarkDone = markDone
+	model.MarkUndone = markUndone
 	model.Fork = fork
 	p := newProgram(model)
 	final, err := p.Run()
