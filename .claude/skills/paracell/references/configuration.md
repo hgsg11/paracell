@@ -7,7 +7,7 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | Command | Purpose | Important constraint |
 | --- | --- | --- |
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
-| `paracell init` | Create `paracell.yaml` and initialize `.paracell/state.db` | Keeps an existing configuration unchanged |
+| `paracell init` | Create `paracell.yaml`, initialize `.paracell/state.db`, and add the Claude Code status hooks to `.claude/settings.json` | Keeps an existing configuration unchanged; the hooks are added even when `paracell.yaml` exists |
 | `paracell fork <ticket-id> --template <name> [--prefix <name>] [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
 | `paracell view` | Open the cell/template TUI | Interactive |
@@ -49,6 +49,21 @@ templates:
 `providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
 
 A fresh `paracell init` creates one starter template named `self` for the `repository` target (it duplicates this repository as one worktree) and an `agent` window running `claude "{{.Command}}"`, so `fork --command <text>` starts claude with that instruction. Its default branch-prefix keys are `feat`, `update`, and `fix`; they apply to every project that does not set `prefixes`, and a prefix written in `paracell.yaml` takes precedence. Rename or add templates to represent the targets used by the project; prefix keys are not template names unless the project independently chooses matching names.
+
+## Claude Code Status Hooks
+
+`paracell init` adds two hooks to `.claude/settings.json` in the same directory as `paracell.yaml`, whether or not `paracell.yaml` already exists. Claude inside a cell then sets the cell to `pending` when it starts on a prompt and to `ready` when it finishes its response.
+
+| Claude Code event | Command |
+| --- | --- |
+| `UserPromptSubmit` | `[ -z "$PARACELL_CELL" ] \|\| paracell pending` |
+| `Stop` | `[ -z "$PARACELL_CELL" ] \|\| paracell ready` |
+
+- Existing content (`permissions`, `env`, other events and hooks) and key order are kept; each hook is appended to its event's array, and a rewrite normalizes the indent to 2 spaces.
+- A hook whose command is already present for that event is not added again. Rerunning `paracell init` does not rewrite the file.
+- Invalid JSON, or a `hooks` or event value of an unexpected type, fails with an error and leaves the file unchanged.
+- Outside a cell (`PARACELL_CELL` empty) the hooks do nothing and exit 0.
+- Only the project's `.claude/settings.json` is written; `~/.claude` and `.claude/settings.local.json` are not touched, and hooks are never removed or updated.
 
 ## Template Selection Fields
 
@@ -126,4 +141,5 @@ When this reference may be stale, inspect:
 - `internal/domain/template.go` for template fields and allowed values.
 - `internal/adapter/config/yaml_config.go` for YAML mapping and validation.
 - `internal/usecase/init_project.go` for generated defaults.
+- `internal/adapter/agent/claude_settings.go` for the Claude Code hooks `paracell init` adds.
 - `README.md` for the user-visible workflow.

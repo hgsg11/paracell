@@ -20,6 +20,12 @@ type CellInitializer interface {
 	Initialize(context.Context) error
 }
 
+// AgentHookPort installs the status hooks into an agent's configuration,
+// adding only the hooks that are not installed yet.
+type AgentHookPort interface {
+	InstallStatusHooks(ctx context.Context, hooks []domain.AgentStatusHook) error
+}
+
 type CellPort interface {
 	LoadCells(context.Context) (CellSet, error)
 	UpdateCells(context.Context, func(CellSet) (CellSet, error)) error

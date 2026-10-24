@@ -7,10 +7,14 @@ import (
 )
 
 type InitProjectUseCase struct {
-	Config InitConfigPort
-	Cells  CellInitializer
+	Config     InitConfigPort
+	Cells      CellInitializer
+	AgentHooks AgentHookPort
 }
 
+// Execute saves paracell.yaml only when it does not exist yet, and installs the
+// agent status hooks in both cases. The hooks come after the config so that a
+// failed hook install leaves the config in place and a rerun only adds the hooks.
 func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, error) {
 	exists, err := u.Config.ConfigExists(ctx)
 	if err != nil {
@@ -19,9 +23,20 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 	if err := u.Cells.Initialize(ctx); err != nil {
 		return domain.Templates{}, err
 	}
-	if exists {
-		return domain.Templates{}, nil
+	cfg := domain.Templates{}
+	if !exists {
+		cfg, err = u.saveDefaultConfig(ctx)
+		if err != nil {
+			return domain.Templates{}, err
+		}
 	}
+	if err := u.AgentHooks.InstallStatusHooks(ctx, domain.AgentStatusHooks()); err != nil {
+		return domain.Templates{}, err
+	}
+	return cfg, nil
+}
+
+func (u InitProjectUseCase) saveDefaultConfig(ctx context.Context) (domain.Templates, error) {
 	workspaceDriver, err := domain.NewWorkspaceDriverType("tmux")
 	if err != nil {
 		return domain.Templates{}, err
