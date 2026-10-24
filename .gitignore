@@ -31,3 +31,6 @@ aidlc/spaces/*/intents/*/.aidlc-*
 aidlc/diagnostics/
 .claude/settings.local.json
 # END AI-DLC:gitignore
+
+# AI-DLC workflow records stay local to each checkout and are not committed
+aidlc/spaces/*/intents/
