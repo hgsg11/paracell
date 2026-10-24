@@ -15,22 +15,21 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
 var errTestReload = errors.New("reload failed")
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func viewTestCell(id string, issue string, templateName string) domain.CommanderCell {
-	sourceDriver, _ := domain.NewSourceDriverType("git")
-	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
-	cell, _ := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
-	return cell
+// viewTestCell returns a ready, undone Cell without a note. The test issues are
+// already safe resource names, so the Cell name equals the issue.
+func viewTestCell(id string, issue string, templateName string) query.CellView {
+	_ = id
+	return query.CellView{Name: issue, Label: issue, Template: templateName, Status: "ready", CreationStatus: "ready"}
 }
 
 func TestModelはjで選択を下げる(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -43,7 +42,7 @@ func TestModelはjで選択を下げる(t *testing.T) {
 }
 
 func TestModelはkで選択を上げる(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -57,7 +56,7 @@ func TestModelはkで選択を上げる(t *testing.T) {
 }
 
 func TestModelは境界で選択を超えない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -70,7 +69,7 @@ func TestModelは境界で選択を超えない(t *testing.T) {
 }
 
 func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Templates = []string{"default", "webapp"}
@@ -90,11 +89,8 @@ func TestModelViewは2ペインでTemplateとCellを分離する(t *testing.T) {
 
 func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	err := cell.SetStatus(domain.Pending)
-	if err != nil {
-		t.Fatalf("SetStatus failed: %v", err)
-	}
-	model := NewModel([]domain.CommanderCell{cell})
+	cell.Status = "pending"
+	model := NewModel([]query.CellView{cell})
 	model.CurrentCell = "123"
 
 	got := model.View()
@@ -117,7 +113,7 @@ func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testi
 }
 
 func TestModelViewは選択中Cell行をReverse表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -136,7 +132,7 @@ func TestModelViewは選択中Cell行をReverse表示する(t *testing.T) {
 }
 
 func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -154,12 +150,9 @@ func TestModelViewは現在のCellにだけ中点マーカーを表示する(t *
 
 func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	_ = cell.CellGroup.SetNote("API実装中")
-	err := cell.SetStatus(domain.Pending)
-	if err != nil {
-		t.Fatal(err)
-	}
-	model := NewModel([]domain.CommanderCell{cell})
+	cell.Label = "API実装中"
+	cell.Status = "pending"
+	model := NewModel([]query.CellView{cell})
 
 	got := model.View()
 	if !strings.Contains(got, "API実装中") {
@@ -174,7 +167,7 @@ func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T
 }
 
 func TestModelViewは長いTemplateを省略表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "very-long-template-name"),
 	})
 
@@ -204,18 +197,15 @@ func TestModelViewはTemplate一覧の長い名前を省略表示する(t *testi
 
 func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *testing.T) {
 	cell := viewTestCell("cell-1", "very-long-issue-name-12345", "default")
-	err := cell.SetStatus(domain.Pending)
-	if err != nil {
-		t.Fatalf("SetStatus failed: %v", err)
-	}
-	model := NewModel([]domain.CommanderCell{cell})
+	cell.Status = "pending"
+	model := NewModel([]query.CellView{cell})
 	model.Width = 80
 
 	got := model.View()
 	if !strings.Contains(got, "very-long-issue-n...") {
 		t.Fatalf("issue should be ellipsized: %q", got)
 	}
-	if strings.Contains(got, cell.Name().Value) {
+	if strings.Contains(got, cell.Name) {
 		t.Fatalf("full issue should not be shown: %q", got)
 	}
 	if !strings.Contains(got, "[ ]  ..") {
@@ -225,11 +215,8 @@ func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *t
 
 func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	err := cell.SetStatus(domain.Ready)
-	if err != nil {
-		t.Fatalf("SetStatus failed: %v", err)
-	}
-	model := NewModel([]domain.CommanderCell{cell})
+	cell.Status = "ready"
+	model := NewModel([]query.CellView{cell})
 
 	got := model.View()
 
@@ -242,7 +229,7 @@ func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
 }
 
 func TestModelViewはCell列ヘッダーを表示しない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -254,7 +241,7 @@ func TestModelViewはCell列ヘッダーを表示しない(t *testing.T) {
 }
 
 func TestModelViewはCells見出しを表示しない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -266,7 +253,7 @@ func TestModelViewはCells見出しを表示しない(t *testing.T) {
 }
 
 func TestModelViewはTemplates見出しを表示しない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	}, []string{"default", "planning"})
 
@@ -278,7 +265,7 @@ func TestModelViewはTemplates見出しを表示しない(t *testing.T) {
 }
 
 func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -290,7 +277,7 @@ func TestModelViewはSelectedセクションを表示しない(t *testing.T) {
 }
 
 func TestModelViewは選択中GoRoot行をReverse表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Focus = FocusExit
@@ -310,7 +297,7 @@ func TestModelViewは選択中GoRoot行をReverse表示する(t *testing.T) {
 
 func TestModelViewはIssue入力用の行をGoRootの直前に常設する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusTemplates
@@ -339,7 +326,7 @@ func TestModelViewはIssue入力用の行をGoRootの直前に常設する(t *te
 
 func TestModelViewは全体65列の最大幅で描画する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	updated, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 10})
@@ -362,7 +349,7 @@ func TestModelViewは全体65列の最大幅で描画する(t *testing.T) {
 }
 
 func TestModelViewは選択中のCell行全体をReverse表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, []string{"default"})
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")}, []string{"default"})
 	model.Width = 80
 
 	row := strings.Split(model.View(), "\n")[2]
@@ -398,7 +385,7 @@ func TestModelViewはTemplateとGoRootも選択行全体をReverse表示する(t
 }
 
 func TestModelViewはHeaderと一覧の間に空行を表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, []string{"default"})
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")}, []string{"default"})
 	model.Width = 80
 
 	lines := strings.Split(model.View(), "\n")
@@ -409,7 +396,7 @@ func TestModelViewはHeaderと一覧の間に空行を表示する(t *testing.T)
 
 func TestModelViewは80列未満でもTemplateとCellを左右に配置する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Width = 79
@@ -422,7 +409,7 @@ func TestModelViewは80列未満でもTemplateとCellを左右に配置する(t 
 }
 
 func TestModelViewは表示高を超えて移動しても選択行を表示する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "one", "default"),
 		viewTestCell("cell-2", "two", "default"),
 		viewTestCell("cell-3", "three", "default"),
@@ -448,7 +435,7 @@ func TestModelはWindowSizeの幅と高さを保持する(t *testing.T) {
 
 func TestModelViewはIssue入力中にGoRootの直前へ内容を表示する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusTemplates
@@ -505,7 +492,7 @@ func stripANSI(value string) string {
 }
 
 func TestModelはqで終了する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -523,13 +510,13 @@ func TestModelはqで終了する(t *testing.T) {
 }
 
 func TestModelはspaceで選択中Cellを返す(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
 	model.Selected = 1
-	model.Enter = func(cell domain.CommanderCell) tea.Cmd {
-		return func() tea.Msg { return enterResultMsg{cell: cell, err: nil} }
+	model.Enter = func(name string) tea.Cmd {
+		return func() tea.Msg { return enterResultMsg{name: name, err: nil} }
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -541,7 +528,7 @@ func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 	if got.Result.Action != ActionEnter {
 		t.Fatalf("action = %q, want %q", got.Result.Action, ActionEnter)
 	}
-	if got.Result.Cell.Name().Value != "456" {
+	if got.Result.Cell != "456" {
 		t.Fatalf("cell = %#v, want name %q", got.Result.Cell, "456")
 	}
 	if nextCmd == nil {
@@ -550,26 +537,35 @@ func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 }
 
 func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
-	model.MarkDone = func(cell domain.CommanderCell) (domain.CommanderCell, error) {
-		if cell.Name().Value != "123" {
-			t.Fatalf("mark done cell = %#v, want name %q", cell, "123")
-		}
-		if err := cell.MarkDone(); err != nil {
-			t.Fatalf("MarkDoneでエラーが返った: %v", err)
-		}
-		return cell, nil
+	var markedDone []string
+	model.MarkDone = func(name string) error {
+		markedDone = append(markedDone, name)
+		return nil
+	}
+	model.MarkUndone = func(name string) error {
+		t.Fatalf("mark undone was called for an undone cell %q", name)
+		return nil
 	}
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("Enterでコマンドが返らなかった")
 	}
+	if next.(Model).Cells[0].Done {
+		t.Fatal("the cell was shown done before the handler finished")
+	}
 	updated, nextCmd := next.(Model).Update(cmd())
 	got := updated.(Model)
-	if err := got.Cells[0].EnsureCanBeCleaned(); err != nil {
-		t.Fatal("IsDone = false, want true")
+	if len(markedDone) != 1 || markedDone[0] != "123" {
+		t.Fatalf("mark done calls = %#v, want [123]", markedDone)
+	}
+	if !got.Cells[0].Done {
+		t.Fatal("Done = false, want true")
+	}
+	if !strings.Contains(got.View(), "[x]") {
+		t.Fatalf("done marker not shown: %q", got.View())
 	}
 	if got.Result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", got.Result.Action, ActionNone)
@@ -580,13 +576,13 @@ func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
 }
 
 func TestModelはddで選択中Cellを削除する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
-	model.Delete = func(cell domain.CommanderCell) error {
-		if cell.Name().Value != "123" {
-			t.Fatalf("delete cell = %#v, want name %q", cell, "123")
+	model.Delete = func(name string) error {
+		if name != "123" {
+			t.Fatalf("delete cell = %q, want %q", name, "123")
 		}
 		return nil
 	}
@@ -609,11 +605,11 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	if got.Error != "" {
 		t.Fatalf("error = %q, want empty", got.Error)
 	}
-	if len(got.Cells) != 1 || got.Cells[0].Name().Value != "456" {
+	if len(got.Cells) != 1 || got.Cells[0].Name != "456" {
 		t.Fatalf("cells = %#v, want remaining cell 456", got.Cells)
 	}
-	if got.Result.Action != ActionDelete {
-		t.Fatalf("action = %q, want %q", got.Result.Action, ActionDelete)
+	if got.Result.Action != ActionDelete || got.Result.Cell != "123" {
+		t.Fatalf("result = %#v, want delete of 123", got.Result)
 	}
 	if nextCmd != nil {
 		t.Fatal("delete成功で終了コマンドが返った")
@@ -621,21 +617,20 @@ func TestModelはddで選択中Cellを削除する(t *testing.T) {
 }
 
 func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
-	model.Reload = func() ([]domain.CommanderCell, error) {
+	model.Reload = func() ([]query.CellView, error) {
 		cell := viewTestCell("cell-1", "123", "default")
-		if err := cell.SetStatus(domain.Ready); err != nil {
-			t.Fatalf("SetStatusでエラーが返った: %v", err)
-		}
-		return []domain.CommanderCell{cell}, nil
+		cell.Status = "ready"
+		return []query.CellView{cell}, nil
 	}
+	model.Cells[0].Status = "pending"
 
 	next, cmd := model.Update(refreshMsg{})
 	got := next.(Model)
-	if !got.Cells[0].HasStatus(domain.Ready) {
-		t.Fatalf("cell = %#v, want status %q", got.Cells[0], domain.Ready)
+	if got.Cells[0].Status != "ready" {
+		t.Fatalf("cell = %#v, want status %q", got.Cells[0], "ready")
 	}
 	if cmd == nil {
 		t.Fatal("refreshで次のポーリングコマンドが返らなかった")
@@ -644,11 +639,8 @@ func TestModelはRefreshでCellのStatusを再読込する(t *testing.T) {
 
 func TestModelはRefreshでPendingStatusのアニメーションを進める(t *testing.T) {
 	cell := viewTestCell("cell-1", "123", "default")
-	err := cell.SetStatus(domain.Pending)
-	if err != nil {
-		t.Fatalf("SetStatus failed: %v", err)
-	}
-	model := NewModel([]domain.CommanderCell{cell})
+	cell.Status = "pending"
+	model := NewModel([]query.CellView{cell})
 
 	first := model.View()
 	next, _ := model.Update(refreshMsg{})
@@ -666,10 +658,10 @@ func TestModelはRefreshでPendingStatusのアニメーションを進める(t *
 }
 
 func TestModelはRefresh失敗時に次のポーリングを予約しない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
-	model.Reload = func() ([]domain.CommanderCell, error) {
+	model.Reload = func() ([]query.CellView, error) {
 		return nil, errTestReload
 	}
 
@@ -685,12 +677,12 @@ func TestModelはRefresh失敗時に次のポーリングを予約しない(t *t
 }
 
 func TestModelはRefresh成功時に既存エラーを保持する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Error = "attach failed"
-	model.Reload = func() ([]domain.CommanderCell, error) {
-		return []domain.CommanderCell{viewTestCell("cell-1", "123", "default")}, nil
+	model.Reload = func() ([]query.CellView, error) {
+		return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
 	}
 
 	next, cmd := model.Update(refreshMsg{})
@@ -704,8 +696,37 @@ func TestModelはRefresh成功時に既存エラーを保持する(t *testing.T)
 	}
 }
 
+func TestModelはRefreshで順番が変わっても選択中のCellを名前で保つ(t *testing.T) {
+	model := NewModel([]query.CellView{
+		viewTestCell("cell-1", "123", "default"),
+		viewTestCell("cell-2", "456", "webapp"),
+	})
+	model.Selected = 1
+	model.Reload = func() ([]query.CellView, error) {
+		return []query.CellView{
+			viewTestCell("cell-3", "789", "default"),
+			viewTestCell("cell-2", "456", "webapp"),
+			viewTestCell("cell-1", "123", "default"),
+		}, nil
+	}
+
+	next, _ := model.Update(refreshMsg{})
+	got := next.(Model)
+	if got.Selected != 1 || got.Cells[got.Selected].Name != "456" {
+		t.Fatalf("selected = %d (%#v)", got.Selected, got.Cells)
+	}
+
+	got.Reload = func() ([]query.CellView, error) {
+		return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
+	}
+	next, _ = got.Update(refreshMsg{})
+	if got := next.(Model); got.Selected != 1 || len(got.Cells) != 1 {
+		t.Fatalf("selected after the cell disappeared = %d, cells = %#v", got.Selected, got.Cells)
+	}
+}
+
 func TestModelViewはエラー行を常に一行分だけ予約する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 
@@ -722,7 +743,7 @@ func TestModelViewはエラー行を常に一行分だけ予約する(t *testing
 }
 
 func TestModelは移動してもエラー表示を保持する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -743,7 +764,7 @@ func TestModelは移動してもエラー表示を保持する(t *testing.T) {
 }
 
 func TestModelViewはエラーの改行を潰して幅で切り詰める(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Width = 20
@@ -861,12 +882,12 @@ func TestLoggedCapturedExecCommandは成功時もstdoutと完了を保存する(
 }
 
 func TestModelはGoRootをCleanできない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Focus = FocusExit
-	model.Delete = func(cell domain.CommanderCell) error {
-		t.Fatalf("go rootでdelete handlerが呼ばれた: %#v", cell)
+	model.Delete = func(name string) error {
+		t.Fatalf("go rootでdelete handlerが呼ばれた: %q", name)
 		return nil
 	}
 
@@ -878,13 +899,17 @@ func TestModelはGoRootをCleanできない(t *testing.T) {
 }
 
 func TestModelはGoRootをDoneにできない(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	})
 	model.Focus = FocusExit
-	model.MarkDone = func(cell domain.CommanderCell) (domain.CommanderCell, error) {
-		t.Fatalf("go rootでmark done handlerが呼ばれた: %#v", cell)
-		return cell, nil
+	model.MarkDone = func(name string) error {
+		t.Fatalf("go rootでmark done handlerが呼ばれた: %q", name)
+		return nil
+	}
+	model.MarkUndone = func(name string) error {
+		t.Fatalf("go rootでmark undone handlerが呼ばれた: %q", name)
+		return nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -899,7 +924,7 @@ func TestModelはGoRootをDoneにできない(t *testing.T) {
 }
 
 func TestModelはdのあと別キーなら削除待機を解除する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
+	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 		viewTestCell("cell-2", "456", "webapp"),
 	})
@@ -927,20 +952,18 @@ func TestModelはdのあと別キーなら削除待機を解除する(t *testing
 }
 
 func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
-	model := NewModel([]domain.CommanderCell{
-		func() domain.CommanderCell {
-			cell := viewTestCell("cell-1", "123", "default")
-			if err := cell.MarkDone(); err != nil {
-				t.Fatalf("MarkDoneでエラーが返った: %v", err)
-			}
-			return cell
-		}(),
-	})
-	model.MarkDone = func(cell domain.CommanderCell) (domain.CommanderCell, error) {
-		if cell.Name().Value != "123" {
-			t.Fatalf("toggle cell = %#v, want name %q", cell, "123")
-		}
-		return viewTestCell(cell.ID, cell.Name().Value, cell.CellGroup.Template), nil
+	done := viewTestCell("cell-1", "123", "default")
+	done.Done = true
+	model := NewModel([]query.CellView{viewTestCell("cell-0", "122", "default"), done})
+	model.Selected = 1
+	model.MarkDone = func(name string) error {
+		t.Fatalf("mark done was called for a done cell %q", name)
+		return nil
+	}
+	var markedUndone []string
+	model.MarkUndone = func(name string) error {
+		markedUndone = append(markedUndone, name)
+		return nil
 	}
 
 	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -948,14 +971,70 @@ func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
 		t.Fatal("Enterでコマンドが返らなかった")
 	}
 	updated, _ := next.(Model).Update(cmd())
-	if updated.(Model).Cells[0].EnsureCanBeCleaned() == nil {
-		t.Fatal("IsDone = true, want false")
+	got := updated.(Model)
+	if len(markedUndone) != 1 || markedUndone[0] != "123" {
+		t.Fatalf("mark undone calls = %#v, want [123]", markedUndone)
+	}
+	if got.Cells[1].Done || got.Cells[0].Done {
+		t.Fatalf("cells = %#v, want both undone", got.Cells)
+	}
+	if got.Error != "" {
+		t.Fatalf("error = %q", got.Error)
+	}
+}
+
+func TestModelは完了キーの失敗をエラー欄に出し表示を変えない(t *testing.T) {
+	for _, initiallyDone := range []bool{false, true} {
+		cell := viewTestCell("cell-1", "123", "default")
+		cell.Done = initiallyDone
+		model := NewModel([]query.CellView{cell})
+		model.MarkDone = func(string) error { return errors.New("cell is already done") }
+		model.MarkUndone = func(string) error { return errors.New("cell is not done") }
+
+		next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatal("Enterでコマンドが返らなかった")
+		}
+		updated, _ := next.(Model).Update(cmd())
+		got := updated.(Model)
+		want := "cell is already done"
+		if initiallyDone {
+			want = "cell is not done"
+		}
+		if got.Error != want || got.Cells[0].Done != initiallyDone {
+			t.Fatalf("done=%t: error = %q, cells = %#v", initiallyDone, got.Error, got.Cells)
+		}
+	}
+}
+
+func TestModelは完了キーのHandlerがなければエラーにする(t *testing.T) {
+	done := viewTestCell("cell-1", "123", "default")
+	done.Done = true
+	model := NewModel([]query.CellView{done})
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := next.(Model).Update(cmd())
+	if got := updated.(Model); got.Error != "mark undone handler is not configured" || !got.Cells[0].Done {
+		t.Fatalf("model = %#v", got)
+	}
+}
+
+func TestModelは完了キー処理中に一覧が変わっても同じ名前のCellを反転する(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default"), viewTestCell("cell-2", "456", "webapp")})
+	model.Selected = 1
+	model.MarkDone = func(string) error { return nil }
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	moved := next.(Model)
+	moved.Cells = []query.CellView{viewTestCell("cell-2", "456", "webapp"), viewTestCell("cell-1", "123", "default")}
+	updated, _ := moved.Update(cmd())
+	got := updated.(Model)
+	if !got.Cells[0].Done || got.Cells[1].Done {
+		t.Fatalf("cells = %#v, want 456 done", got.Cells)
 	}
 }
 
 func TestModelはtabでTemplate一覧へフォーカスを切り替える(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 
@@ -969,7 +1048,7 @@ func TestModelはtabでTemplate一覧へフォーカスを切り替える(t *tes
 
 func TestModelはtabでTemplateCellExitを巡回する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 
@@ -994,7 +1073,7 @@ func TestModelはtabでTemplateCellExitを巡回する(t *testing.T) {
 
 func TestModelはExitParacellでjk移動しない(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusExit
@@ -1058,7 +1137,7 @@ func TestModelはIssue入力後にEnterでForkHandlerを呼ぶ(t *testing.T) {
 			t.Fatalf("template = %q, want %q", template, "default")
 		}
 		return func() tea.Msg {
-			return forkResultMsg{cell: viewTestCell("cell-1", "123", "default")}
+			return forkResultMsg{}
 		}
 	}
 
@@ -1117,13 +1196,13 @@ func TestModelは複数Forkを順不同に完了して実行中件数を追跡�
 	model.Focus = FocusTemplates
 	model.Fork = func(issue string, template string) tea.Cmd {
 		return func() tea.Msg {
-			return forkResultMsg{cell: viewTestCell("cell-"+issue, issue, template)}
+			return forkResultMsg{}
 		}
 	}
 	reloadCalls := 0
-	model.Reload = func() ([]domain.CommanderCell, error) {
+	model.Reload = func() ([]query.CellView, error) {
 		reloadCalls++
-		return []domain.CommanderCell{{ID: fmt.Sprintf("reloaded-%d", reloadCalls)}}, nil
+		return []query.CellView{{Name: fmt.Sprintf("reloaded-%d", reloadCalls)}}, nil
 	}
 
 	model.IssueInputActive = true
@@ -1173,7 +1252,7 @@ func TestModelはFork完了時に次のIssue入力を維持する(t *testing.T) 
 	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	next, _ = next.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("next")})
-	next, _ = next.(Model).Update(forkResultMsg{cell: domain.CommanderCell{ID: "cell-1"}})
+	next, _ = next.(Model).Update(forkResultMsg{})
 	got := next.(Model)
 
 	if !got.IssueInputActive || !got.AwaitingFork {
@@ -1197,7 +1276,7 @@ func TestModelはFork失敗後もIssue入力を閉じたまま作成中状態を
 		return func() tea.Msg { return forkResultMsg{err: errors.New("fork failed")} }
 	}
 	reloadCalls := 0
-	model.Reload = func() ([]domain.CommanderCell, error) {
+	model.Reload = func() ([]query.CellView, error) {
 		reloadCalls++
 		return nil, nil
 	}
@@ -1226,7 +1305,7 @@ func TestModelはFork失敗時に他の実行中Forkを維持する(t *testing.T
 	model := NewModel(nil)
 	model.ForksInProgress = 2
 	reloadCalls := 0
-	model.Reload = func() ([]domain.CommanderCell, error) {
+	model.Reload = func() ([]query.CellView, error) {
 		reloadCalls++
 		return nil, nil
 	}
@@ -1285,7 +1364,7 @@ func TestModelはIssue入力中に文字入力とBackspaceができる(t *testin
 
 func TestModelViewはTemplate一覧とCell一覧を並べて表示する(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 
@@ -1303,7 +1382,7 @@ func TestModelViewはTemplate一覧とCell一覧を並べて表示する(t *test
 }
 func TestModelはlでTemplateからCellsへフォーカスを移す(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusTemplates
@@ -1318,7 +1397,7 @@ func TestModelはlでTemplateからCellsへフォーカスを移す(t *testing.T
 
 func TestModelはhでCellsからTemplateへフォーカスを移す(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusCells
@@ -1333,7 +1412,7 @@ func TestModelはhでCellsからTemplateへフォーカスを移す(t *testing.T
 
 func TestModelはlでCells端からExitParacellへフォーカスを移す(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusCells
@@ -1348,7 +1427,7 @@ func TestModelはlでCells端からExitParacellへフォーカスを移す(t *te
 
 func TestModelはhでTemplates端からExitParacellへフォーカスを移す(t *testing.T) {
 	model := NewModel(
-		[]domain.CommanderCell{viewTestCell("cell-1", "123", "default")},
+		[]query.CellView{viewTestCell("cell-1", "123", "default")},
 		[]string{"default", "planning"},
 	)
 	model.Focus = FocusTemplates

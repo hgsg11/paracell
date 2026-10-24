@@ -3,12 +3,13 @@ package usecase
 import (
 	"context"
 	"errors"
-	"github.com/hgsg11/paracell/internal/adapter/id"
+	"fmt"
 	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/hgsg11/paracell/internal/adapter/id"
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
@@ -19,13 +20,17 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cell.CellGroup.Template != "feat" || len(ports.cells.Targets) != 1 || cell.CreationStatus() != domain.CreationReady {
-		t.Fatalf("cell = %#v", cell)
+	group := ports.groupOf(t, cell)
+	if group.Template != "feat" || len(ports.cells.Targets) != 1 || group.Creation.Status != domain.CreationReady {
+		t.Fatalf("cell = %#v, group = %#v", cell, group)
+	}
+	if !reflect.DeepEqual(cell, ports.cells.Commanders[0]) || cell.Version == 0 {
+		t.Fatalf("returned cell %#v is not the stored %#v", cell, ports.cells.Commanders[0])
 	}
 	if got := ports.createdSources[0].Branch; got != "feat/42" {
 		t.Fatalf("branch = %q, want feat/42", got)
 	}
-	if got, want := cell.ResourceDrivers(), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
+	if got, want := group.ResourceDrivers(cell.Workspace.Driver), domain.NewCellDrivers(domain.Git, domain.None, domain.Tmux, domain.NoNotification); got != want {
 		t.Fatalf("drivers = %#v, want %#v", got, want)
 	}
 	wantCalls := []string{
@@ -59,8 +64,27 @@ func TestForkCellは未定義Prefixを拒否する(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `prefix "unknown" not found`) {
 		t.Fatalf("error = %v", err)
 	}
-	if len(ports.cells.Commanders) != 0 {
-		t.Fatalf("created commanders = %d", len(ports.cells.Commanders))
+	if len(ports.cells.Commanders) != 0 || len(ports.cells.Groups) != 0 {
+		t.Fatalf("created cells = %#v", ports.cells)
+	}
+}
+
+func TestForkCellはIssueかCell名が重複するCellを作らない(t *testing.T) {
+	for _, input := range []struct{ existing, issue, message string }{
+		{existing: "42", issue: "42", message: `issue "42" already exists`},
+		{existing: "feat/42", issue: "feat-42", message: `name "feat-42" already exists`},
+	} {
+		t.Run(input.issue, func(t *testing.T) {
+			ports := newFakePorts()
+			ports.cells = newUsecaseCellSet(t, [3]string{"cell-0", input.existing, "feat"})
+			_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: input.issue, Template: "feat"})
+			if err == nil || !strings.Contains(err.Error(), input.message) {
+				t.Fatalf("error = %v", err)
+			}
+			if len(ports.cells.Groups) != 1 || len(ports.cells.Commanders) != 1 || len(ports.calls) != 0 {
+				t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
+			}
+		})
 	}
 }
 
@@ -72,14 +96,14 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	if !errors.Is(err, ports.createSourceErr) {
 		t.Fatalf("error = %v", err)
 	}
-	if len(ports.cells.Commanders) != 1 {
-		t.Fatalf("commanders = %d", len(ports.cells.Commanders))
+	if len(ports.cells.Commanders) != 1 || len(ports.cells.Groups) != 1 {
+		t.Fatalf("cells = %#v", ports.cells)
 	}
-	failedStage, _ := ports.cells.Commanders[0].CreationFailure()
-	if ports.cells.Commanders[0].CreationStatus() != domain.CreationFailed || failedStage != domain.CreationStageSource {
-		t.Fatalf("commander = %#v", ports.cells.Commanders[0])
+	group := ports.cells.Groups[0]
+	if group.Creation.Status != domain.CreationFailed || group.Creation.FailedStage != domain.CreationStageSource || group.Creation.LastError != "create source" {
+		t.Fatalf("group = %#v", group)
 	}
-	for _, resource := range domain.BuildSourceResourcesService(ports.cells.Commanders[0], ports.cells.Targets) {
+	for _, resource := range domain.BuildSourceResourcesService(group, ports.cells.Targets) {
 		if err := ports.CleanSource(context.Background(), resource); err != nil {
 			t.Fatal(err)
 		}
@@ -89,11 +113,25 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 	}
 }
 
+func TestForkCellは保存時の版の競合を作成失敗として伝える(t *testing.T) {
+	ports := newFakePorts()
+	ports.conflictOnSave = 2
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if !errors.Is(err, domain.ErrVersionConflict) {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(err.Error(), "save source stage") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 type fakePorts struct {
 	config               domain.Templates
 	configErr            error
 	cells                CellSet
 	calls                []string
+	saves                int
+	conflictOnSave       int
 	updateStatusLabelErr error
 	createSourceErr      error
 	cleanedSources       []domain.SourceResource
@@ -117,8 +155,17 @@ func newFakePorts() *fakePorts {
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
 		Config: ports, Cells: ports, SourceFactory: ports,
-		ContainerFactory: ports, WorkspaceFactory: ports, IDs: fixedIDGenerator{id: "cell-1"},
+		ContainerFactory: ports, WorkspaceFactory: ports, IDs: &sequenceIDGenerator{},
 	}
+}
+
+func (f *fakePorts) groupOf(t *testing.T, commander domain.CommanderCell) domain.CellGroup {
+	t.Helper()
+	group, ok := f.cells.group(commander.CellGroupID)
+	if !ok {
+		t.Fatalf("CellGroup %q not found in %#v", commander.CellGroupID, f.cells.Groups)
+	}
+	return group
 }
 
 func (f *fakePorts) Load(context.Context) (domain.Templates, error) {
@@ -126,29 +173,60 @@ func (f *fakePorts) Load(context.Context) (domain.Templates, error) {
 }
 
 func (f *fakePorts) LoadCells(context.Context) (CellSet, error) {
-	return NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies), nil
+	return copyCellSet(f.cells), nil
 }
 
+// UpdateCells versions rows like the SQLite adapter: a new CommanderCell must
+// have no version and is stored as version 1; a changed row must carry the
+// stored version and is stored with it advanced by one.
 func (f *fakePorts) UpdateCells(_ context.Context, update func(CellSet) (CellSet, error)) error {
-	before := NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies)
-	for i := range before.Commanders {
-		before.Commanders[i] = before.Commanders[i].Clone()
-	}
-	cells, err := update(NewCellSet(f.cells.Commanders, f.cells.Targets, f.cells.Dependencies))
+	f.saves++
+	next, err := update(copyCellSet(f.cells))
 	if err != nil {
 		return err
 	}
-	for index := range cells.Commanders {
-		for _, previous := range before.Commanders {
-			if previous.ID == cells.Commanders[index].ID && !reflect.DeepEqual(previous, cells.Commanders[index]) {
-				if err := cells.Commanders[index].AdvanceVersion(); err != nil {
-					return err
-				}
+	next = copyCellSet(next)
+	if f.saves == f.conflictOnSave {
+		return fmt.Errorf("%w: injected", domain.ErrVersionConflict)
+	}
+	for i, commander := range next.Commanders {
+		group, _ := next.group(commander.CellGroupID)
+		previous, existed := commanderByID(f.cells.Commanders, commander.ID)
+		if !existed {
+			if commander.Version != 0 {
+				return fmt.Errorf("new CommanderCell %q must not have a version", commander.ID)
 			}
+			next.Commanders[i].Version = 1
+			continue
+		}
+		previousGroup, _ := f.cells.group(previous.CellGroupID)
+		if reflect.DeepEqual(previous, commander) && reflect.DeepEqual(previousGroup, group) {
+			continue
+		}
+		if commander.Version != previous.Version {
+			return fmt.Errorf("%w: CommanderCell %q", domain.ErrVersionConflict, commander.ID)
+		}
+		next.Commanders[i].Version++
+	}
+	f.cells = next
+	return nil
+}
+
+func commanderByID(commanders []domain.CommanderCell, id string) (domain.CommanderCell, bool) {
+	for _, commander := range commanders {
+		if commander.ID == id {
+			return commander, true
 		}
 	}
-	f.cells = cells
-	return nil
+	return domain.CommanderCell{}, false
+}
+
+func copyCellSet(set CellSet) CellSet {
+	copied := NewCellSet(set.Groups, set.Commanders, set.Targets, set.Dependencies)
+	for i := range copied.Commanders {
+		copied.Commanders[i].Workspace = domain.NewWorkspace(copied.Commanders[i].Workspace.Driver, copied.Commanders[i].Workspace.Windows)
+	}
+	return copied
 }
 
 func (f *fakePorts) Source(driver domain.SourceDriverType) (SourcePort, error) {
@@ -194,8 +272,10 @@ func (f *fakePorts) CleanWorkspace(context.Context, domain.WorkspaceResource) er
 	f.calls = append(f.calls, "workspace:clean")
 	return nil
 }
-func (f *fakePorts) EnterCommand(context.Context, domain.WorkspaceResource) (*exec.Cmd, error) {
-	return nil, nil
+func (f *fakePorts) EnterCommand(_ context.Context, resource domain.WorkspaceResource) (*exec.Cmd, error) {
+	f.calls = append(f.calls, "workspace:enter-command:"+resource.CellName)
+	f.workspaceResource = resource
+	return exec.Command("tmux", "switch-client", "-t", resource.Name), nil
 }
 func (f *fakePorts) UpdateStatusLabel(_ context.Context, resource domain.WorkspaceResource) error {
 	f.calls = append(f.calls, "workspace:label:"+resource.DisplayLabel)
@@ -214,23 +294,38 @@ func (f *fakePorts) ExitWorkspace(context.Context) error {
 	return nil
 }
 
-type fixedIDGenerator struct{ id string }
+type sequenceIDGenerator struct{ next int }
 
-func (g fixedIDGenerator) NewID() string { return g.id }
+func (g *sequenceIDGenerator) NewID() string {
+	g.next++
+	return fmt.Sprintf("cell-%d", g.next)
+}
 
-func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) domain.CommanderCell {
+// newUsecaseTestCell returns a persisted CellGroup "group-<id>" and its
+// CommanderCell "<id>" at version 1.
+func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) (domain.CellGroup, domain.CommanderCell) {
 	t.Helper()
-	sourceDriver, _ := domain.NewSourceDriverType("git")
-	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
+	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, domain.Git, domain.None, domain.NoNotification)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cell, err := domain.NewCommanderCell(id, &group, domain.NewWorkspace(workspaceDriver, nil))
+	cell, err := domain.CommanderCellFactory{}.Restore(id, group.ID, "tmux", nil, "ready", false, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cell
+	return group, cell
+}
+
+// newUsecaseCellSet builds a persisted CellSet from {id, issue, template} triples.
+func newUsecaseCellSet(t *testing.T, cells ...[3]string) CellSet {
+	t.Helper()
+	set := NewCellSet(nil, nil, nil, nil)
+	for _, cell := range cells {
+		group, commander := newUsecaseTestCell(t, cell[0], cell[1], cell[2])
+		set.Groups = append(set.Groups, group)
+		set.Commanders = append(set.Commanders, commander)
+	}
+	return set
 }
 
 func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) {
@@ -262,21 +357,22 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroup.ID, ports.cells.Targets, ports.cells.Dependencies)
-	if first.CellGroup.ID == first.ID || first.CellGroup.ID == second.CellGroup.ID || len(targets) != 2 || len(dependencies) != 1 {
+	firstGroup := ports.groupOf(t, first)
+	targets, dependencies := domain.SelectCellGroupMembersService(first.CellGroupID, ports.cells.Targets, ports.cells.Dependencies)
+	if first.CellGroupID == first.ID || first.CellGroupID == second.CellGroupID || len(targets) != 2 || len(dependencies) != 1 {
 		t.Fatalf("invalid grouping: %#v, %#v", first, ports.cells)
 	}
-	if first.DisplayLabel() != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || first.CreationStatus() != domain.CreationReady {
-		t.Fatalf("commands/status/note not preserved: %#v", first)
+	if firstGroup.WorkspaceResource(first.Workspace).DisplayLabel != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || firstGroup.Creation.Status != domain.CreationReady {
+		t.Fatalf("commands/status/note not preserved: %#v / %#v", first, firstGroup)
 	}
 	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
 		t.Fatal(err)
 	}
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
-	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroup.ID}); err != nil {
+	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroupID}); err != nil {
 		t.Fatal(err)
 	}
-	if len(ports.cells.Commanders) != 1 || !ports.cells.Commanders[0].SameIdentity(second) || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
+	if len(ports.cells.Groups) != 1 || len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
 		t.Fatalf("wrong group deleted: %#v", ports.cells)
 	}
 	if len(ports.cleanedSources) != 2 {
@@ -286,5 +382,33 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 		if !strings.Contains(resource.WorktreePath, "/118/") {
 			t.Fatalf("unrelated source cleaned: %#v", resource)
 		}
+	}
+}
+
+func TestCleanCellは未完了のCellを消さない(t *testing.T) {
+	ports := newFakePorts()
+	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	if err := clean.Execute(context.Background(), CleanCellInput{Cell: "123"}); err == nil {
+		t.Fatal("an undone cell was cleaned")
+	}
+	if len(ports.cells.Groups) != 1 || len(ports.calls) != 0 {
+		t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
+	}
+}
+
+func TestCleanCellは見つからないCellを伝える(t *testing.T) {
+	ports := newFakePorts()
+	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
+	ports.cells.Commanders[0].Done = true
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	// The CommanderCell ID is not a Cell identifier.
+	for _, identifier := range []string{"missing", "cell-1"} {
+		if err := clean.Execute(context.Background(), CleanCellInput{Cell: identifier}); err == nil || !strings.Contains(err.Error(), "not found") {
+			t.Fatalf("Clean(%q) error = %v", identifier, err)
+		}
+	}
+	if len(ports.cells.Groups) != 1 || len(ports.calls) != 0 {
+		t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
 	}
 }

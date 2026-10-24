@@ -5,25 +5,17 @@ import (
 	"testing"
 )
 
-func TestCellVersionAddはNewCellVersionを通して新しい値を返す(t *testing.T) {
-	version, err := NewCellVersion(1)
-	if err != nil {
-		t.Fatal(err)
+func TestNewCellVersionは1以上の値だけを受け付ける(t *testing.T) {
+	for _, value := range []uint64{1, 2, math.MaxUint64} {
+		version, err := NewCellVersion(value)
+		if err != nil {
+			t.Fatalf("NewCellVersion(%d) returned %v", value, err)
+		}
+		if uint64(version) != value {
+			t.Fatalf("version = %d, want %d", version, value)
+		}
 	}
-
-	added, err := version.Add()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 || added != 2 {
-		t.Fatalf("version = %d, added = %d", version, added)
-	}
-
-	maximum, err := NewCellVersion(math.MaxUint64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := maximum.Add(); err == nil {
-		t.Fatal("overflowed version must be rejected")
+	if _, err := NewCellVersion(0); err == nil {
+		t.Fatal("version 0 must be rejected")
 	}
 }

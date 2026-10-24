@@ -12,45 +12,58 @@ import (
 	"github.com/hgsg11/paracell/internal/domain"
 )
 
+// prepareNotifierProject writes a project that notifies through a fake
+// terminal-notifier and stores one Cell "123". It returns the file the fake
+// notifier appends its calls to.
+func prepareNotifierProject(t *testing.T, dir string, notifierExitCode int, installNotifier bool) (string, state.SQLiteCellAdapter, domain.CellGroup) {
+	t.Helper()
+	t.Setenv("PARACELL_CELL", "123")
+	t.Setenv("PARACELL_ROOT", "")
+	t.Setenv("PATH", dir)
+	calls := filepath.Join(dir, "calls")
+	t.Setenv("NOTIFICATION_CALLS", calls)
+	if installNotifier {
+		script := "#!/bin/sh\nprintf '%s\\n' call \"$@\" >> \"$NOTIFICATION_CALLS\"\n"
+		if notifierExitCode != 0 {
+			script += "exit 1\n"
+		}
+		if err := os.WriteFile(filepath.Join(dir, "terminal-notifier"), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := "project: {name: myapp}\nproviders: {source: git, workspace: tmux, notifications: terminal-notifier}\ntemplates: {}\n"
+	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	group, err := domain.NewCellGroup("group-cell-1", "123", "myapp", "default", domain.Git, domain.None, domain.TerminalNotifierNotification)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cell, err := domain.NewCommanderCell("cell-1", group.ID, domain.NewWorkspace(domain.Tmux, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Shell metacharacters must remain part of the single message argument.
+	if err := group.SetNote("done; $(echo unsafe)"); err != nil {
+		t.Fatal(err)
+	}
+	store := state.NewSQLiteCellAdapter(filepath.Join(dir, ".paracell", "state.db"))
+	if err := store.SaveCells(context.Background(), []domain.CellGroup{group}, []domain.CommanderCell{cell}); err != nil {
+		t.Fatal(err)
+	}
+	return calls, store, group
+}
+
 func TestReadyTerminalNotifier(t *testing.T) {
 	for _, result := range []string{"success", "execution-error", "missing-executable"} {
 		t.Run(result, func(t *testing.T) {
 			dir := t.TempDir()
-			t.Setenv("PARACELL_CELL", "123")
-			t.Setenv("PARACELL_ROOT", "")
-			t.Setenv("PATH", dir)
-			calls := filepath.Join(dir, "calls")
-			t.Setenv("NOTIFICATION_CALLS", calls)
-			if result != "missing-executable" {
-				script := "#!/bin/sh\nprintf '%s\\n' call \"$@\" >> \"$NOTIFICATION_CALLS\"\n"
-				if result == "execution-error" {
-					script += "exit 1\n"
-				}
-				if err := os.WriteFile(filepath.Join(dir, "terminal-notifier"), []byte(script), 0o700); err != nil {
-					t.Fatal(err)
-				}
+			exitCode := 0
+			if result == "execution-error" {
+				exitCode = 1
 			}
-			config := "project: {name: myapp}\nproviders: {source: git, workspace: tmux, notifications: terminal-notifier}\ntemplates: {}\n"
-			if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), []byte(config), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			group, err := domain.NewCellGroup("group-cell-1", "123", "myapp", "default", domain.Git, domain.None, domain.TerminalNotifierNotification)
-			if err != nil {
-				t.Fatal(err)
-			}
-			cell, err := domain.NewCommanderCell("cell-1", &group, domain.NewWorkspace(domain.Tmux, nil))
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Shell metacharacters must remain part of the single message argument.
-			if err := cell.CellGroup.SetNote("done; $(echo unsafe)"); err != nil {
-				t.Fatal(err)
-			}
-			store := state.NewSQLiteCellAdapter(filepath.Join(dir, ".paracell", "state.db"))
-			if err := store.SaveCells(context.Background(), []domain.CommanderCell{cell}); err != nil {
-				t.Fatal(err)
-			}
-			err = Run(context.Background(), []string{"ready"}, dir)
+			calls, _, group := prepareNotifierProject(t, dir, exitCode, result != "missing-executable")
+			err := Run(context.Background(), []string{"ready"}, dir)
 			if result == "success" && err != nil {
 				t.Fatal(err)
 			}
@@ -68,11 +81,26 @@ func TestReadyTerminalNotifier(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := "call\n-message\nReady: " + cell.Name().Value + "\n"
+				want := "call\n-message\nReady: " + group.Name().Value + "\n"
 				if string(got) != want {
 					t.Fatalf("calls = %q, want %q", got, want)
 				}
 			}
 		})
+	}
+}
+
+func TestPendingは通知しない(t *testing.T) {
+	dir := t.TempDir()
+	calls, store, _ := prepareNotifierProject(t, dir, 0, true)
+	if err := Run(context.Background(), []string{"pending"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(calls); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pending notified: %v", err)
+	}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil || cells.Commanders[0].Status != domain.Pending {
+		t.Fatalf("cells = %#v, %v", cells, err)
 	}
 }

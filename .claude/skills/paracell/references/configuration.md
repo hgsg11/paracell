@@ -106,15 +106,15 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 
 ## Runtime State
 
-- CellGroup holds the shared issue, project, template, note, and resource drivers. CommanderCell refers to it and retains commands and execution state; TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
-- A CellGroup ID can address the group for note updates or cleanup. SQLite records in the preceding Commander-owned format are read into the new model and rewritten transactionally on their next change, preserving existing resources and execution state.
+- CellGroup is the aggregate root: it holds the shared issue, project, template, note, resource drivers, and creation state, and is stored on its own. CommanderCell refers to it by CellGroupID and retains the workspace commands and execution state (status, done); TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
+- A CellGroup ID, issue, or cell name addresses the cell for note updates, status changes, or cleanup. SQLite records in the two earlier formats (CellGroup nested in the CommanderCell, and the Commander-owned format before it) are read into the new model and rewritten transactionally on their next change, preserving existing resources and execution state.
 
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session. When non-empty, perform development work directly in that cell instead of automatically dispatching again; the task issue need not match the cell identifier.
 - `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.
 - `.paracell/cells/<cell>/source` is the cell worktree.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
-- CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use ID, issue, or name—not the note—to address a cell.
+- CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use the CellGroup ID, issue, or name—not the note—to address a cell.
 
 Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps its failure stage and latest error for inspection.
 

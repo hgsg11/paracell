@@ -1,42 +1,30 @@
 package output
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/hgsg11/paracell/internal/domain"
+	"github.com/hgsg11/paracell/internal/query"
 )
 
-func outputCell(t *testing.T, issue string, templateName string, note string) domain.CommanderCell {
-	t.Helper()
-	sourceDriver, _ := domain.NewSourceDriverType("git")
-	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	group, err := domain.NewCellGroup("group-id-"+issue, issue, "sample", templateName, sourceDriver, domain.None, domain.NoNotification)
-	if err != nil {
-		t.Fatal(err)
+const listHeader = "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+
+func outputCell(issue string, templateName string, note string) query.CellView {
+	label := note
+	if label == "" {
+		label = issue
 	}
-	cell, err := domain.NewCommanderCell("id-"+issue, &group, domain.NewWorkspace(workspaceDriver, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if note != "" {
-		err = cell.CellGroup.SetNote(note)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	return cell
+	return query.CellView{Name: issue, Label: label, Template: templateName, Status: "ready", CreationStatus: "ready"}
 }
 
 func TestFormatCellListはNameとTemplateを表で出力する(t *testing.T) {
-	cells := []domain.CommanderCell{
-		outputCell(t, "123", "default", ""),
-		outputCell(t, "456", "webapp", ""),
+	cells := []query.CellView{
+		outputCell("123", "default", ""),
+		outputCell("456", "webapp", ""),
 	}
 
 	got := FormatCellList(cells)
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n" +
+	want := listHeader +
 		"123\tdefault\tready\tready\tfalse\t-\t-\n" +
 		"456\twebapp\tready\tready\tfalse\t-\t-\n"
 
@@ -46,33 +34,62 @@ func TestFormatCellListはNameとTemplateを表で出力する(t *testing.T) {
 }
 
 func TestFormatCellListは空一覧でもヘッダーを出力する(t *testing.T) {
-	got := FormatCellList(nil)
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
-
-	if got != want {
-		t.Fatalf("output = %q, want %q", got, want)
+	if got := FormatCellList(nil); got != listHeader {
+		t.Fatalf("output = %q, want %q", got, listHeader)
+	}
+	if got := FormatCellList([]query.CellView{}); got != listHeader {
+		t.Fatalf("output = %q, want %q", got, listHeader)
 	}
 }
 
 func TestFormatCellListはFailed工程と単一行に整形したErrorを出力する(t *testing.T) {
-	cell := outputCell(t, "123", "webapp", "")
-	cell.BeginCreation()
-	cell.FailCreation(domain.CreationStageContainers, fmt.Errorf("docker failed\nport already used\ttry another"))
+	cell := outputCell("123", "webapp", "")
+	cell.CreationStatus, cell.FailedStage, cell.LastError = "failed", "containers", "docker failed\nport already used\ttry another"
 
-	got := FormatCellList([]domain.CommanderCell{cell})
+	got := FormatCellList([]query.CellView{cell})
 	if !strings.Contains(got, "failed\tready\tfalse\tcontainers\tdocker failed port already used try another") {
 		t.Fatalf("output = %q", got)
 	}
 }
 
+func TestFormatCellListは長いErrorを120文字に切り詰め空のErrorはハイフンにする(t *testing.T) {
+	long := outputCell("123", "webapp", "")
+	long.CreationStatus, long.FailedStage, long.LastError = "failed", "workspace", strings.Repeat("あ", 130)
+	empty := outputCell("456", "webapp", "")
+	empty.CreationStatus, empty.FailedStage = "failed", "source"
+
+	lines := strings.Split(strings.TrimSuffix(FormatCellList([]query.CellView{long, empty}), "\n"), "\n")
+	if want := "123\twebapp\tfailed\tready\tfalse\tworkspace\t" + strings.Repeat("あ", 119) + "…"; lines[1] != want {
+		t.Fatalf("line = %q, want %q", lines[1], want)
+	}
+	if want := "456\twebapp\tfailed\tready\tfalse\tsource\t-"; lines[2] != want {
+		t.Fatalf("line = %q, want %q", lines[2], want)
+	}
+}
+
+func TestFormatCellListはPendingと完了と作成中を出力し失敗以外の段階は出さない(t *testing.T) {
+	cell := outputCell("123", "webapp", "")
+	cell.Status, cell.Done, cell.CreationStatus = "pending", true, "creating"
+	unknown := outputCell("456", "webapp", "")
+	unknown.Status = ""
+
+	got := FormatCellList([]query.CellView{cell, unknown})
+	want := listHeader +
+		"123\twebapp\tcreating\tpending\ttrue\t-\t-\n" +
+		"456\twebapp\tready\tready\tfalse\t-\t-\n"
+	if got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
 func TestFormatCellListはNoteをNameより優先する(t *testing.T) {
-	cells := []domain.CommanderCell{
-		outputCell(t, "123", "default", "PostgreSQL案"),
-		outputCell(t, "456", "webapp", ""),
+	cells := []query.CellView{
+		outputCell("123", "default", "PostgreSQL案"),
+		outputCell("456", "webapp", ""),
 	}
 
 	got := FormatCellList(cells)
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n" +
+	want := listHeader +
 		"PostgreSQL案\tdefault\tready\tready\tfalse\t-\t-\n" +
 		"456\twebapp\tready\tready\tfalse\t-\t-\n"
 	if got != want {
