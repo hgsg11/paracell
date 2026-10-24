@@ -74,7 +74,7 @@ The Paracell dispatcher stores the complete work package in a development ticket
 
 - Create the ticket through the project's available provider integration; do not pass a long body as a shell argument. For GitHub Issues, `gh issue create --body-file <path>` is one available method.
 - Pass the provider's ticket identifier as a string to the positional `fork` argument; it need not be numeric.
-- Keep `--command` short: tell the worker to read the ticket and treat it as the single source of truth.
+- Keep `--command` short: tell the worker to read the ticket and treat it as the single source of truth. When the AI-DLC `ticket-to-pr-work-item` scope is installed and the ticket is a GitHub issue, use `/ticket-to-pr-work-item <issue URL>` instead.
 - Pass `--note` on every Skill dispatch. Derive it from the ticket title and body when available, or from the confirmed work objective otherwise.
 - Keep the note natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements. It is display-only, not a dispatch identifier or search key.
 - Use `paracell fork <ticket-id> --template <template> [--prefix <prefix>] --note <note> --command <short-ticket-instruction>` with each argument passed separately. Omit `--prefix` to use `feat`.

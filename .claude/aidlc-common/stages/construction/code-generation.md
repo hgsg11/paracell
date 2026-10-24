@@ -55,6 +55,7 @@ scopes:
   - classic
   - workshop
   - express
+  - ticket-to-pr-work-item
 inputs: ALL prior design artifacts for this unit
 outputs: application code + code-generation-plan.md, code-generation-questions.md, unit-test-instructions.md, code-summary.md, traceability.json (under this stage's per-unit record dir, engine-resolved; the engine writes code-generation-questions.md)
 ---
@@ -109,6 +110,16 @@ directive exactly once:
 - `directive.unit` absent:
   `<record>/construction/code-generation/`
 
+
+<!-- plugin:ticket-to-pr:after-step:1:100:b1b5b08b -->
+For the `ticket-to-pr` scope, implement only the approved requirements and
+acceptance criteria from the ticket brief. Follow repository-local coding
+standards and conventions discovered during Reverse Engineering. Do not add
+unrequested dependencies, abstractions, fallback paths, or unrelated cleanup.
+Complete the implementation stage's required test artifacts; the following
+Build and Test stage executes those tests. Keep each test linked to an accepted
+criterion and follow the repository's existing test conventions.
+<!-- /plugin:ticket-to-pr:after-step:1:100:b1b5b08b -->
 ### Step 2: PART 1 — Planning
 
 When the directive already carries `plan_approval.status: "approved"`, this plan is written and approved: do not rewrite it or the test instructions; go to Step 4.

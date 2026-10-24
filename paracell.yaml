@@ -19,7 +19,7 @@ templates:
                         cd repository/source && { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','sonnet'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
+                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
         targets:
             repository:
                 source:
@@ -35,7 +35,7 @@ templates:
                         cd repository/source && { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','sonnet'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
+                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
         targets:
             repository:
                 source:
@@ -51,7 +51,7 @@ templates:
                         cd repository/source && { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','sonnet'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
+                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
         targets:
             repository:
                 source:
@@ -67,7 +67,7 @@ templates:
                         cd repository/source && { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','sonnet'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
+                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
         targets:
             repository:
                 source:

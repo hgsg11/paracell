@@ -787,7 +787,8 @@
       "security-patch",
       "classic",
       "workshop",
-      "express"
+      "express",
+      "ticket-to-pr-work-item"
     ],
     "inputs": "<record>/aidlc-state.md",
     "outputs": "aidlc/spaces/<active-space>/codekb/<repo>/ (9 artifacts: business-overview.md, architecture.md, code-structure.md, api-documentation.md, component-inventory.md, technology-stack.md, dependencies.md, code-quality-assessment.md, reverse-engineering-timestamp.md)",
@@ -948,7 +949,8 @@
     "mode": "inline",
     "produces": [
       "requirements",
-      "requirements-analysis-questions"
+      "requirements-analysis-questions",
+      "ticket-to-pr-implementation-brief"
     ],
     "consumes": [
       {
@@ -998,7 +1000,8 @@
       "security-patch",
       "classic",
       "workshop",
-      "express"
+      "express",
+      "ticket-to-pr-work-item"
     ],
     "reviewer": "aidlc-product-lead-agent",
     "review_artifact": "requirements",
@@ -2382,7 +2385,8 @@
       "security-patch",
       "classic",
       "workshop",
-      "express"
+      "express",
+      "ticket-to-pr-work-item"
     ],
     "reviewer": "aidlc-architecture-reviewer-agent",
     "review_artifact": "code-generation-plan",
@@ -2480,7 +2484,8 @@
       "security-patch",
       "classic",
       "workshop",
-      "express"
+      "express",
+      "ticket-to-pr-work-item"
     ],
     "inputs": "ALL code generation outputs across all units",
     "outputs": "build-instructions.md, integration-test-instructions.md, performance-test-instructions.md, security-test-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md (under this stage's record dir, engine-resolved)",
@@ -2629,6 +2634,288 @@
         "matches": "**/*.{ts,tsx}"
       }
     ]
+  },
+  {
+    "slug": "ticket-to-pr-test-review",
+    "number": "3.8",
+    "name": "Ticket Test Review",
+    "plugin": "ticket-to-pr",
+    "phase": "construction",
+    "execution": "ALWAYS",
+    "condition": "Executes after Build and Test and before the other reviews.",
+    "lead_agent": "aidlc-quality-agent",
+    "support_agents": [],
+    "mode": "inline",
+    "produces": [
+      "ticket-to-pr-test-review-report"
+    ],
+    "consumes": [
+      {
+        "artifact": "requirements",
+        "required": true
+      },
+      {
+        "artifact": "build-test-results",
+        "required": true
+      }
+    ],
+    "requires_stage": [
+      "build-and-test"
+    ],
+    "sensors": [],
+    "scopes": [
+      "ticket-to-pr-work-item"
+    ],
+    "inputs": "Acceptance criteria, test source diff, and build/test results",
+    "outputs": "ticket-to-pr-test-review-report.md (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/construction.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": []
+  },
+  {
+    "slug": "ticket-to-pr-security-review",
+    "number": "3.9",
+    "name": "Ticket Security Review",
+    "plugin": "ticket-to-pr",
+    "phase": "construction",
+    "execution": "ALWAYS",
+    "condition": "Executes after Build and Test and the test review pass.",
+    "lead_agent": "aidlc-devsecops-agent",
+    "support_agents": [],
+    "mode": "inline",
+    "produces": [
+      "ticket-to-pr-security-review-report"
+    ],
+    "consumes": [
+      {
+        "artifact": "build-test-results",
+        "required": true
+      },
+      {
+        "artifact": "requirements",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-test-review-report",
+        "required": true
+      }
+    ],
+    "requires_stage": [
+      "build-and-test",
+      "ticket-to-pr-test-review"
+    ],
+    "sensors": [],
+    "scopes": [
+      "ticket-to-pr-work-item"
+    ],
+    "inputs": "Implemented source diff, approved requirements, and build/test evidence",
+    "outputs": "ticket-to-pr-security-review-report.md (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/construction.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": []
+  },
+  {
+    "slug": "ticket-to-pr-coding-standards-review",
+    "number": "3.10",
+    "name": "Ticket Coding Standards Review",
+    "plugin": "ticket-to-pr",
+    "phase": "construction",
+    "execution": "ALWAYS",
+    "condition": "Executes after the security review passes.",
+    "lead_agent": "aidlc-quality-agent",
+    "support_agents": [],
+    "mode": "inline",
+    "produces": [
+      "ticket-to-pr-coding-standards-review-report"
+    ],
+    "consumes": [
+      {
+        "artifact": "ticket-to-pr-security-review-report",
+        "required": true
+      },
+      {
+        "artifact": "requirements",
+        "required": true
+      }
+    ],
+    "requires_stage": [
+      "ticket-to-pr-security-review"
+    ],
+    "sensors": [],
+    "scopes": [
+      "ticket-to-pr-work-item"
+    ],
+    "inputs": "Implemented source diff, repository standards, approved requirements, and prior review report",
+    "outputs": "ticket-to-pr-coding-standards-review-report.md (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/construction.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": []
+  },
+  {
+    "slug": "ticket-to-pr-ai-slop-review",
+    "number": "3.11",
+    "name": "Ticket AI Slop Review",
+    "plugin": "ticket-to-pr",
+    "phase": "construction",
+    "execution": "ALWAYS",
+    "condition": "Executes after the coding standards review passes.",
+    "lead_agent": "ticket-to-pr-ai-slop-reviewer-agent",
+    "support_agents": [],
+    "mode": "inline",
+    "produces": [
+      "ticket-to-pr-ai-slop-review-report"
+    ],
+    "consumes": [
+      {
+        "artifact": "ticket-to-pr-coding-standards-review-report",
+        "required": true
+      }
+    ],
+    "requires_stage": [
+      "ticket-to-pr-coding-standards-review"
+    ],
+    "sensors": [],
+    "scopes": [
+      "ticket-to-pr-work-item"
+    ],
+    "inputs": "Implemented source diff, original ticket, repository instructions, and prior review reports",
+    "outputs": "ticket-to-pr-ai-slop-review-report.md (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/construction.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": []
+  },
+  {
+    "slug": "ticket-to-pr-open-pull-request",
+    "number": "3.12",
+    "name": "Open Pull Request",
+    "plugin": "ticket-to-pr",
+    "phase": "construction",
+    "execution": "ALWAYS",
+    "condition": "Executes after all review reports pass.",
+    "lead_agent": "aidlc-delivery-agent",
+    "support_agents": [],
+    "mode": "inline",
+    "produces": [
+      "ticket-to-pr-pull-request"
+    ],
+    "consumes": [
+      {
+        "artifact": "build-test-results",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-security-review-report",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-coding-standards-review-report",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-ai-slop-review-report",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-test-review-report",
+        "required": true
+      },
+      {
+        "artifact": "ticket-to-pr-implementation-brief",
+        "required": true
+      }
+    ],
+    "requires_stage": [
+      "ticket-to-pr-ai-slop-review"
+    ],
+    "sensors": [],
+    "scopes": [
+      "ticket-to-pr-work-item"
+    ],
+    "inputs": "Confirmed issue brief, verified test results, and all four passing review reports",
+    "outputs": "ticket-to-pr-pull-request.md (under this stage's record dir, engine-resolved)",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/construction.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": []
   },
   {
     "slug": "deployment-pipeline",

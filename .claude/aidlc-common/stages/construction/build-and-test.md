@@ -40,6 +40,7 @@ scopes:
   - classic
   - workshop
   - express
+  - ticket-to-pr-work-item
 inputs: ALL code generation outputs across all units
 outputs: build-instructions.md, integration-test-instructions.md, performance-test-instructions.md, security-test-instructions.md, build-and-test-summary.md, test-results.md, cross-unit-traceability.md (under this stage's record dir, engine-resolved)
 ---
@@ -270,6 +271,14 @@ Summary of all test instruction sets generated, readiness assessment, then:
 
 Approval gate: strictly 2-option (Approve / Request Changes).
 
+
+<!-- plugin:ticket-to-pr:end-of-steps:100:b93e5662 -->
+For the `ticket-to-pr` scope, report the exact build and test commands run and
+their results. Keep the ticket's acceptance criteria linked to the checks or
+manual evidence that verify them. The downstream review stages require this
+summary and do not treat unrun checks as passing. The test-quality review runs
+after this stage and before security, coding standards, and AI slop reviews.
+<!-- /plugin:ticket-to-pr:end-of-steps:100:b93e5662 -->
 ## Sensors
 
 This stage produces test-instruction markdown files under

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "name": "ticket-to-pr",
+  "files": [
+    {
+      "path": ".claude/agents/ticket-to-pr-ai-slop-reviewer-agent.md",
+      "sha256": "sha256:0d67e22b8d9568aecd61439038d5e7057b3477dba0c266426cc65084cc30a1bb"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ticket-to-pr-ai-slop-review.md",
+      "sha256": "sha256:7857fd5383f9f4b24a76a8a83ca0e3c3f82b873efdbb626e3811ec63f3262fd2"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ticket-to-pr-coding-standards-review.md",
+      "sha256": "sha256:8f99b30c7678dd74218acf802815b5bd45e3639b12829b23bd7a7f06dd6f379d"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ticket-to-pr-open-pull-request.md",
+      "sha256": "sha256:023808b24cdc4b8c3f3e3aff9d0951cd95f8e50afbd2b088f931f5de5301b775"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ticket-to-pr-security-review.md",
+      "sha256": "sha256:683ed1a0a7362f3fb6f15b2eff113ac74a3a5bcc411d34c6a2c8b75b708659d9"
+    },
+    {
+      "path": ".claude/aidlc-common/stages/construction/ticket-to-pr-test-review.md",
+      "sha256": "sha256:da7445cf03ec42e5cdc933929ad56e4de19882751abe1d5a2d3d1a022625969f"
+    },
+    {
+      "path": ".claude/scopes/ticket-to-pr-work-item.md",
+      "sha256": "sha256:69ad17c8b9f6e8023e9f618e0835eebdbb6299b82f9bfc23d4975a724eda96ed"
+    }
+  ]
+}

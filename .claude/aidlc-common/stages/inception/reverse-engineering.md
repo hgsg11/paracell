@@ -34,6 +34,7 @@ scopes:
   - classic
   - workshop
   - express
+  - ticket-to-pr-work-item
 inputs: <record>/aidlc-state.md
 outputs: "aidlc/spaces/<active-space>/codekb/<repo>/ (9 artifacts: business-overview.md, architecture.md, code-structure.md, api-documentation.md, component-inventory.md, technology-stack.md, dependencies.md, code-quality-assessment.md, reverse-engineering-timestamp.md)"
 ---
@@ -511,6 +512,13 @@ Use stage-protocol.md completion template:
 - Review path: `aidlc/spaces/<active-space>/codekb/<repo>/` for each repo in the set
 - Structured approval question with options: Approve (continue to Requirements Analysis) / Request Changes. If any repo returned NARROWER, the Approve option's description must say which stores now have narrower verified coverage (e.g. "Accept the narrower verified coverage for <repos>; continue to Requirements Analysis").
 
+
+<!-- plugin:ticket-to-pr:end-of-steps:100:835d1ab9 -->
+For the `ticket-to-pr` scope, keep the scan focused on the ticket's named
+behavior and likely change paths. Record the relevant components, tests,
+conventions, and risks that the ticket intake stage needs. Do not expand the
+ticket's requested product behavior during repository analysis.
+<!-- /plugin:ticket-to-pr:end-of-steps:100:835d1ab9 -->
 ## Sensors
 
 This stage's outputs are markdown artefacts under `aidlc/spaces/<active-space>/codekb/<repo>/` (the directory `codekb-path --repo <repo>` resolves).
