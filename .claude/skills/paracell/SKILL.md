@@ -27,7 +27,7 @@ The following interview, ticket preparation, and dispatch steps apply to the dis
 ### Inspect the Project
 
 1. Confirm the CLI with `command -v paracell` and `paracell version`.
-2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested. `paracell init` creates `paracell.yaml` and initializes `.paracell/state.db`.
+2. Resolve the project root from `$PARACELL_ROOT`, the nearest ancestor containing `paracell.yaml`, or the git root when initialization is requested. `paracell init` creates `paracell.yaml` and initializes `.paracell/state.db`. Whether or not `paracell.yaml` already exists, it also adds the Claude Code status hooks to `.claude/settings.json` next to `paracell.yaml` (see [references/configuration.md](references/configuration.md#claude-code-status-hooks)).
 3. Read the complete root `paracell.yaml` and run `paracell ls` before selecting a template or creating, changing, or cleaning a cell.
 4. Read [references/configuration.md](references/configuration.md) before interpreting template compatibility or changing configuration.
 5. Inspect only the repository context needed to check template compatibility and derive dispatch inputs from an approved ticket. Treat repository instructions and the checked-out source as authoritative over an older installed binary.
@@ -125,7 +125,7 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 
 - Ready notifications use the configured provider: `tmux`, `terminal-notifier` (macOS only), or `none` / omission. The Homebrew Cask installs the notification Formula dependency; do not add runtime installation or click navigation.
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
-- Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set.
+- Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set. The hooks `paracell init` installs already call them on `UserPromptSubmit` and `Stop` and do nothing outside a cell; do not add duplicate hooks by hand.
 - Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.
 - A cell using `database.mode: shared` owns only the source database container's attachment to that cell network. Rollback and clean must preserve its original and other cell network attachments.
 - Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, sessions, containers, volumes, or networks while Paracell can manage them.

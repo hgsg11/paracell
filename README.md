@@ -27,7 +27,7 @@ AI agent を並行実行すると、同じファイル、同じcontainer名、�
 
 CellGroup は共通情報を保持し、CommanderCell、TargetCell、DependencyCell は Group ID を共有する peer です。CommanderCell は TargetCell / DependencyCell を内包せず、TargetCell は DependencyCell を個別に参照しません。生成・削除の usecase は `CellGroupID` で同じ作業一式を特定します。Template では `commanderCell`、`targets`、`dependencies` を同階層に記述します。
 
-Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。
+Template の Workspace に Codex などの agent 起動コマンドを設定すれば、作成と同時に agent へ作業を渡せます。agent の hook から `paracell pending` / `paracell ready` を呼び、人間は TUI から CommanderCell の状態を確認できます。Claude Code の hook は `paracell init` が `.claude/settings.json` に入れるので、手で書く必要はありません（[クイックスタート](#クイックスタート)）。
 
 ### Traefikで、issueごとの通信を調査する
 
@@ -90,6 +90,18 @@ paracell annotate 123 --note "API実装中"
 ```
 
 `paracell init` は `paracell.yaml` と `.paracell/state.db` を用意します。既存の設定は上書きしません。生成される template は、このリポジトリ自身を worktree として 1 つ複製する `self` だけで、CommanderCell の `agent` window は `claude "{{.Command}}"` で起動します。`paracell fork 123 --template self --command "..."` で、`claude` に初期命令を渡して開始できます。template を編集して、作りたい cell の形を決めます。
+
+`paracell init` は、`paracell.yaml` があるかどうかに関係なく、`paracell.yaml` と同じディレクトリの `.claude/settings.json` に Claude Code の hook を 2 つ入れます。Cell の中の Claude が発言を受けて作業を始めると `pending`、応答を終えると `ready` になります。
+
+| Claude Code のイベント | 実行するコマンド |
+| --- | --- |
+| `UserPromptSubmit` | `[ -z "$PARACELL_CELL" ] \|\| paracell pending` |
+| `Stop` | `[ -z "$PARACELL_CELL" ] \|\| paracell ready` |
+
+- 既存の `.claude/settings.json` の内容（`permissions`、`env`、他の hook など）とキーの順序は残し、hook をイベントの配列の末尾に足します。書き直すときはインデントが 2 スペースにそろいます
+- 同じコマンドの hook がすでにあれば足しません。何度 `paracell init` を実行しても hook は 1 つずつで、2 回目以降はファイルを書き直しません
+- JSON として読めない、または `hooks` やイベントの値の型が想定と違うときは、ファイルを変えずにエラーで終わります
+- Cell の外（`PARACELL_CELL` が空）で Claude Code を使っても、hook は何もせずに正常終了します
 
 branch prefix の既定値は `feat: feat/`、`update: update/`、`fix: fix/` です。`prefixes` を書いていない project にも適用され、`paracell.yaml` に書いた prefix は既定値より優先されます。`fork` で `--prefix` を省略すると `feat` を使います。
 
@@ -266,6 +278,7 @@ paracell version
 paracell --version
 ```
 
+- `init`: `paracell.yaml`（なければ）と `.paracell/state.db` を用意し、`.claude/settings.json` に Claude Code の `pending` / `ready` hook を入れる
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
 - `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
@@ -334,6 +347,7 @@ templates:
 ## ファイル
 
 - `paracell.yaml`: 設定と template
+- `.claude/settings.json`: `paracell init` が Claude Code の `pending` / `ready` hook を足す Claude Code の設定
 - `.paracell/state.db`: cell の状態を保存するSQLite database
 - `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree
 

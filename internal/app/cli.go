@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hgsg11/paracell/internal/adapter/agent"
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/id"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
@@ -270,7 +271,11 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	case CommandHelp:
 		return writeCLIOutput(logger, usage)
 	case CommandInit:
-		uc := usecase.InitProjectUseCase{Config: configAdapter, Cells: cellsAdapter}
+		uc := usecase.InitProjectUseCase{
+			Config:     configAdapter,
+			Cells:      cellsAdapter,
+			AgentHooks: agent.NewClaudeSettingsAdapter(filepath.Join(workdir, ".claude", "settings.json")),
+		}
 		_, err := uc.Execute(ctx)
 		return err
 	case CommandList:

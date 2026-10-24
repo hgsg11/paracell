@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -1470,6 +1471,103 @@ func TestCurrentCellはResurrect後の作業DirectoryからCell名を復元す�
 	}
 	if got != "123" {
 		t.Fatalf("cell = %q, want %q", got, "123")
+	}
+}
+
+func TestInitは新しいProjectで設定とClaudeのHookを作り何も表示しない(t *testing.T) {
+	dir := t.TempDir()
+
+	out, err := captureStdout(func() error {
+		return Run(context.Background(), []string{"init"}, dir)
+	})
+
+	if err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+	if out != "" {
+		t.Fatalf("stdout = %q, want empty", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "paracell.yaml")); err != nil {
+		t.Fatalf("paracell.yamlが作られなかった: %v", err)
+	}
+	assertParacellHooks(t, filepath.Join(dir, ".claude", "settings.json"))
+}
+
+func TestInitは既存のParacellYamlを書き換えずにClaudeのHookを入れる(t *testing.T) {
+	dir := t.TempDir()
+	config := []byte("project: {name: myapp}\nproviders: {source: git, workspace: tmux}\ntemplates: {}\n")
+	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), config, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Run(context.Background(), []string{"init"}, dir); err != nil {
+		t.Fatalf("Runでエラーが返った: %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dir, "paracell.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(config) {
+		t.Fatalf("paracell.yaml = %q, want unchanged %q", got, config)
+	}
+	assertParacellHooks(t, filepath.Join(dir, ".claude", "settings.json"))
+}
+
+func TestInitは壊れたClaudeSettingsをエラーにして変えない(t *testing.T) {
+	dir := t.TempDir()
+	settings := filepath.Join(dir, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	broken := []byte(`{"hooks": `)
+	if err := os.WriteFile(settings, broken, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := Run(context.Background(), []string{"init"}, dir)
+
+	if err == nil {
+		t.Fatal("壊れたsettings.jsonなのにエラーが返らなかった")
+	}
+	if !strings.Contains(err.Error(), settings) {
+		t.Fatalf("error %q does not contain the path %q", err, settings)
+	}
+	got, readErr := os.ReadFile(settings)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(got) != string(broken) {
+		t.Fatalf("settings.json = %q, want unchanged %q", got, broken)
+	}
+}
+
+func assertParacellHooks(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("settings.jsonが読めない: %v", err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("settings.jsonがJSONとして読めない: %v", err)
+	}
+	want := map[string]string{
+		"UserPromptSubmit": `[ -z "$PARACELL_CELL" ] || paracell pending`,
+		"Stop":             `[ -z "$PARACELL_CELL" ] || paracell ready`,
+	}
+	for event, command := range want {
+		entries := settings.Hooks[event]
+		if len(entries) != 1 || len(entries[0].Hooks) != 1 || entries[0].Hooks[0].Type != "command" || entries[0].Hooks[0].Command != command {
+			t.Fatalf("hooks.%s = %#v, want one command hook %q", event, entries, command)
+		}
 	}
 }
 
