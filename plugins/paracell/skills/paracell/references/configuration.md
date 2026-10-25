@@ -26,27 +26,37 @@ project:
 providers:
   source: git
   container: docker
-  session: tmux
+  workspace: tmux
   notifications: tmux
 prefixes:
   feat: feat/
   fix: fix/
 templates:
   feat:
-    repository:
-      base: main
-      branchMode: create
-    files:
-      - .env
-    containers:
-      services: {}
-    session:
-      windows:
-        - name: agent
-          command: 'codex "{{.Command}}"'
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: agent
+            command: 'claude "{{.Command}}"'
+    targets:
+      repository:
+        source:
+          path: .
+          base: main
+        containers:
+          app:
+            environment:
+              APP_ENV: "{{.Project}}-{{.Name}}"
+            files:
+              /app/config/local.yml: config/local.yml
+    dependencies:
+      - db
 ```
 
-`providers.container` is optional. Omit it when no Docker-backed service is needed. Supported providers are currently `git` for source, `tmux` for sessions, and `docker` for containers. Notifications support `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
+Unknown keys are rejected while loading. A template accepts only `commanderCell`, `targets`, and `dependencies`; `commanderCell` accepts `name` and `workspace` (required); a target accepts `source` and `containers`.
+
+`providers.source` is required and supports only `git`. `providers.workspace` supports only `tmux`. `providers.container` is `none` (default when omitted) or `docker`. `providers.notifications` is `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
 
 A fresh `paracell init` creates one starter template named `self` for the `repository` target (it duplicates this repository as one worktree) and an `agent` window running `claude "{{.Command}}"`, so `fork --command <text>` starts claude with that instruction. Its default branch-prefix keys are `feat`, `update`, and `fix`; they apply to every project that does not set `prefixes`, and a prefix written in `paracell.yaml` takes precedence. Rename or add templates to represent the targets used by the project; prefix keys are not template names unless the project independently chooses matching names.
 
@@ -70,18 +80,17 @@ A fresh `paracell init` creates one starter template named `self` for the `repos
 - `prefixes`: optional map from a key to a branch-name prefix. Keys and values control branch naming only; they do not select templates. Pass `--prefix <key>` when the configured prefix key for the intended branch naming is known and should be used, regardless of which template was selected. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never derive the prefix from a template key.
 - Template key: identifies a configured template. To select by target, match explicitly requested target names against the names under each compatible template's `targets` map by exact equality; do not compare target names to template keys. With one requested target, a candidate must contain that target entry. With several, a candidate must contain all of them. Choose the lexicographically smallest matching template key (case-sensitive byte order); if none match or no target is named, choose the lexicographically smallest compatible template key overall. Do not infer a match from a task kind, prefix, semantic closeness, or YAML declaration order.
 - Templates do not inherit. `extends` and `abstract` were removed; a `paracell.yaml` containing either fails to load with an error naming the template and field. Migrate by writing the parent's definition directly into each template and deleting the parent template.
-- `repository.base`: accepts an explicit branch or `current`.
-- `repository.branchMode`:
-  - Omitted or `create`: require a new branch.
-  - `reuse`: reuse an existing branch or create it when absent.
-  - `require`: require an existing branch.
-- `files`: project-root-relative local inputs copied into the cell source.
-- `containers.services`: declares container copies required by the cell.
-- `session.windows`: declares tmux windows and startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
+- `targets.<name>.source.path`: the repository to duplicate, relative to the project root (the directory containing `paracell.yaml`); defaults to `.`. Absolute paths and paths leaving the project root are rejected.
+- `targets.<name>.source.base`: the branch the new worktree starts from. Omit it or use `current` to start from the repository's current `HEAD`.
+- Every target source gets a new branch named `<prefix><ticket-id>` (for example `feat/123`) through `git worktree add -b`. An existing branch with that name makes creation fail; there is no branch reuse mode.
+- `targets.<name>.containers.<container>`: copies the running source container named `<container>` into the cell. `environment` adds environment variables (values are rendered with the template variables). `files` maps an absolute path inside the container to a path relative to that target's worktree and bind-mounts it.
+- A target needs a `source`, `containers`, or both. Its containers are always copies (mode `target`).
+- `dependencies`: names of running containers that the cell shares instead of copying. Each one is attached to the cell network with its existing aliases.
+- `commanderCell.workspace.windows`: tmux windows and their startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
 
 The issue's example configuration has prefix keys `feat` and `fix`, and template keys `feat`, `fix`, `review`, and `update`. These are independent namespaces even though two keys happen to be identical. If all four compatible templates contain `targets.repository`, a request for target `repository` matches all four and selects template `feat` by key order. If only `templates.update` contains `targets.web`, a request for `web` selects `update`; the template key itself is not the target match. For branch naming, pass `--prefix fix` to use `fix/` regardless of the selected template, or omit `--prefix` only when the CLI's default `feat/` is intended.
 
-Use `reuse` for resumable work and `require` for review or recovery flows where creating a new branch would be wrong. Prefer a template without containers when the task has no container dependency.
+Prefer a template without containers when the task has no container dependency.
 
 ## Ticket-Backed Dispatch
 
@@ -94,30 +103,29 @@ The Paracell dispatcher stores the complete work package in a development ticket
 - Keep the note natural and concise: 1-20 Unicode characters after whitespace normalization, without padding or detailed requirements. It is display-only, not a dispatch identifier or search key.
 - Use `paracell fork <ticket-id> --template <template> [--prefix <prefix>] --note <note> --command <short-ticket-instruction>` with each argument passed separately. Omit `--prefix` to use `feat`.
 - If ticket creation succeeds but `fork` fails, retain the ticket and report the failed cell. A normal `fork` with the same ticket identifier or name remains a duplicate.
-- A compatible session window must deliver either `{{.issue}}` or the short `{{.Command}}` instruction to the worker.
+- A compatible workspace window must deliver either `{{.Issue}}` or the short `{{.Command}}` instruction to the worker.
 
 ## Template Variables
 
-Session window commands support:
+Workspace window commands and container `environment` values are Go templates rendered before the shell starts. A misspelled variable is an error. The variable names are case-sensitive:
 
-- `{{.issue}}`: the string ticket identifier supplied to `fork`; the variable name is retained for CLI/template compatibility.
-- `{{.name}}`: the resulting cell name.
-- `{{.Command}}`: the value supplied through `fork --command`; the dispatcher uses a short instruction to read the ticket identified by `{{.issue}}`. It is empty when omitted or when forked through the TUI.
+- `{{.Issue}}`: the string ticket identifier supplied to `fork`; the variable name is retained for CLI/template compatibility.
+- `{{.Name}}`: the resulting cell name (the ticket identifier made safe for resource names).
+- `{{.Project}}`: `project.name` from `paracell.yaml`.
+- `{{.Command}}`: the value supplied through `fork --command`; the dispatcher uses a short instruction to read the ticket identified by `{{.Issue}}`. It is empty when omitted or when forked through the TUI.
 
-The template is rendered before the shell starts. Keep YAML, Go-template, and shell quoting distinct.
+Keep YAML, Go-template, and shell quoting distinct.
 
 ## Container Details
 
-- Every cell with container services gets its own Docker network. Copied containers join only that network, preserving usable aliases from their source container, and the shared gateway joins the network for HTTP routes.
-- Published TCP container ports follow the source container's bindings and use Docker-assigned random host ports. Every copied service, including a copied database, uses the same publication and HTTP gateway-label rules. Unpublished source ports remain unpublished.
-- Each `containers.services.<role>` may specify `sourceContainer` and `volumeMode`.
-- `volumeMode` accepts `copy` or `readonly` for ordinary services.
-- Database configuration is supported only for the `db` role. `database.mode` accepts `copy` or `shared`; omission defaults to `copy` for backward compatibility.
-- `database.mode: copy` requires `volumeMode: copy`, `database.system: mysql`, and `database.copyMode: schema`. It creates a cell-specific database container and volume, then copies every non-system schema. `copyMode: data` is rejected while loading configuration because data copy is not implemented.
-- `database.mode: shared` cannot be combined with `volumeMode`, `copyMode`, or `initFiles`. It does not copy a container, volume, or schema.
-- Shared database mode attaches the source database container to each cell network with every usable alias from its existing network attachments. It adds neither a fixed `db` alias nor a service-role alias and fails when the source has no usable aliases.
-- Rollback and `clean` disconnect a shared source database only from the affected cell network; its original and other cell network attachments remain intact.
-- Database `initFiles` in copy mode must be project-root-relative and remain within the project root.
+- Every cell with containers gets its own Docker network named `paracell-<project>-<cell>`. Copied containers join only that network, preserving usable aliases from their source container plus their container name, and the shared gateway joins the network for HTTP routes.
+- Published TCP container ports follow the source container's bindings and use Docker-assigned random host ports. Unpublished source ports remain unpublished.
+- Mounts of the source container are carried over as follows:
+  - Named volumes are always copied into a new cell-specific volume (`docker volume create` and `cp -a`); a read-only mount stays read-only. There is no shared or read-only volume mode.
+  - A bind mount whose host path is inside the project root is replaced with the same relative path inside the target's worktree. For a container created by docker compose, only binds declared in the compose service are kept, and a bind outside the project root keeps the original host path (shared with the source). For other containers, a bind outside the project root is dropped.
+  - Other mount types, such as tmpfs, are dropped.
+- Dependency containers are not copied: the running container is attached to the cell network, and rollback and `clean` disconnect it only from that network.
+- There is no database-specific configuration. A database container is copied like any other container, including its named volumes.
 
 ## Runtime State
 
@@ -127,18 +135,19 @@ The template is rendered before the shell starts. Keep YAML, Go-template, and sh
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session. When non-empty, perform development work directly in that cell instead of automatically dispatching again; the task issue need not match the cell identifier.
 - `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.
-- `.paracell/cells/<cell>/source` is the cell worktree.
+- `.paracell/cells/<cell>/` is the cell's workspace directory; tmux windows start there. Each target's worktree is `.paracell/cells/<cell>/<target>/source` (with `source.path` appended when it is not `.`).
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
 - CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use the CellGroup ID, issue, or name—not the note—to address a cell.
 
-Creation stages run in `source`, `files`, `containers`, `session` order. A failed cell keeps its failure stage and latest error for inspection.
+Creation stages run in `source`, `containers`, `workspace` order. A failed cell keeps its failure stage and latest error for inspection.
 
 ## Source-of-Truth Checks
 
 When this reference may be stale, inspect:
 
 - `internal/app/cli.go` for commands and environment behavior.
-- `internal/domain/template.go` for template fields and allowed values.
+- `internal/domain/template.go` and `internal/domain/template_vars.go` for template fields and variables.
+- `internal/adapter/container/docker.go` for container copies and mounts.
 - `internal/adapter/config/yaml_config.go` for YAML mapping and validation.
 - `internal/usecase/init_project.go` for generated defaults.
 - `internal/adapter/agent/claude_settings.go` for the Claude Code hooks `paracell init` adds.

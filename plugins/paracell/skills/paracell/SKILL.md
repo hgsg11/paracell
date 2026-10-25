@@ -82,7 +82,7 @@ If a blocking contradiction exists:
 
 Evaluate every template in `paracell.yaml`; never select by name alone.
 
-1. Evaluate each template exactly as written in `paracell.yaml` (see [references/configuration.md](references/configuration.md); templates have no inheritance) and eliminate templates incompatible with hard constraints: base branch, branch mode, required copied files, container/network needs, or session command behavior. Apply all later selection rules only to this compatible set.
+1. Evaluate each template exactly as written in `paracell.yaml` (see [references/configuration.md](references/configuration.md); templates have no inheritance) and eliminate templates incompatible with hard constraints: target repositories and base branches, copied or shared containers, or workspace window command behavior. Apply all later selection rules only to this compatible set.
 2. Use target matching only when the request or ticket explicitly names the desired target. Compare the requested target name against each compatible template's `targets` entry names by exact equality. Do not use the template key, task-kind prefix, semantic similarity, or a template's presumed purpose to infer a match.
 3. If one target is named, the matching candidate set contains compatible templates with that exact `targets` entry. If multiple targets are named, it contains compatible templates that include every named target. When the target-matching set is nonempty, choose its lexicographically smallest template key (case-sensitive byte order). If the request names no target or there are no target-matching templates, choose the lexicographically smallest compatible template key overall. If no compatible template exists, stop and explain why. Do not use declaration order or file/container counts to break ties.
 4. Choose the branch prefix independently from the selected template. Pass `--prefix <key>` when the configured key for the intended branch naming is known and should be used, even if template selection fell back to another key. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never infer branch prefix from the selected template.
@@ -117,7 +117,7 @@ For a supplied approved ticket, dispatch after deriving its inputs; do not ask t
 
 Stop after reporting the confirmed dispatch. Do not capture the cell's tmux pane, monitor the worker, type follow-up input into it, wait for completion, or operate on its worktree unless the user explicitly requests that additional operation.
 
-If the selected template's session does not consume `{{.Command}}`, check whether it uses `{{.issue}}` to pass the ticket identifier to the worker. Treat the dispatch as blocking when neither variable delivers the ticket identifier to the worker.
+If the selected template's workspace windows do not consume `{{.Command}}`, check whether they use `{{.Issue}}` to pass the ticket identifier to the worker. Treat the dispatch as blocking when neither variable delivers the ticket identifier to the worker.
 
 ## Operate Safely
 
@@ -127,7 +127,7 @@ If the selected template's session does not consume `{{.Command}}`, check whethe
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set. The hooks `paracell init` installs already call them on `UserPromptSubmit` and `Stop` and do nothing outside a cell; do not add duplicate hooks by hand.
 - Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.
-- A cell using `database.mode: shared` owns only the source database container's attachment to that cell network. Rollback and clean must preserve its original and other cell network attachments.
+- A dependency container is shared, not copied: a cell owns only its attachment to that cell's network. Rollback and clean must preserve its original and other cell network attachments.
 - Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, sessions, containers, volumes, or networks while Paracell can manage them.
 - Do not assume `clean --force` bypasses the done guard; check the installed version.
 

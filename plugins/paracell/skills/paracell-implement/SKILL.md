@@ -7,6 +7,17 @@ description: "Implement an identified development ticket inside a Paracell cell,
 
 Use this skill to implement an identified development ticket from inside a Paracell cell. The ticket is the single source of truth. Ticket providers vary by project; use the available provider integration rather than assuming GitHub Issues. Do not reopen finalized requirements unless a concrete blocker prevents implementation.
 
+## Inspect the Cell Environment First
+
+Before reading the ticket, find out where you are and what the cell contains. Use the `paracell` skill only for this inspection: read its configuration reference (`references/configuration.md`) to interpret what you find, and do not run its dispatch workflow or any lifecycle operation (`fork`, `clean`, `annotate`) from inside the cell.
+
+1. Read `PARACELL_CELL` (the current cell name) and `PARACELL_ROOT` (the project root). If `PARACELL_CELL` is empty, you are not in a cell; stop and report that instead of implementing.
+2. Run `paracell ls` from `PARACELL_ROOT` and find the row for the current cell: its template, creation status, and any failed stage.
+3. Read `PARACELL_ROOT/paracell.yaml` and the cell's template. From its `targets` and `dependencies`, determine:
+   - each target repository, its worktree under `.paracell/cells/<cell>/<target>/source`, and the branch it is on (`git -C <worktree> branch --show-current`);
+   - the containers copied for each target and the shared dependency containers (`docker ps --filter network=paracell-<project>-<cell>` when containers are enabled).
+4. Report the environment in a few lines (cell, template, targets with worktree and branch, containers) before starting work. Make code changes only inside the target worktrees.
+
 ## Workflow
 
 1. Confirm the current cell context and identify the supplied ticket. Read the full ticket through its provider integration. Paracell's current CLI may expose the identifier using the legacy `issue` argument or `{{.issue}}` variable; treat it as an arbitrary string identifier, not necessarily a number.
