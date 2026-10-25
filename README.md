@@ -74,6 +74,17 @@ Nix package には実行時依存として `git` と `tmux` が含まれます�
 go build -o paracell ./cmd/paracell
 ```
 
+### Claude Code プラグイン
+
+Cell へのディスパッチ（`paracell` skill）と Cell の中での実装（`paracell-implement` skill）を Claude Code のプラグインとして配布しています。
+
+```sh
+claude plugin marketplace add hgsg11/paracell
+claude plugin install paracell@paracell
+```
+
+skill は `/paracell:paracell` と `/paracell:paracell-implement` として使えます。更新は `claude plugin update paracell@paracell` で取り込めます。GitHub の SSH 鍵がない環境では `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` を設定してください。
+
 ## クイックスタート
 
 ```sh

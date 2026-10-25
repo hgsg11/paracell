@@ -1,0 +1,10 @@
+{
+  "name": "paracell",
+  "description": "Dispatch ticket-backed work into Paracell cells and implement tickets inside a cell",
+  "author": {
+    "name": "hgsg11"
+  },
+  "homepage": "https://github.com/hgsg11/paracell",
+  "repository": "https://github.com/hgsg11/paracell",
+  "license": "MIT"
+}

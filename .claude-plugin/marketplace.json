@@ -1,0 +1,14 @@
+{
+  "name": "paracell",
+  "description": "Paracell plugins for Claude Code",
+  "owner": {
+    "name": "hgsg11"
+  },
+  "plugins": [
+    {
+      "name": "paracell",
+      "source": "./plugins/paracell",
+      "description": "Dispatch ticket-backed work into Paracell cells and implement tickets inside a cell"
+    }
+  ]
+}
