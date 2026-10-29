@@ -60,6 +60,27 @@ Unknown keys are rejected while loading. A template accepts only `commanderCell`
 
 A fresh `paracell init` creates one starter template named `self` for the `repository` target (it duplicates this repository as one worktree) and an `agent` window running `claude "{{.Command}}"`, so `fork --command <text>` starts claude with that instruction. Its default branch-prefix keys are `feat`, `update`, and `fix`; they apply to every project that does not set `prefixes`, and a prefix written in `paracell.yaml` takes precedence. Rename or add templates to represent the targets used by the project; prefix keys are not template names unless the project independently chooses matching names.
 
+### Templates Without Targets
+
+A template may omit `targets` (and `dependencies`) and define only `commanderCell`, for work such as requirements definition that only reads code and writes tickets or documents:
+
+```yaml
+templates:
+  requirements:
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: claude
+            command: claude "{{.Command}}"
+```
+
+- Create it with `paracell fork <ticket-id> --template requirements`; `clean`, `pending` / `ready`, and the TUI work as for any other cell.
+- No worktree, branch, container, or cell directory is created. Only the tmux session is created, and its windows start in the project root (the directory containing `paracell.yaml`).
+- The same applies to any template without a source-backed target (for example, one whose targets only have `containers`).
+- Cells with at least one source-backed target start their windows in `.paracell/cells/<cell>/` as before.
+- Caution: the project root is shared with other cells and with local work, so file edits made in this kind of cell can overwrite each other.
+
 ## Claude Code Status Hooks
 
 `paracell init` adds two hooks to `.claude/settings.json` in the same directory as `paracell.yaml`, whether or not `paracell.yaml` already exists. Claude inside a cell then sets the cell to `pending` when it starts on a prompt and to `ready` when it finishes its response.
