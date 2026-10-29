@@ -302,11 +302,10 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 
 ## 設定メモ
 
-- `repository.base: current`: 現在の branch から cell branch を作る
-- `repository.base`: cell branch の作成元を指定する。`main` や `feature/111` など任意の branch を指定できる
-- `repository.branchMode: create`: cell branch を新規作成する。既存 branch があれば失敗する
-- `repository.branchMode: reuse`: 既存 branch があればその branch の worktree を作り、なければ新規作成する
-- `repository.branchMode: require`: 既存 branch の worktree だけを作る。branch がなければ失敗する
+- `targets.<name>.source.base`: cell branch を新規作成するときの作成元。書かれたとおり `git worktree add` に渡すため、`main` はローカルの `main`、`origin/main` は fetch 直後の `origin/main` から作る。省略または `current` なら現在の `HEAD` から作る
+- source を作る前に、repository に `origin` remote があれば `git fetch origin` を実行する。`origin` がなければ fetch せず、fetch が失敗すると source の工程で cell 作成が失敗する
+- cell branch（`<prefix><ticket-id>`）はローカルに既存 branch があればそれを使い（pull や rebase はしない）、ローカルになく `origin/<branch>` があればそれを追跡する branch を作り、どちらにもなければ `base` から新規作成する
+- 既存 branch が手元の作業ディレクトリや別の cell でチェックアウト中だと source の工程で失敗し、`paracell ls` にエラーが出る。`paracell clean` は worktree だけを消し、branch は残す
 - `files`: cell の source にコピーするファイル
 - container serviceを持つcellには、cell専用Docker networkと自動HTTP gateway routeを常に作る
 - `containers.services.<service>.environment`: service ごとの環境変数を設定する。source container の環境変数をコピーした後、同名の変数をこの設定で上書きする
