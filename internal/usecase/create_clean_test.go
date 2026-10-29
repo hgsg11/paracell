@@ -44,6 +44,29 @@ func TestForkCellは新しいTemplateからCellを作る(t *testing.T) {
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
 	}
+	if got := ports.workspaceResource.WorkingDirectory; got != ".paracell/cells/42" {
+		t.Fatalf("WorkingDirectory = %q, want .paracell/cells/42", got)
+	}
+}
+
+func TestForkCellはsourceを持つTargetがないTemplateではプロジェクトのルートでWorkspaceだけを作る(t *testing.T) {
+	ports := newFakePorts()
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+	template, _ := domain.NewUnresolvedTemplate("requirements", &commander, nil, nil)
+	ports.config, _ = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.None, domain.Git, domain.NoNotification, nil)
+	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "requirements"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group := ports.groupOf(t, cell); group.Creation.Status != domain.CreationReady || len(ports.cells.Targets) != 0 {
+		t.Fatalf("group = %#v, targets = %#v", group, ports.cells.Targets)
+	}
+	if len(ports.createdSources) != 0 {
+		t.Fatalf("created sources = %#v", ports.createdSources)
+	}
+	if got := ports.workspaceResource.WorkingDirectory; got != "." {
+		t.Fatalf("WorkingDirectory = %q, want project root", got)
+	}
 }
 
 func TestForkCellはPrefixをTemplateから独立してSourceへ適用する(t *testing.T) {

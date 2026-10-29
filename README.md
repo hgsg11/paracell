@@ -354,12 +354,32 @@ templates:
     dependencies: [database]
 ```
 
+### Target を持たない template
+
+要件定義のように、コードを読んで issue やドキュメントを書くだけの作業では、`targets` を書かず `commanderCell` だけの template を使えます。
+
+```yaml
+templates:
+  requirements:
+    commanderCell:
+      name: workspace
+      workspace:
+        windows:
+          - name: claude
+            command: claude "{{.Command}}"
+```
+
+- `paracell fork <ticket-id> --template requirements` で作れます。worktree・branch・container・Cell のディレクトリは作られず、tmux のセッションだけができ、window はプロジェクトのルート（`paracell.yaml` のある場所）で起動します。
+- source を持つ Target がない template（containers だけを持つ Target しかない template を含む）も、同じくプロジェクトのルートで起動します。
+- pending / ready、TUI での表示、`clean` は他の Cell と同じように使えます。
+- 注意: プロジェクトのルートは他の Cell や手元の作業と共有されます。この種類の Cell でファイルを編集すると、互いに上書きしてしまうことがあります。
+
 ## ファイル
 
 - `paracell.yaml`: 設定と template
 - `.claude/settings.json`: `paracell init` が Claude Code の `pending` / `ready` hook を足す Claude Code の設定
 - `.paracell/state.db`: cell の状態を保存するSQLite database
-- `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree
+- `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree。source を持つ Target がある Cell の tmux window はこの親の `.paracell/cells/<commander>/` で起動する
 
 SQLite の既存 CommanderCell 形式は読み込み時に CellGroup へ変換します。既存の CommanderCell ID を CellGroup ID として所属を復元し、次の変更時に新形式を transaction 内で保存します。Note、命令、状態、version、関連 Cell とリソース情報は保持し、不正な所属参照はエラーとして扱います。新規作成では CellGroup と各 Cell に別々の ID を割り当てます。
 

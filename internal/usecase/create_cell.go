@@ -182,7 +182,7 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 		}
 		return nil
 	case domain.CreationStageWorkspace:
-		return r.Workspace.CreateWorkspace(ctx, r.Group.WorkspaceResource(r.Commander.Workspace))
+		return r.Workspace.CreateWorkspace(ctx, domain.BuildWorkspaceResourceService(*r.Group, r.Commander.Workspace, r.Targets))
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}
