@@ -81,27 +81,6 @@ templates:
 - Cells with at least one source-backed target start their windows in `.paracell/cells/<cell>/` as before.
 - Caution: the project root is shared with other cells and with local work, so file edits made in this kind of cell can overwrite each other.
 
-### Refinement Template
-
-A refinement template is a template without targets for producing mocks, UI sketches, or spec notes without changing code. It creates no worktree, branch, or container; its windows start in the project root and write outputs to a per-cell directory under the git-ignored `.paracell/`:
-
-```yaml
-templates:
-  refinement:
-    commanderCell:
-      name: workspace
-      workspace:
-        windows:
-          - name: claude
-            command: >-
-              mkdir -p .paracell/refinements/{{.Name}} &&
-              claude --append-system-prompt "This is a paracell refinement cell. Do not modify, create, or delete files in the repository. Write mocks, notes, and other outputs only under .paracell/refinements/{{.Name}}/." "{{.Command}}"
-```
-
-- Select it for work whose deliverable is a mock or document rather than a code change; it is incompatible with any request that names a target or needs a branch.
-- `paracell clean` removes the tmux session but keeps `.paracell/refinements/<cell>/`.
-- The no-edit rule is an instruction to the agent, not something paracell enforces.
-
 ## Claude Code Status Hooks
 
 `paracell init` adds two hooks to `.claude/settings.json` in the same directory as `paracell.yaml`, whether or not `paracell.yaml` already exists. Claude inside a cell then sets the cell to `pending` when it starts on a prompt and to `ready` when it finishes its response.

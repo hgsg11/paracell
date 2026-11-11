@@ -41,17 +41,6 @@ templates:
                 source:
                     path: .
                     base: main
-    refinement:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows:
-                    - name: claude
-                      command: |-
-                        mkdir -p .paracell/refinements/{{.Name}} && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
-                        {{.Command}}
-                        PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus','--append-system-prompt','This is a paracell refinement cell. Do not modify, create, or delete files in the repository. Write mocks, notes, and other outputs only under .paracell/refinements/{{.Name}}/.'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
     review:
         commanderCell:
             name: workspace

@@ -374,37 +374,11 @@ templates:
 - pending / ready、TUI での表示、`clean` は他の Cell と同じように使えます。
 - 注意: プロジェクトのルートは他の Cell や手元の作業と共有されます。この種類の Cell でファイルを編集すると、互いに上書きしてしまうことがあります。
 
-### リファインメント（refinement）template
-
-コードを変更せずに、モックや画面案、仕様メモを作るための template です。Target を持たないので worktree・branch・container は作られず、tmux のセッションだけがプロジェクトのルートで起動します。成果物は Cell ごとの `.paracell/refinements/<cell>/` に置き、他の Cell や手元の作業とファイルがぶつからないようにします。
-
-```yaml
-templates:
-  refinement:
-    commanderCell:
-      name: workspace
-      workspace:
-        windows:
-          - name: claude
-            command: >-
-              mkdir -p .paracell/refinements/{{.Name}} &&
-              claude --append-system-prompt "This is a paracell refinement cell. Do not modify, create, or delete files in the repository. Write mocks, notes, and other outputs only under .paracell/refinements/{{.Name}}/." "{{.Command}}"
-```
-
-```sh
-paracell fork 123 --template refinement --command "ログイン画面のモックを作る"
-```
-
-- `.paracell/` は git の管理外なので、モックはコミットされません。残したいものは必要なときに手で移してください。
-- `paracell clean` は tmux セッションだけを片付け、`.paracell/refinements/<cell>/` は残します。
-- リポジトリのファイルを変えないのは agent への指示（`--append-system-prompt`）によるもので、paracell が書き込みを禁止するわけではありません。
-
 ## ファイル
 
 - `paracell.yaml`: 設定と template
 - `.claude/settings.json`: `paracell init` が Claude Code の `pending` / `ready` hook を足す Claude Code の設定
 - `.paracell/state.db`: cell の状態を保存するSQLite database
-- `.paracell/refinements/<cell>/`: refinement template で作ったモックなどの置き場（`clean` では消えない）
 - `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree。source を持つ Target がある Cell の tmux window はこの親の `.paracell/cells/<commander>/` で起動する
 
 SQLite の既存 CommanderCell 形式は読み込み時に CellGroup へ変換します。既存の CommanderCell ID を CellGroup ID として所属を復元し、次の変更時に新形式を transaction 内で保存します。Note、命令、状態、version、関連 Cell とリソース情報は保持し、不正な所属参照はエラーとして扱います。新規作成では CellGroup と各 Cell に別々の ID を割り当てます。
