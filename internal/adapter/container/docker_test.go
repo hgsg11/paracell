@@ -2,6 +2,7 @@ package container
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -124,4 +125,63 @@ func (f *fakeRunner) Output(_ context.Context, name string, args ...string) (str
 	err := f.outputErrors[0]
 	f.outputErrors = f.outputErrors[1:]
 	return output, err
+}
+
+func TestCreateContainersはDocker資源名を小文字に変換する(t *testing.T) {
+	runner := &fakeRunner{outputs: []string{
+		`{"Config":{"Image":"app:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
+		`db-container`,
+		`{"Config":{"Image":"db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["db"]}}}}`,
+	}}
+	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", []domain.ContainerResource{
+		domain.NewContainerResource("paracell-Sample-ABC-42-Api-App", nil, "App", domain.Target, nil, nil),
+		domain.NewContainerResource("DB", nil, "DB", domain.Dependency, nil, nil),
+	})
+	networks, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(runner.runCalls, "\n")
+	for _, want := range []string{
+		"docker network create paracell-sample-abc-42",
+		"docker run -d --name paracell-sample-abc-42-api-app --network paracell-sample-abc-42",
+		"--label com.docker.compose.project=paracell-sample-abc-42",
+		"docker network connect --alias db paracell-sample-abc-42 db-container",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Fatalf("calls missing %q:\n%s", want, calls)
+		}
+	}
+	if strings.Contains(calls, "ABC") || strings.Contains(calls, "Sample") {
+		t.Fatalf("calls contain uppercase resource names:\n%s", calls)
+	}
+	if !strings.Contains(strings.Join(runner.outputCalls, "\n"), "docker ps --filter label=com.docker.compose.service=DB") {
+		t.Fatalf("dependency service name must be kept as-is: %v", runner.outputCalls)
+	}
+	if !contains(networks["DB"], "paracell-sample-abc-42") {
+		t.Fatalf("dependency networks = %v", networks["DB"])
+	}
+}
+
+func TestCleanContainersはDocker資源名を小文字に変換する(t *testing.T) {
+	runner := &fakeRunner{gatewayInspectError: errors.New("No such container: paracell-gateway"), gatewayInspectOutput: new(string)}
+	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", []domain.ContainerResource{
+		domain.NewContainerResource("paracell-Sample-ABC-42-Api-App", nil, "App", domain.Target, nil, nil),
+	})
+	if err := (DockerCLIAdapter{Runner: runner}).CleanContainers(context.Background(), resources); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(runner.runCalls, "\n")
+	if !strings.Contains(calls, "docker rm -f paracell-sample-abc-42-api-app") || !strings.Contains(calls, "docker network rm paracell-sample-abc-42") {
+		t.Fatalf("calls = %s", calls)
+	}
+	if resources.Network != "paracell-Sample-ABC-42" || resources.Items[0].Name != "paracell-Sample-ABC-42-Api-App" {
+		t.Fatal("input resources must not be modified")
+	}
+}
+
+func TestCopiedVolumeNameは小文字を返す(t *testing.T) {
+	if got := copiedVolumeName("paracell-Sample-ABC-42", "DB", "/var/Lib"); got != "paracell-sample-abc-42-db-var-lib" {
+		t.Fatalf("volume name = %q", got)
+	}
 }
