@@ -136,7 +136,29 @@ const (
 	composeServiceLabel     = "com.docker.compose.service"
 )
 
+// dockerResourceName converts a name that paracell creates in Docker into the
+// lowercase form Docker and Docker Compose use, so later lookups match it.
+func dockerResourceName(name string) string {
+	return strings.ToLower(name)
+}
+
+// normalizeDockerResources lowercases the Docker resources paracell owns. Dependency
+// items keep their name because it refers to an existing Compose service.
+func normalizeDockerResources(resources domain.ContainerResources) domain.ContainerResources {
+	normalized := resources
+	normalized.Network = dockerResourceName(resources.Network)
+	normalized.Items = make([]domain.ContainerResource, len(resources.Items))
+	for i, item := range resources.Items {
+		if item.Mode != domain.Dependency {
+			item.Name = dockerResourceName(item.Name)
+		}
+		normalized.Items[i] = item
+	}
+	return normalized
+}
+
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain.ContainerResources) (networks map[string][]string, returnErr error) {
+	resources = normalizeDockerResources(resources)
 	networks = make(map[string][]string, len(resources.Items))
 	network := resources.Network
 	networkCreated := false
@@ -520,7 +542,7 @@ func copiedVolumeName(scope string, container string, destination string) string
 	if name == "" {
 		name = "root"
 	}
-	return domain.SafeResourceName(scope+"-"+container+"-"+name, "volume")
+	return dockerResourceName(domain.SafeResourceName(scope+"-"+container+"-"+name, "volume"))
 }
 
 func isolatedNetworkAliases(networks map[string]dockerNetwork) []string {
@@ -561,6 +583,7 @@ func sortedContainerResources(resources []domain.ContainerResource) []domain.Con
 }
 
 func (a DockerCLIAdapter) CleanContainers(ctx context.Context, resources domain.ContainerResources) error {
+	resources = normalizeDockerResources(resources)
 	var cleanupErr error
 	for _, service := range sortedContainerResources(resources.Items) {
 		if service.Mode == domain.Dependency {
