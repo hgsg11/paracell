@@ -398,7 +398,9 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if len(ports.cells.Groups) != 1 || len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
 		t.Fatalf("wrong group deleted: %#v", ports.cells)
 	}
-	if len(ports.cleanedSources) != 2 {
+	// api and web share the source path ".", so they share one worktree and
+	// web's source directory is a link to api's.
+	if len(ports.cleanedSources) != 1 || len(ports.cleanedSources[0].Links) != 1 || ports.cleanedSources[0].Links[0].Path != ".paracell/cells/118/web/source" {
 		t.Fatalf("cleaned sources: %#v", ports.cleanedSources)
 	}
 	for _, resource := range ports.cleanedSources {

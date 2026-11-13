@@ -22,5 +22,5 @@ func NewMount(targetPath string, sourcePath string) (Mount, error) {
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return Mount{}, fmt.Errorf("mount source path %q must stay within its source root", sourcePath)
 	}
-	return Mount{TargetPath: targetPath, SourcePath: clean}, nil
+	return Mount{TargetPath: filepath.Clean(targetPath), SourcePath: clean}, nil
 }

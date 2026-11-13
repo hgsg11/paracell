@@ -105,11 +105,11 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	return commander, nil
 }
 
-func containerTemplates(targets []domain.TargetCellSpec) map[string]domain.ContainerTemplate {
-	templates := make(map[string]domain.ContainerTemplate)
+func containerTemplates(targets []domain.TargetCellSpec) map[domain.ContainerTemplateKey]domain.ContainerTemplate {
+	templates := make(map[domain.ContainerTemplateKey]domain.ContainerTemplate)
 	for _, target := range targets {
 		for _, container := range target.Containers {
-			templates[container.Name] = container
+			templates[domain.ContainerTemplateKey{Target: target.Name, Container: container.Name}] = container
 		}
 	}
 	return templates
@@ -124,7 +124,7 @@ type cellCreationRunner struct {
 	Commander          *domain.CommanderCell
 	Targets            []domain.TargetCell
 	Dependencies       []domain.DependencyCell
-	ContainerTemplates map[string]domain.ContainerTemplate
+	ContainerTemplates map[domain.ContainerTemplateKey]domain.ContainerTemplate
 	BeforeTerminal     func() error
 }
 
@@ -171,10 +171,17 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 		if err != nil {
 			return err
 		}
+		names := make(map[domain.ContainerTemplateKey]string, len(resources.Items))
+		for _, item := range resources.Items {
+			if item.Mode == domain.Target {
+				names[domain.ContainerTemplateKey{Target: item.Target, Container: item.SourceContainer}] = item.Name
+			}
+		}
 		for i := range r.Targets {
 			for j := range r.Targets[i].Containers {
 				container := r.Targets[i].Containers[j]
-				container.Network = append([]string(nil), networks[container.SourceContainer]...)
+				name := names[domain.ContainerTemplateKey{Target: r.Targets[i].Name, Container: container.SourceContainer}]
+				container.Network = append([]string(nil), networks[name]...)
 			}
 		}
 		for i := range r.Dependencies {

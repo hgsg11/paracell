@@ -64,16 +64,26 @@ func TestCopyMountsは同じSourcePathのVolumeを共有する(t *testing.T) {
 	mount := dockerMount{Type: "volume", Name: "compose-data", Destination: "/var/lib/data", RW: true}
 	first := domain.NewContainerResource("cell-a-api", nil, "database", domain.Target, nil, nil)
 	second := domain.NewContainerResource("cell-a-worker", nil, "database", domain.Target, nil, nil)
-	firstMounts, err := adapter.copyMounts(context.Background(), "cell-network", "", first, []dockerMount{mount}, nil)
+	prepared := map[string]struct{}{}
+	firstMounts, err := adapter.copyMounts(context.Background(), "cell-network", "", first, []dockerMount{mount}, nil, prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondMounts, err := adapter.copyMounts(context.Background(), "cell-network", "", second, []dockerMount{mount}, nil)
+	secondMounts, err := adapter.copyMounts(context.Background(), "cell-network", "", second, []dockerMount{mount}, nil, prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(firstMounts) != 1 || len(secondMounts) != 1 || firstMounts[0] != secondMounts[0] {
 		t.Fatalf("shared volume mounts = %v / %v", firstMounts, secondMounts)
+	}
+	copies := 0
+	for _, call := range adapter.Runner.(*fakeRunner).runCalls {
+		if strings.Contains(call, "cp -a /from/. /to/") {
+			copies++
+		}
+	}
+	if copies != 1 {
+		t.Fatalf("shared volume was copied %d times, want once", copies)
 	}
 }
 
@@ -183,5 +193,66 @@ func TestCleanContainersはDocker資源名を小文字に変換する(t *testing
 func TestCopiedVolumeNameは小文字を返す(t *testing.T) {
 	if got := copiedVolumeName("paracell-Sample-ABC-42", "DB", "/var/Lib"); got != "paracell-sample-abc-42-db-var-lib" {
 		t.Fatalf("volume name = %q", got)
+	}
+}
+
+func TestCreateContainersは同じServiceを使うターゲットを区別する(t *testing.T) {
+	inspect := `{"Config":{"Image":"app:latest"},"HostConfig":{"PortBindings":{"8080/tcp":[{"HostPort":"8080"}]}},"Mounts":[{"Type":"volume","Name":"compose-data","Destination":"/data","RW":true}],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`
+	runner := &fakeRunner{outputs: []string{inspect, inspect}}
+	api := domain.NewContainerResource("paracell-Sample-42-API-app", nil, "app", domain.Target, []domain.Environment{{Name: "ROLE", Value: "api"}}, nil)
+	api.Target, api.Role = "API", "app.API"
+	worker := domain.NewContainerResource("paracell-Sample-42-worker-app", nil, "app", domain.Target, []domain.Environment{{Name: "ROLE", Value: "worker"}}, nil)
+	worker.Target, worker.Role = "worker", "app.worker"
+	resources := domain.NewContainerResources("42", "Sample", "paracell-Sample-42", []domain.ContainerResource{worker, api})
+	networks, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), resources)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(runner.runCalls, "\n")
+	for _, want := range []string{
+		"--name paracell-sample-42-api-app",
+		"-e ROLE=api",
+		"Host(`app.api.42.sample.localhost`)",
+		"--name paracell-sample-42-worker-app",
+		"-e ROLE=worker",
+		"Host(`app.worker.42.sample.localhost`)",
+		"--network-alias app",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Fatalf("calls missing %q:\n%s", want, calls)
+		}
+	}
+	if strings.Contains(calls, "--network-alias app.") {
+		t.Fatalf("network aliases must not be qualified:\n%s", calls)
+	}
+	if got := strings.Count(calls, "cp -a /from/. /to/"); got != 1 {
+		t.Fatalf("shared volume copied %d times:\n%s", got, calls)
+	}
+	for _, name := range []string{"paracell-Sample-42-API-app", "paracell-Sample-42-worker-app"} {
+		if _, ok := networks[name]; !ok {
+			t.Fatalf("networks are not keyed by resource name: %v", networks)
+		}
+	}
+}
+
+func TestCreateContainersはFilesを元のMountより優先する(t *testing.T) {
+	runner := &fakeRunner{outputs: []string{
+		`{"Config":{"Image":"app:latest"},"Mounts":[{"Type":"volume","Name":"compose-data","Destination":"/data/","RW":true},{"Type":"volume","Name":"compose-cache","Destination":"/cache","RW":true}],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
+	}}
+	mount, err := domain.NewMount("/data", "fixtures")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, nil, []domain.Mount{mount})
+	app.SourcePath = ".paracell/cells/42/api/source"
+	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerResources("42", "sample", "cell-42", []domain.ContainerResource{app})); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(runner.runCalls, "\n")
+	if !strings.Contains(calls, "-v /project/.paracell/cells/42/api/source/fixtures:/data") || !strings.Contains(calls, ":/cache") {
+		t.Fatalf("calls = %s", calls)
+	}
+	if strings.Contains(calls, "compose-data") || strings.Count(calls, ":/data") != 1 {
+		t.Fatalf("overridden mount was still used:\n%s", calls)
 	}
 }

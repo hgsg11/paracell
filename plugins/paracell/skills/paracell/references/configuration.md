@@ -109,6 +109,8 @@ templates:
 - `targets.<name>.containers.<container>`: copies the running source container named `<container>` into the cell. `environment` adds environment variables (values are rendered with the template variables). `files` maps an absolute path inside the container to a path relative to that target's worktree and bind-mounts it.
 - A target needs a `source`, `containers`, or both. Its containers are always copies (mode `target`).
 - `dependencies`: names of running containers that the cell shares instead of copying. Each one is attached to the cell network with its existing aliases.
+- Target and container names only have to be unique as YAML keys. Several targets may declare the same container, each with its own `environment` and `files`. When names become equal after Paracell makes them safe for paths and Docker (case, spaces, and symbols are ignored), Paracell keeps them apart by adding a short hash only to the colliding directory or container names; names that do not collide are unchanged. Network aliases never get a prefix or hash.
+- Targets with the same `source.path` share one worktree, because a cell has a single branch: the target first in name order owns it, and the other targets' `<target>/source` is a symlink to it.
 - `commanderCell.workspace.windows`: tmux windows and their startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
 
 The issue's example configuration has prefix keys `feat` and `fix`, and template keys `feat`, `fix`, `review`, and `update`. These are independent namespaces even though two keys happen to be identical. If all four compatible templates contain `targets.repository`, a request for target `repository` matches all four and selects template `feat` by key order. If only `templates.update` contains `targets.web`, a request for `web` selects `update`; the template key itself is not the target match. For branch naming, pass `--prefix fix` to use `fix/` regardless of the selected template, or omit `--prefix` only when the CLI's default `feat/` is intended.
@@ -147,6 +149,7 @@ Keep YAML, Go-template, and shell quoting distinct.
   - Named volumes are always copied into a new cell-specific volume (`docker volume create` and `cp -a`); a read-only mount stays read-only. There is no shared or read-only volume mode.
   - A bind mount whose host path is inside the project root is replaced with the same relative path inside the target's worktree. For a container created by docker compose, only binds declared in the compose service are kept, and a bind outside the project root keeps the original host path (shared with the source). For other containers, a bind outside the project root is dropped.
   - Other mount types, such as tmpfs, are dropped.
+  - A path listed in `files` replaces the source container's mount at the same path. Paths are compared after cleaning (`/data/` equals `/data`); two `files` entries for the same path must mount the same source.
 - Dependency containers are not copied: the running container is attached to the cell network, and rollback and `clean` disconnect it only from that network.
 - There is no database-specific configuration. A database container is copied like any other container, including its named volumes.
 

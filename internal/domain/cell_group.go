@@ -113,7 +113,3 @@ func (c CellGroup) WorkspaceResource(workspace Workspace) WorkspaceResource {
 	}
 	return NewWorkspaceResource(c.WorkspaceName(), c.Name().Value, c.Project, label, workingDirectory, workspace.Windows)
 }
-
-func (c CellGroup) SourceWorktreePath(targetName string) string {
-	return filepath.Join(".paracell", "cells", c.Name().Value, SafeResourceName(targetName, "target"), "source")
-}

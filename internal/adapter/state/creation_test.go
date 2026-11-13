@@ -58,12 +58,16 @@ func (p *creationPorts) CleanSource(context.Context, domain.SourceResource) erro
 	p.calls = append(p.calls, "clean source")
 	return nil
 }
-func (p *creationPorts) CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error) {
+func (p *creationPorts) CreateContainers(_ context.Context, resources domain.ContainerResources) (map[string][]string, error) {
 	p.calls = append(p.calls, "containers")
 	if p.failedStage == domain.CreationStageContainers {
 		return nil, errors.New("containers failed")
 	}
-	return map[string][]string{"web": {"cell-network"}, "database": {"cell-network"}}, nil
+	networks := make(map[string][]string, len(resources.Items))
+	for _, item := range resources.Items {
+		networks[item.Name] = []string{"cell-network"}
+	}
+	return networks, nil
 }
 func (p *creationPorts) CleanContainers(context.Context, domain.ContainerResources) error {
 	p.calls = append(p.calls, "clean containers")
