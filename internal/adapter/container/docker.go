@@ -370,7 +370,7 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 // prepareMounts returns the mounts of a copied container. A mount declared in
 // the template's files replaces the source container's mount at the same path.
 func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, inspection containerInspection, preparedVolumes map[string]struct{}) ([]string, error) {
-	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
+	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels, service.SourceRepository)
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +421,7 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, so
 		if mount.Type != "bind" {
 			continue
 		}
-		spec, ok := a.bindMountSpec(sourcePath, mount, composeMounts)
+		spec, ok := a.bindMountSpec(sourcePath, service.SourceRepository, mount, composeMounts)
 		if !ok {
 			continue
 		}
@@ -430,7 +430,11 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, so
 	return out, nil
 }
 
-func (a DockerCLIAdapter) bindMountSpec(sourcePath string, mount dockerMount, composeMounts *composeMountPlan) (string, bool) {
+// bindMountSpec maps a bind mount of the source container to the cell. A host
+// path inside the source repository maps to the same path relative to the
+// repository inside the worktree (sourcePath), so the repository path is not
+// appended twice when source.path is not ".".
+func (a DockerCLIAdapter) bindMountSpec(sourcePath string, repository string, mount dockerMount, composeMounts *composeMountPlan) (string, bool) {
 	source := mount.Source
 	if composeMounts != nil {
 		composeSource, ok := composeMounts.BindSources[mount.Destination]
@@ -445,8 +449,8 @@ func (a DockerCLIAdapter) bindMountSpec(sourcePath string, mount dockerMount, co
 			}
 		}
 	} else {
-		rel, err := filepath.Rel(a.Root, mount.Source)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := relativeInside(a.repositoryRoot(repository), mount.Source)
+		if !ok {
 			return "", false
 		}
 		source = a.cellSourcePath(sourcePath)
@@ -461,7 +465,7 @@ func (a DockerCLIAdapter) bindMountSpec(sourcePath string, mount dockerMount, co
 	return spec, true
 }
 
-func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[string]string) (*composeMountPlan, error) {
+func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[string]string, repository string) (*composeMountPlan, error) {
 	workingDir := strings.TrimSpace(labels[composeWorkingDirLabel])
 	configFiles := splitComposeConfigFiles(labels[composeConfigFilesLabel])
 	serviceName := strings.TrimSpace(labels[composeServiceLabel])
@@ -486,7 +490,7 @@ func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[s
 	if !ok {
 		return nil, fmt.Errorf("service %q not found in compose config", serviceName)
 	}
-	projectRoot, err := canonicalUserPath(a.Root, "")
+	repositoryRoot, err := canonicalUserPath(a.repositoryRoot(repository), "")
 	if err != nil {
 		return nil, err
 	}
@@ -503,11 +507,7 @@ func (a DockerCLIAdapter) resolveComposeMounts(ctx context.Context, labels map[s
 			return nil, err
 		}
 		plan.BindSources[volume.Target] = source
-		rel, err := filepath.Rel(projectRoot, source)
-		if err != nil {
-			return nil, fmt.Errorf("resolve compose bind source %q relative to project root %q: %w", source, projectRoot, err)
-		}
-		if rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if rel, ok := relativeInside(repositoryRoot, source); ok {
 			if volume.Target == "" {
 				return nil, fmt.Errorf("compose bind target is empty for project source %q", source)
 			}
@@ -537,6 +537,24 @@ func canonicalUserPath(path string, base string) (string, error) {
 		return "", fmt.Errorf("resolve user path %q: %w", path, err)
 	}
 	return filepath.Clean(absolute), nil
+}
+
+// repositoryRoot is the host path of the source repository that the cell's
+// worktree duplicates.
+func (a DockerCLIAdapter) repositoryRoot(repository string) string {
+	if filepath.IsAbs(repository) {
+		return filepath.Clean(repository)
+	}
+	return filepath.Join(a.Root, repository)
+}
+
+// relativeInside returns path relative to root when path is root or inside it.
+func relativeInside(root string, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return rel, true
 }
 
 func (a DockerCLIAdapter) cellSourcePath(sourcePath string) string {

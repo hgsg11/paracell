@@ -15,6 +15,7 @@ func BuildContainerResourcesService(group CellGroup, targets []TargetCell, depen
 			item.Role = layout.ContainerRole(target.Name, container.SourceContainer)
 			if target.Source != nil {
 				item.SourcePath = layout.SourceWorktreePath(target.Name)
+				item.SourceRepository = target.Source.Path
 			}
 			items = append(items, item)
 		}

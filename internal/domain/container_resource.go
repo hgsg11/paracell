@@ -1,15 +1,20 @@
 package domain
 
 type ContainerResource struct {
-	Name            string
-	Target          string
-	Role            string
-	SourcePath      string
-	Network         []string
-	SourceContainer string
-	Mode            Mode
-	Environments    []Environment
-	Mounts          []Mount
+	Name   string
+	Target string
+	Role   string
+	// SourcePath is the worktree of the TargetCell's source repository.
+	SourcePath string
+	// SourceRepository is the source repository path relative to the project
+	// root (the TargetCell's source.path). Host paths inside it map to the same
+	// relative path inside SourcePath.
+	SourceRepository string
+	Network          []string
+	SourceContainer  string
+	Mode             Mode
+	Environments     []Environment
+	Mounts           []Mount
 }
 
 func NewContainerResource(name string, network []string, sourceContainer string, mode Mode, environments []Environment, mounts []Mount) ContainerResource {
