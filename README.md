@@ -321,7 +321,9 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `providers.notifications: none` または省略: 通知なし
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
-TargetCell の `containers` には複数の Compose service を列挙できます。同じ CellGroup 内で同じ service と同じ mount path を使う Container は CellGroup 専用のコピー Volume を共有し、別 CellGroup とは共有しません。DependencyCell は service 名だけを `dependencies` に列挙し、既存の Compose service Container を CellGroup 専用 network に接続します。
+TargetCell の `containers` には複数の Compose service を列挙できます。同じ CellGroup 内で同じ service と同じ mount path を使う Container は CellGroup 専用のコピー Volume を共有し、別 CellGroup とは共有しません。共有する Volume のコピーは cell 作成時に 1 回だけ行います。
+
+target 名と container 名は YAML のキーとして一意であればよく、複数の target に同じ container を書いて、それぞれ別の `environment` と `files` を指定できます。Paracell がディレクトリ名や Docker の名前に変換した後に同じになる名前（大文字・小文字・空白・記号だけが違う名前や、`a-b`/`c` と `a`/`b-c` のようにつなげると同じになる組）は、ぶつかる名前にだけ元の名前から作った 8 桁のハッシュを付けて区別します。ぶつからない名前は今までと同じです。gateway の URL の service role も、複数の container で同じになるときだけ `<service-role>.<target>` にします（例: `http://app.api.123.myapp.localhost`）。network alias にはプレフィックスもハッシュも付けません。同じ `source.path` を持つ target は 1 つの worktree を共有します（cell の branch は 1 つのため）。名前順で最初の target が worktree を持ち、ほかの target の `<target>/source` はそこへの symlink になります。`files` に書いたパスは、source container の同じパスの mount より優先します。この規則より前の版で、名前がぶつかる target を持つ cell（例: `API` と `api`）を作っていた場合、`paracell clean` はハッシュ付きの名前で削除するため、古いディレクトリやコンテナは手で削除してください。DependencyCell は service 名だけを `dependencies` に列挙し、既存の Compose service Container を CellGroup 専用 network に接続します。
 
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 

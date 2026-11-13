@@ -157,9 +157,16 @@ func normalizeDockerResources(resources domain.ContainerResources) domain.Contai
 	return normalized
 }
 
+// CreateContainers returns the networks of each container keyed by the
+// ContainerResource name the domain built, before Docker normalization.
 func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain.ContainerResources) (networks map[string][]string, returnErr error) {
+	originalNames := make(map[string]string, len(resources.Items))
+	for _, item := range resources.Items {
+		originalNames[dockerResourceName(item.Name)] = item.Name
+	}
 	resources = normalizeDockerResources(resources)
 	networks = make(map[string][]string, len(resources.Items))
+	preparedVolumes := make(map[string]struct{})
 	network := resources.Network
 	networkCreated := false
 	createdContainers := make([]string, 0, len(resources.Items))
@@ -192,7 +199,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 		if err != nil {
 			return nil, err
 		}
-		networks[source] = sortedNetworkNames(inspection.NetworkSettings.Networks)
+		if service.Mode == domain.Dependency {
+			networks[source] = sortedNetworkNames(inspection.NetworkSettings.Networks)
+		} else {
+			networks[originalNames[service.Name]] = sortedNetworkNames(inspection.NetworkSettings.Networks)
+		}
 		if service.Mode == domain.Dependency {
 			aliases := isolatedNetworkAliases(inspection.NetworkSettings.Networks)
 			if len(aliases) == 0 {
@@ -207,7 +218,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			networks[service.SourceContainer] = append(networks[service.SourceContainer], network)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, network, service.SourcePath, service, inspection)
+		mounts, err := a.prepareMounts(ctx, network, service.SourcePath, service, inspection, preparedVolumes)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +228,11 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			composeProjectLabel: network,
 			composeServiceLabel: source,
 		}
-		for name, value := range gatewayLabels(resources, service.Name, source, inspection.HostConfig.PortBindings) {
+		role := service.Role
+		if role == "" {
+			role = source
+		}
+		for name, value := range gatewayLabels(resources, service.Name, role, inspection.HostConfig.PortBindings) {
 			labels[name] = value
 		}
 		args := BuildDockerRunArgs(RunSpec{
@@ -352,12 +367,25 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 	return inspection, nil
 }
 
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, inspection containerInspection) ([]string, error) {
+// prepareMounts returns the mounts of a copied container. A mount declared in
+// the template's files replaces the source container's mount at the same path.
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, inspection containerInspection, preparedVolumes map[string]struct{}) ([]string, error) {
 	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
 	if err != nil {
 		return nil, err
 	}
-	mounts, err := a.copyMounts(ctx, volumeScope, sourcePath, service, inspection.Mounts, composeMounts)
+	overridden := make(map[string]struct{}, len(service.Mounts))
+	for _, mount := range service.Mounts {
+		overridden[filepath.Clean(mount.TargetPath)] = struct{}{}
+	}
+	inherited := make([]dockerMount, 0, len(inspection.Mounts))
+	for _, mount := range inspection.Mounts {
+		if _, ok := overridden[filepath.Clean(mount.Destination)]; ok {
+			continue
+		}
+		inherited = append(inherited, mount)
+	}
+	mounts, err := a.copyMounts(ctx, volumeScope, sourcePath, service, inherited, composeMounts, preparedVolumes)
 	if err != nil {
 		return nil, err
 	}
@@ -368,13 +396,20 @@ func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string,
 	return mounts, nil
 }
 
-func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan) ([]string, error) {
+// copyMounts copies the named volumes of the source container. Containers of
+// the same CellGroup that copy the same service share the copied volume, so a
+// volume is copied only once per CreateContainers call; copying it again would
+// overwrite what an already started container wrote.
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan, preparedVolumes map[string]struct{}) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
 			targetVolume := copiedVolumeName(volumeScope, service.SourceContainer, mount.Destination)
-			if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
-				return nil, err
+			if _, prepared := preparedVolumes[targetVolume]; !prepared {
+				if err := a.copyNamedVolume(ctx, mount.Name, targetVolume); err != nil {
+					return nil, err
+				}
+				preparedVolumes[targetVolume] = struct{}{}
 			}
 			spec := targetVolume + ":" + mount.Destination
 			if !mount.RW {
@@ -578,7 +613,12 @@ func appendNetworkAlias(aliases []string, alias string) []string {
 
 func sortedContainerResources(resources []domain.ContainerResource) []domain.ContainerResource {
 	items := append([]domain.ContainerResource(nil), resources...)
-	sort.Slice(items, func(i, j int) bool { return items[i].SourceContainer < items[j].SourceContainer })
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].SourceContainer != items[j].SourceContainer {
+			return items[i].SourceContainer < items[j].SourceContainer
+		}
+		return items[i].Name < items[j].Name
+	})
 	return items
 }
 

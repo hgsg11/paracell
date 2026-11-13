@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,61 @@ func (a GitSourceAdapter) CreateSource(ctx context.Context, source domain.Source
 	if err := a.fetch(ctx, source); err != nil {
 		return err
 	}
-	return a.addWorktree(ctx, source)
+	if err := a.addWorktree(ctx, source); err != nil {
+		return err
+	}
+	return a.createLinks(source)
+}
+
+// createLinks links the source directory of each TargetCell that shares the
+// worktree to the owner's source directory with a relative symlink.
+func (a GitSourceAdapter) createLinks(source domain.SourceResource) error {
+	for _, link := range source.Links {
+		path := a.projectPath(link.Path)
+		target, err := filepath.Rel(filepath.Dir(path), a.projectPath(link.Target))
+		if err != nil {
+			return fmt.Errorf("resolve source link %q: %w", link.Path, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return fmt.Errorf("create source link directory %q: %w", link.Path, err)
+		}
+		if err := os.Symlink(target, path); err != nil {
+			return fmt.Errorf("create source link %q: %w", link.Path, err)
+		}
+	}
+	return nil
+}
+
+// removeLinks removes the links CreateSource made. Missing links are ignored,
+// and a path that is not a symlink is never removed.
+func (a GitSourceAdapter) removeLinks(source domain.SourceResource) error {
+	var removeErr error
+	for _, link := range source.Links {
+		path := a.projectPath(link.Path)
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			removeErr = errors.Join(removeErr, err)
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			removeErr = errors.Join(removeErr, fmt.Errorf("source link %q is not a symlink", link.Path))
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			removeErr = errors.Join(removeErr, err)
+		}
+	}
+	return removeErr
+}
+
+func (a GitSourceAdapter) projectPath(path string) string {
+	if filepath.IsAbs(path) || a.Root == "" {
+		return path
+	}
+	return filepath.Join(a.Root, path)
 }
 
 func (a GitSourceAdapter) fetch(ctx context.Context, source domain.SourceResource) error {
@@ -106,6 +161,9 @@ func (a GitSourceAdapter) gitArgs(source domain.SourceResource) []string {
 }
 
 func (a GitSourceAdapter) CleanSource(ctx context.Context, source domain.SourceResource) error {
+	if err := a.removeLinks(source); err != nil {
+		return err
+	}
 	args := append(a.gitArgs(source), "worktree", "remove", "--force", a.worktreePath(source))
 	err := a.Runner.Run(ctx, "git", args...)
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "is not a working tree") {

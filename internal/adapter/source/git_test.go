@@ -3,7 +3,9 @@ package source
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -198,4 +200,50 @@ func (f *fakeRunner) Output(_ context.Context, name string, args ...string) (str
 		return "", err
 	}
 	return f.outputs[call], nil
+}
+
+func TestCreateSourceは共有WorktreeへのリンクをCleanSourceで消す(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".paracell/cells/42/api/source"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resource := domain.NewSourceResource(".", ".paracell/cells/42/api/source", "main", "feat/42")
+	resource.Links = []domain.SourceLink{{Path: ".paracell/cells/42/worker/source", Target: ".paracell/cells/42/api/source"}}
+	adapter := GitSourceAdapter{Runner: newFakeRunner(), Root: root}
+	if err := adapter.CreateSource(context.Background(), resource); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, ".paracell/cells/42/worker/source")
+	target, err := os.Readlink(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != filepath.Join("..", "api", "source") {
+		t.Fatalf("link target = %q", target)
+	}
+	if err := adapter.CleanSource(context.Background(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatalf("link was not removed: %v", err)
+	}
+	if err := adapter.CleanSource(context.Background(), resource); err != nil {
+		t.Fatalf("missing link must be ignored: %v", err)
+	}
+}
+
+func TestCleanSourceはリンクでないパスを消さない(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, ".paracell/cells/42/worker/source")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resource := domain.NewSourceResource(".", ".paracell/cells/42/api/source", "main", "feat/42")
+	resource.Links = []domain.SourceLink{{Path: ".paracell/cells/42/worker/source", Target: ".paracell/cells/42/api/source"}}
+	if err := (GitSourceAdapter{Runner: newFakeRunner(), Root: root}).CleanSource(context.Background(), resource); err == nil {
+		t.Fatal("a directory at the link path was accepted")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("directory was removed: %v", err)
+	}
 }

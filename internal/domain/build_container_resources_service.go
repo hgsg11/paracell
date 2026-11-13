@@ -1,26 +1,26 @@
 package domain
 
-import "path/filepath"
-
-func BuildContainerResourcesService(group CellGroup, targets []TargetCell, dependencies []DependencyCell, templates map[string]ContainerTemplate) ContainerResources {
+// BuildContainerResourcesService builds the container resources of a CellGroup.
+// Templates are looked up per TargetCell, because several TargetCells may
+// declare the same container with different settings.
+func BuildContainerResourcesService(group CellGroup, targets []TargetCell, dependencies []DependencyCell, templates map[ContainerTemplateKey]ContainerTemplate) ContainerResources {
+	layout := BuildCellResourceLayoutService(group, targets)
 	items := make([]ContainerResource, 0, len(targets)+len(dependencies))
 	for _, target := range targets {
 		for _, container := range target.Containers {
-			template := templates[container.SourceContainer]
-			name := group.ResourcePrefix() + "-" + SafeResourceName(target.Name, "target") + "-" + SafeResourceName(container.SourceContainer, "container")
+			template := templates[ContainerTemplateKey{Target: target.Name, Container: container.SourceContainer}]
+			name := layout.ContainerName(target.Name, container.SourceContainer)
 			item := NewContainerResource(name, container.Network, container.SourceContainer, container.Mode, template.Environments, template.Mounts)
+			item.Target = target.Name
+			item.Role = layout.ContainerRole(target.Name, container.SourceContainer)
 			if target.Source != nil {
-				item.SourcePath = group.SourceWorktreePath(target.Name)
-				if target.Source.Path != "." {
-					item.SourcePath = filepath.Join(item.SourcePath, target.Source.Path)
-				}
+				item.SourcePath = layout.SourceWorktreePath(target.Name)
 			}
 			items = append(items, item)
 		}
 	}
 	for _, dependency := range dependencies {
-		template := templates[dependency.Container.SourceContainer]
-		items = append(items, NewContainerResource(dependency.Container.SourceContainer, dependency.Container.Network, dependency.Container.SourceContainer, dependency.Container.Mode, template.Environments, template.Mounts))
+		items = append(items, NewContainerResource(dependency.Container.SourceContainer, dependency.Container.Network, dependency.Container.SourceContainer, dependency.Container.Mode, nil, nil))
 	}
 	return NewContainerResources(group.Name().Value, group.Project, group.ResourcePrefix(), items)
 }

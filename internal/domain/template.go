@@ -63,7 +63,6 @@ func NewUnresolvedTemplate(name string, commander *CommanderCellSpec, targets []
 		copy = &cloned
 	}
 	targetNames := make(map[string]struct{}, len(targets))
-	resourceNames := make(map[string]string, len(targets))
 	var targetCopies []TargetCellSpec
 	for _, target := range targets {
 		validated, err := NewTargetCellSpec(target.Name, target.Source, target.Containers)
@@ -74,11 +73,6 @@ func NewUnresolvedTemplate(name string, commander *CommanderCellSpec, targets []
 			return Template{}, fmt.Errorf("duplicate target cell %q", validated.Name)
 		}
 		targetNames[validated.Name] = struct{}{}
-		resourceName := SafeResourceName(validated.Name, "target")
-		if existing, exists := resourceNames[resourceName]; exists {
-			return Template{}, fmt.Errorf("target cells %q and %q resolve to the same source path", existing, validated.Name)
-		}
-		resourceNames[resourceName] = validated.Name
 		if validated.Source != nil {
 			source := *validated.Source
 			validated.Source = &source
