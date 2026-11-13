@@ -256,3 +256,50 @@ func TestCreateContainersはFilesを元のMountより優先する(t *testing.T) 
 		t.Fatalf("overridden mount was still used:\n%s", calls)
 	}
 }
+
+func TestBindMountSpecはSourceRepositoryからの相対パスでWorktreeに置き換える(t *testing.T) {
+	adapter := DockerCLIAdapter{Root: "/project"}
+	sourcePath := ".paracell/cells/42/api/source/app"
+	cases := []struct {
+		name   string
+		source string
+		want   string
+		ok     bool
+	}{
+		{name: "repository root", source: "/project/app", want: "/project/.paracell/cells/42/api/source/app:/app", ok: true},
+		{name: "inside repository", source: "/project/app/src", want: "/project/.paracell/cells/42/api/source/app/src:/app", ok: true},
+		{name: "outside repository", source: "/project/other", ok: false},
+		{name: "outside project", source: "/tmp/app", ok: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec, ok := adapter.bindMountSpec(sourcePath, "app", dockerMount{Type: "bind", Source: tc.source, Destination: "/app", RW: true}, nil)
+			if ok != tc.ok || spec != tc.want {
+				t.Fatalf("bindMountSpec(%q) = %q, %v; want %q, %v", tc.source, spec, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestCreateContainersはComposeのBindをSourceRepositoryの二重パスにしない(t *testing.T) {
+	runner := &fakeRunner{outputs: []string{
+		`{"Config":{"Image":"app:latest","Labels":{"com.docker.compose.project.working_dir":"/project","com.docker.compose.project.config_files":"/project/compose.yaml","com.docker.compose.service":"app"}},"Mounts":[{"Type":"bind","Source":"/project/app","Destination":"/app","RW":true},{"Type":"bind","Source":"/project/shared","Destination":"/shared","RW":true}],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
+		`{"services":{"app":{"volumes":[{"type":"bind","source":"./app","target":"/app"},{"type":"bind","source":"./shared","target":"/shared"}]}}}`,
+	}}
+	app := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, nil, nil)
+	app.SourcePath = ".paracell/cells/42/api/source/app"
+	app.SourceRepository = "app"
+	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerResources("42", "sample", "cell-42", []domain.ContainerResource{app})); err != nil {
+		t.Fatal(err)
+	}
+	calls := strings.Join(runner.runCalls, "\n")
+	if !strings.Contains(calls, "-v /project/.paracell/cells/42/api/source/app:/app") {
+		t.Fatalf("repository bind was not mapped to the worktree:\n%s", calls)
+	}
+	if strings.Contains(calls, "source/app/app") {
+		t.Fatalf("repository path was appended twice:\n%s", calls)
+	}
+	if !strings.Contains(calls, "-v /project/shared:/shared") {
+		t.Fatalf("bind outside the repository did not keep its host path:\n%s", calls)
+	}
+}

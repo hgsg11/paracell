@@ -249,3 +249,16 @@ func TestNewUnresolvedTemplateは安全な名前が同じターゲットを受�
 		t.Fatal(err)
 	}
 }
+
+func TestBuildContainerResourcesServiceはSourceRepositoryを渡す(t *testing.T) {
+	group := newTestCellGroup(t, "42")
+	targets := []TargetCell{newLayoutTestTarget(t, "api", "app", []string{"app"})}
+	resources := BuildContainerResourcesService(group, targets, nil, map[ContainerTemplateKey]ContainerTemplate{})
+	if len(resources.Items) != 1 {
+		t.Fatalf("items = %#v", resources.Items)
+	}
+	item := resources.Items[0]
+	if item.SourcePath != ".paracell/cells/42/api/source/app" || item.SourceRepository != "app" {
+		t.Fatalf("source path = %q, repository = %q", item.SourcePath, item.SourceRepository)
+	}
+}
