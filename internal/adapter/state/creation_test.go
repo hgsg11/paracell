@@ -30,7 +30,7 @@ func newCreationPorts(t *testing.T, failedStage domain.CreationStage) *creationP
 	dependency, _ := domain.NewDependencyCellSpec("database")
 	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
 	template, _ := domain.NewUnresolvedTemplate("verify", &commander, []domain.TargetCellSpec{repository, target}, []domain.DependencyCellSpec{dependency})
-	config, err := domain.NewTemplates("verify", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil)
+	config, err := domain.NewTemplates("verify", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +56,14 @@ func (p *creationPorts) CreateSource(context.Context, domain.SourceResource) err
 }
 func (p *creationPorts) CleanSource(context.Context, domain.SourceResource) error {
 	p.calls = append(p.calls, "clean source")
+	return nil
+}
+func (p *creationPorts) CopyWorkspaceFiles(context.Context, string, []string) error {
+	p.calls = append(p.calls, "copy")
+	return nil
+}
+func (p *creationPorts) RemoveCellDirectory(context.Context, string) error {
+	p.calls = append(p.calls, "remove cell directory")
 	return nil
 }
 func (p *creationPorts) CreateContainers(_ context.Context, resources domain.ContainerResources) (map[string][]string, error) {
@@ -91,7 +99,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 			ctx := context.Background()
 			adapter := NewSQLiteCellAdapter(filepath.Join(t.TempDir(), "state.db"))
 			ports := newCreationPorts(t, failedStage)
-			fork := usecase.ForkCellUseCase{Config: ports, Cells: adapter, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports, IDs: ports}
+			fork := usecase.ForkCellUseCase{Config: ports, Cells: adapter, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports, IDs: ports}
 			commander, err := fork.Execute(ctx, usecase.ForkCellInput{Issue: "120", Template: "verify"})
 			if failedStage == "" && err != nil {
 				t.Fatal(err)
@@ -133,7 +141,7 @@ func TestCellCreationPersistsAllStages(t *testing.T) {
 			if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) { return set, set.Commanders[0].MarkDone() }); err != nil {
 				t.Fatal(err)
 			}
-			clean := usecase.CleanCellUseCase{Cells: adapter, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+			clean := usecase.CleanCellUseCase{Cells: adapter, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 			if err := clean.Execute(ctx, usecase.CleanCellInput{Cell: "120"}); err != nil {
 				t.Fatal(err)
 			}

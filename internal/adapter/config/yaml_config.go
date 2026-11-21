@@ -31,7 +31,24 @@ type yamlConfig struct {
 	} `yaml:"project"`
 	Providers yamlProviders              `yaml:"providers"`
 	Prefixes  map[string]string          `yaml:"prefixes,omitempty"`
+	Workspace *rawWorkspaceConfig        `yaml:"workspace,omitempty"`
 	Templates map[string]rawYAMLTemplate `yaml:"templates"`
+}
+
+// rawWorkspaceConfig is the workspace section, shared by every template.
+type rawWorkspaceConfig struct {
+	Copy []string `yaml:"copy,omitempty"`
+}
+
+func (raw *rawWorkspaceConfig) UnmarshalYAML(node *yaml.Node) error {
+	type plain rawWorkspaceConfig
+	if err := node.Decode((*plain)(raw)); err != nil {
+		return err
+	}
+	if err := validateYAMLFields(node, "copy"); err != nil {
+		return fmt.Errorf("workspace: %w", err)
+	}
+	return nil
 }
 
 type rawYAMLTemplate struct {
@@ -171,7 +188,11 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 		}
 		items = append(items, domainTemplate)
 	}
-	templates, err := domain.NewTemplates(raw.Project.Name, items, workspaceDriver, domain.NewContainerDriverType(raw.Providers.Container), sourceDriver, notificationDriver, raw.Prefixes)
+	var workspaceCopy []string
+	if raw.Workspace != nil {
+		workspaceCopy = raw.Workspace.Copy
+	}
+	templates, err := domain.NewTemplates(raw.Project.Name, items, workspaceDriver, domain.NewContainerDriverType(raw.Providers.Container), sourceDriver, notificationDriver, raw.Prefixes, workspaceCopy)
 	if err != nil {
 		return domain.Templates{}, err
 	}
@@ -295,6 +316,9 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 		Prefixes:  cfg.Prefixes,
 	}
 	raw.Project.Name = cfg.ProjectName
+	if len(cfg.WorkspaceCopy) > 0 {
+		raw.Workspace = &rawWorkspaceConfig{Copy: append([]string(nil), cfg.WorkspaceCopy...)}
+	}
 	for _, item := range cfg.Templates {
 		entry := rawYAMLTemplate{}
 		entry.Targets = make(map[string]rawTargetCellSpec, len(item.Targets))

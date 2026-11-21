@@ -100,6 +100,15 @@ type SourcePort interface {
 	CleanSource(context.Context, domain.SourceResource) error
 }
 
+// CellDirectoryPort manages the Cell directory apart from its worktrees. The
+// Cell directory is relative to the project root.
+type CellDirectoryPort interface {
+	// CopyWorkspaceFiles copies the workspace paths to the same paths in the Cell directory.
+	CopyWorkspaceFiles(ctx context.Context, cellDirectory string, paths []string) error
+	// RemoveCellDirectory removes the Cell directory and everything left in it.
+	RemoveCellDirectory(ctx context.Context, cellDirectory string) error
+}
+
 type ContainerPort interface {
 	CreateContainers(context.Context, domain.ContainerResources) (map[string][]string, error)
 	CleanContainers(context.Context, domain.ContainerResources) error

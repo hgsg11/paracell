@@ -39,14 +39,13 @@ func TestCellResourceLayoutは衝突しない名前を今のまま使う(t *test
 		newLayoutTestTarget(t, "worker", "services", []string{"app", "Cache"}),
 	})
 	checks := map[string]string{
-		layout.TargetDirectory("api"):           ".paracell/cells/42/api",
-		layout.SourceWorktreePath("api"):        ".paracell/cells/42/api/source",
-		layout.SourceWorktreePath("worker"):     ".paracell/cells/42/worker/source/services",
+		layout.CellDirectory():                  ".paracell/cells/42",
+		layout.SourceWorktreePath("api"):        ".paracell/cells/42",
+		layout.SourceWorktreePath("worker"):     ".paracell/cells/42/services",
 		layout.ContainerName("api", "app"):      "paracell-My-App-42-api-app",
 		layout.ContainerName("worker", "app"):   "paracell-My-App-42-worker-app",
 		layout.ContainerName("worker", "Cache"): "paracell-My-App-42-worker-Cache",
 		layout.ContainerRole("worker", "Cache"): "Cache",
-		layout.SourceOwner("worker"):            "worker",
 	}
 	for got, want := range checks {
 		if got != want {
@@ -66,22 +65,17 @@ func TestCellResourceLayoutは大文字小文字と記号だけが違うター�
 	})
 	seen := map[string]string{}
 	for _, target := range []string{"API", "api", "my app", "my-app", "web"} {
-		directory := strings.ToLower(layout.TargetDirectory(target))
-		if other, exists := seen[directory]; exists {
-			t.Fatalf("%q and %q share directory %q", other, target, directory)
-		}
-		seen[directory] = target
 		name := strings.ToLower(layout.ContainerName(target, "app"))
 		if other, exists := seen[name]; exists {
 			t.Fatalf("%q and %q share container name %q", other, target, name)
 		}
 		seen[name] = target
 	}
-	if got := layout.TargetDirectory("API"); got != ".paracell/cells/42/API-"+shortHash("API") {
-		t.Fatalf("colliding directory = %q", got)
+	if got := layout.ContainerName("API", "app"); got != "paracell-My-App-42-API-"+shortHash("API")+"-app" {
+		t.Fatalf("colliding container name = %q", got)
 	}
-	if got := layout.TargetDirectory("web"); got != ".paracell/cells/42/web" {
-		t.Fatalf("non-colliding directory = %q", got)
+	if got := layout.ContainerName("web", "app"); got != "paracell-My-App-42-web-app" {
+		t.Fatalf("non-colliding container name = %q", got)
 	}
 }
 
@@ -132,17 +126,11 @@ func TestCellResourceLayoutは同じSourcePathのWorktreeを共有する(t *test
 		newLayoutTestTarget(t, "api", ".", nil),
 		newLayoutTestTarget(t, "docs", "docs", nil),
 	})
-	if got := layout.SourceOwner("worker"); got != "api" {
-		t.Fatalf("owner = %q", got)
+	if worker, api := layout.SourceWorktreePath("worker"), layout.SourceWorktreePath("api"); worker != ".paracell/cells/42" || api != worker {
+		t.Fatalf("shared worktree = %q / %q", worker, api)
 	}
-	if got := layout.SourceWorktreePath("worker"); got != ".paracell/cells/42/api/source" {
-		t.Fatalf("shared worktree = %q", got)
-	}
-	if got := layout.SourceRoot("worker"); got != ".paracell/cells/42/worker/source" {
-		t.Fatalf("link path = %q", got)
-	}
-	if got := layout.SourceOwner("docs"); got != "docs" {
-		t.Fatalf("docs owner = %q", got)
+	if got := layout.SourceWorktreePath("docs"); got != ".paracell/cells/42/docs" {
+		t.Fatalf("docs worktree = %q", got)
 	}
 }
 
@@ -160,19 +148,49 @@ func TestCellResourceLayoutはターゲットの順番に左右されない(t *t
 	}
 }
 
-func TestBuildSourceResourcesServiceは同じSourcePathをリンクで共有する(t *testing.T) {
+func TestBuildSourceResourcesServiceは同じSourcePathのWorktreeを1つだけ作る(t *testing.T) {
 	group := newTestCellGroup(t, "42")
 	resources := BuildSourceResourcesService(group, []TargetCell{
 		newLayoutTestTarget(t, "worker", ".", nil),
 		newLayoutTestTarget(t, "api", ".", nil),
 		newLayoutTestTarget(t, "db", "", []string{"db"}),
 	})
-	want := []SourceResource{{
-		RepositoryPath: ".", WorktreePath: ".paracell/cells/42/api/source", Base: "main", Branch: "feat/118",
-		Links: []SourceLink{{Path: ".paracell/cells/42/worker/source", Target: ".paracell/cells/42/api/source"}},
-	}}
+	want := []SourceResource{{RepositoryPath: ".", WorktreePath: ".paracell/cells/42", Base: "main", Branch: "feat/118"}}
 	if !reflect.DeepEqual(resources, want) {
 		t.Fatalf("resources = %#v", resources)
+	}
+}
+
+func TestBuildSourceResourcesServiceはSourcePathをワークスペースと同じ場所に置く(t *testing.T) {
+	group := newTestCellGroup(t, "42")
+	resources := BuildSourceResourcesService(group, []TargetCell{
+		newLayoutTestTarget(t, "frontend", "frontend", nil),
+		newLayoutTestTarget(t, "backend", "backend", nil),
+	})
+	want := []SourceResource{
+		{RepositoryPath: "backend", WorktreePath: ".paracell/cells/42/backend", Base: "main", Branch: "feat/118"},
+		{RepositoryPath: "frontend", WorktreePath: ".paracell/cells/42/frontend", Base: "main", Branch: "feat/118"},
+	}
+	if !reflect.DeepEqual(resources, want) {
+		t.Fatalf("resources = %#v", resources)
+	}
+}
+
+func TestBuildSourceResourcesServiceは浅いSourcePathから順に返す(t *testing.T) {
+	group := newTestCellGroup(t, "42")
+	resources := BuildSourceResourcesService(group, []TargetCell{
+		newLayoutTestTarget(t, "deep", "services/api/v2", nil),
+		newLayoutTestTarget(t, "api", "services/api", nil),
+		newLayoutTestTarget(t, "root", ".", nil),
+		newLayoutTestTarget(t, "web", "web", nil),
+	})
+	var got []string
+	for _, resource := range resources {
+		got = append(got, resource.WorktreePath)
+	}
+	want := []string{".paracell/cells/42", ".paracell/cells/42/web", ".paracell/cells/42/services/api", ".paracell/cells/42/services/api/v2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("worktrees = %v, want %v", got, want)
 	}
 }
 
@@ -187,6 +205,9 @@ func TestBuildContainerResourcesServiceはターゲットごとの設定を使�
 		{Target: "worker", Container: "app"}: {Name: "app", Mode: Target, Environments: []Environment{{Name: "ROLE", Value: "worker"}}},
 	}
 	resources := BuildContainerResourcesService(group, targets, nil, templates)
+	if resources.CellDirectory != ".paracell/cells/42" {
+		t.Fatalf("cell directory = %q", resources.CellDirectory)
+	}
 	if len(resources.Items) != 2 {
 		t.Fatalf("items = %#v", resources.Items)
 	}
@@ -194,12 +215,29 @@ func TestBuildContainerResourcesServiceはターゲットごとの設定を使�
 		if len(item.Environments) != 1 || item.Environments[0].Value != item.Target {
 			t.Fatalf("target %q got environments %#v", item.Target, item.Environments)
 		}
-		if item.SourcePath != ".paracell/cells/42/api/source" {
+		if item.SourcePath != ".paracell/cells/42" {
 			t.Fatalf("target %q source path = %q", item.Target, item.SourcePath)
 		}
 		if item.Role != "app."+item.Target {
 			t.Fatalf("target %q role = %q", item.Target, item.Role)
 		}
+	}
+}
+
+func TestBuildContainerResourcesServiceはSourcePathのWorktreeとCellDirectoryを渡す(t *testing.T) {
+	group := newTestCellGroup(t, "42")
+	resources := BuildContainerResourcesService(group, []TargetCell{
+		newLayoutTestTarget(t, "frontend", "frontend", []string{"web"}),
+	}, nil, nil)
+	if resources.CellDirectory != ".paracell/cells/42" || resources.Items[0].SourcePath != ".paracell/cells/42/frontend" {
+		t.Fatalf("cell directory = %q, source path = %q", resources.CellDirectory, resources.Items[0].SourcePath)
+	}
+	if got := resources.Items[0].Name; got != "paracell-My-App-42-frontend-web" {
+		t.Fatalf("container name = %q", got)
+	}
+	without := BuildContainerResourcesService(group, []TargetCell{newLayoutTestTarget(t, "db", "", []string{"db"})}, nil, nil)
+	if without.CellDirectory != "" {
+		t.Fatalf("cell directory without sources = %q", without.CellDirectory)
 	}
 }
 

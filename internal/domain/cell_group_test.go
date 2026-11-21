@@ -90,11 +90,11 @@ func TestCellGroupのリソース名は変更前と同じ値になる(t *testing
 		newLayoutTestTarget(t, "web app", ".", nil),
 		newLayoutTestTarget(t, "///", ".paracell-unused", nil),
 	})
-	if got := layout.SourceWorktreePath("web app"); got != ".paracell/cells/feat-118-api/web-app/source" {
+	if got := layout.SourceWorktreePath("web app"); got != ".paracell/cells/feat-118-api" {
 		t.Fatalf("source worktree path = %q", got)
 	}
-	if got := layout.TargetDirectory("///"); got != ".paracell/cells/feat-118-api/target" {
-		t.Fatalf("fallback target directory = %q", got)
+	if got := layout.SourceWorktreePath("///"); got != ".paracell/cells/feat-118-api/.paracell-unused" {
+		t.Fatalf("nested source worktree path = %q", got)
 	}
 }
 

@@ -522,7 +522,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	if err := saveAppCells(store, appTestCell("cell-1", "123", "default"), appTestCell("cell-2", "456", "webapp")); err != nil {
 		t.Fatalf("state保存でエラーが返った: %v", err)
 	}
-	cellSource := filepath.Join(dir, ".paracell", "cells", "123", "source")
+	cellSource := filepath.Join(dir, ".paracell", "cells", "123", "frontend")
 	if err := os.MkdirAll(cellSource, 0o755); err != nil {
 		t.Fatalf("cell sourceを作れなかった: %v", err)
 	}
@@ -628,7 +628,7 @@ templates:
 		t.Fatal("enterが呼ばれた")
 		return nil, nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string, root string) error {
 		t.Fatal("cleanが呼ばれた")
 		return nil
 	}
@@ -1124,7 +1124,7 @@ templates: {}
 		entered = cellName
 		return exec.Command("true"), nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string, root string) error {
 		t.Fatal("cleanが呼ばれた")
 		return nil
 	}
@@ -1176,7 +1176,7 @@ templates: {}
 		}
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
-	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string) error {
+	runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string, root string) error {
 		_ = ctx
 		_ = cfg
 		_ = source
@@ -1460,17 +1460,52 @@ func TestRunはPendingでPARACELL_CELLがないと失敗する(t *testing.T) {
 
 func TestCurrentCellはResurrect後の作業DirectoryからCell名を復元する(t *testing.T) {
 	t.Setenv("PARACELL_CELL", "")
-	workdir := filepath.Join(t.TempDir(), ".paracell", "cells", "123", "source", "internal")
+	t.Setenv("PARACELL_ROOT", "")
+	root := t.TempDir()
+	for _, workdir := range []string{
+		filepath.Join(root, ".paracell", "cells", "123"),
+		filepath.Join(root, ".paracell", "cells", "123", "internal"),
+		filepath.Join(root, ".paracell", "cells", "123", "frontend", "src"),
+	} {
+		got, err := currentCell(workdir)
+		if err != nil {
+			t.Fatalf("currentCell(%q)でエラーが返った: %v", workdir, err)
+		}
+		if got != "123" {
+			t.Fatalf("currentCell(%q) = %q, want %q", workdir, got, "123")
+		}
+		if got := projectRootForWorkdir(workdir); got != root {
+			t.Fatalf("projectRootForWorkdir(%q) = %q, want %q", workdir, got, root)
+		}
+	}
+	if _, err := currentCell(filepath.Join(root, ".paracell", "cells")); err == nil {
+		t.Fatal("the cells directory was taken for a Cell")
+	}
+}
+
+func TestRunはEnvがなくてもCellの作業DirectoryからPendingとReadyを記録する(t *testing.T) {
+	t.Setenv("PARACELL_CELL", "")
+	t.Setenv("PARACELL_ROOT", "")
+	dir := t.TempDir()
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	if err := saveAppCells(store, appTestCell("cell-1", "123", "default")); err != nil {
+		t.Fatal(err)
+	}
+	workdir := filepath.Join(dir, ".paracell", "cells", "123", "internal")
 	if err := os.MkdirAll(workdir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	got, err := currentCell(workdir)
-	if err != nil {
-		t.Fatalf("currentCellでエラーが返った: %v", err)
-	}
-	if got != "123" {
-		t.Fatalf("cell = %q, want %q", got, "123")
+	for _, command := range []string{"pending", "ready"} {
+		if err := Run(context.Background(), []string{command}, workdir); err != nil {
+			t.Fatalf("%s: %v", command, err)
+		}
+		cells, err := store.LoadCells(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cells.Commanders[0].Status; string(got) != command {
+			t.Fatalf("%s: status = %q", command, got)
+		}
 	}
 }
 

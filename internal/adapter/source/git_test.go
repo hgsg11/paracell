@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,6 +38,7 @@ func TestCreateSourceはOriginがあればWorktree作成前にFetchする(t *tes
 		t.Fatal(err)
 	}
 	want := []string{
+		"git -C /project rev-parse --show-toplevel",
 		"git -C /project remote",
 		"git -C /project fetch origin",
 		"git -C /project show-ref --verify --quiet refs/heads/feat/42",
@@ -199,51 +201,64 @@ func (f *fakeRunner) Output(_ context.Context, name string, args ...string) (str
 	if err := f.Run(context.Background(), name, args...); err != nil {
 		return "", err
 	}
-	return f.outputs[call], nil
+	output, ok := f.outputs[call]
+	if !ok && strings.HasSuffix(call, " rev-parse --show-toplevel") {
+		// Without a configured output every repository path is a top level.
+		return args[1], nil
+	}
+	return output, nil
 }
 
-func TestCreateSourceは共有WorktreeへのリンクをCleanSourceで消す(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".paracell/cells/42/api/source"), 0o755); err != nil {
-		t.Fatal(err)
+func TestCreateSourceはRepositoryのサブディレクトリを指すSourcePathを拒否する(t *testing.T) {
+	runner := newFakeRunner()
+	runner.outputs["git -C /project/services/api rev-parse --show-toplevel"] = "/project\n"
+
+	err := (GitSourceAdapter{Runner: runner, Root: "/project"}).CreateSource(context.Background(), domain.NewSourceResource("services/api", ".paracell/cells/42/services/api", "main", "feat/42"))
+	if err == nil || !strings.Contains(err.Error(), "top level") {
+		t.Fatalf("err = %v", err)
 	}
-	resource := domain.NewSourceResource(".", ".paracell/cells/42/api/source", "main", "feat/42")
-	resource.Links = []domain.SourceLink{{Path: ".paracell/cells/42/worker/source", Target: ".paracell/cells/42/api/source"}}
-	adapter := GitSourceAdapter{Runner: newFakeRunner(), Root: root}
-	if err := adapter.CreateSource(context.Background(), resource); err != nil {
-		t.Fatal(err)
-	}
-	link := filepath.Join(root, ".paracell/cells/42/worker/source")
-	target, err := os.Readlink(link)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if target != filepath.Join("..", "api", "source") {
-		t.Fatalf("link target = %q", target)
-	}
-	if err := adapter.CleanSource(context.Background(), resource); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Lstat(link); !os.IsNotExist(err) {
-		t.Fatalf("link was not removed: %v", err)
-	}
-	if err := adapter.CleanSource(context.Background(), resource); err != nil {
-		t.Fatalf("missing link must be ignored: %v", err)
+	for _, call := range runner.runCalls {
+		if strings.Contains(call, "worktree add") || strings.Contains(call, "fetch") {
+			t.Fatalf("calls = %v", runner.runCalls)
+		}
 	}
 }
 
-func TestCleanSourceはリンクでないパスを消さない(t *testing.T) {
+func TestCreateSourceは本物のRepositoryでトップレベルだけを受け付ける(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, ".paracell/cells/42/worker/source")
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	for _, args := range [][]string{{"init", "-q"}, {"-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init"}} {
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, output)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	resource := domain.NewSourceResource(".", ".paracell/cells/42/api/source", "main", "feat/42")
-	resource.Links = []domain.SourceLink{{Path: ".paracell/cells/42/worker/source", Target: ".paracell/cells/42/api/source"}}
-	if err := (GitSourceAdapter{Runner: newFakeRunner(), Root: root}).CleanSource(context.Background(), resource); err == nil {
-		t.Fatal("a directory at the link path was accepted")
+	adapter := GitSourceAdapter{Runner: execRunner{}, Root: root}
+	if err := adapter.CreateSource(context.Background(), domain.NewSourceResource("sub", ".paracell/cells/42/sub", "current", "feat/42")); err == nil {
+		t.Fatal("a subdirectory of a repository was accepted")
 	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("directory was removed: %v", err)
+	if _, err := os.Stat(filepath.Join(root, ".paracell/cells/42/sub")); !os.IsNotExist(err) {
+		t.Fatalf("worktree was created: %v", err)
 	}
+	if err := adapter.CreateSource(context.Background(), domain.NewSourceResource(".", ".paracell/cells/42", "current", "feat/42")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".paracell/cells/42/.git")); err != nil {
+		t.Fatalf("worktree was not created at the Cell directory: %v", err)
+	}
+}
+
+type execRunner struct{}
+
+func (execRunner) Run(ctx context.Context, name string, args ...string) error {
+	if output, err := exec.CommandContext(ctx, name, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, output)
+	}
+	return nil
+}
+
+func (execRunner) Output(ctx context.Context, name string, args ...string) (string, error) {
+	output, err := exec.CommandContext(ctx, name, args...).Output()
+	return string(output), err
 }

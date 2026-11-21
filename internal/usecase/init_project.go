@@ -74,7 +74,7 @@ func (u InitProjectUseCase) saveDefaultConfig(ctx context.Context) (domain.Templ
 		}
 		items = append(items, template)
 	}
-	cfg, err := domain.NewTemplates("", items, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil)
+	cfg, err := domain.NewTemplates("", items, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil, nil)
 	if err != nil {
 		return domain.Templates{}, err
 	}

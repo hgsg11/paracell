@@ -14,6 +14,7 @@ type CleanCellInput struct {
 type CleanCellUseCase struct {
 	Cells            CellPort
 	SourceFactory    SourceProviderFactory
+	CellDirectory    CellDirectoryPort
 	ContainerFactory ContainerProviderFactory
 	WorkspaceFactory WorkspaceProviderFactory
 }
@@ -51,8 +52,17 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 	if err := ignoreNotFound(containers.CleanContainers(ctx, containerResources)); err != nil {
 		return err
 	}
-	for _, resource := range domain.BuildSourceResourcesService(group, targets) {
-		if err := ignoreNotFound(source.CleanSource(ctx, resource)); err != nil {
+	// Nested worktrees go first. The Cell directory, with the copied workspace
+	// files, is removed only after every worktree is gone, so a worktree that
+	// failed to be removed keeps its work.
+	sources := domain.BuildSourceResourcesService(group, targets)
+	for i := len(sources) - 1; i >= 0; i-- {
+		if err := ignoreNotFound(source.CleanSource(ctx, sources[i])); err != nil {
+			return err
+		}
+	}
+	if len(sources) > 0 {
+		if err := u.CellDirectory.RemoveCellDirectory(ctx, domain.BuildCellResourceLayoutService(group, targets).CellDirectory()); err != nil {
 			return err
 		}
 	}
