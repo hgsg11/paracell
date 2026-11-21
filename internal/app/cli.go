@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hgsg11/paracell/internal/adapter/agent"
+	"github.com/hgsg11/paracell/internal/adapter/celldir"
 	"github.com/hgsg11/paracell/internal/adapter/config"
 	"github.com/hgsg11/paracell/internal/adapter/id"
 	"github.com/hgsg11/paracell/internal/adapter/logging"
@@ -69,6 +70,7 @@ var (
 			Config:           cfg,
 			Cells:            cells,
 			SourceFactory:    source,
+			CellDirectory:    celldir.NewFilesystemAdapter(root),
 			ContainerFactory: container,
 			WorkspaceFactory: session,
 			IDs:              id.RandomGenerator{},
@@ -77,11 +79,12 @@ var (
 	}
 )
 
-var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string) error {
+var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string, root string) error {
 	_ = cfg
 	uc := usecase.CleanCellUseCase{
 		Cells:            cells,
 		SourceFactory:    source,
+		CellDirectory:    celldir.NewFilesystemAdapter(root),
 		ContainerFactory: container,
 		WorkspaceFactory: session,
 	}
@@ -333,7 +336,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return runEnterRoot(ctx, configAdapter, provider.NewFactory(interactiveViewRunner, workdir))
 		}, func(cellName string) error {
 			factory := provider.NewFactory(viewRunner, workdir)
-			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cellName)
+			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cellName, workdir)
 		}, func(cellName string) error {
 			return runMarkDone(ctx, cellsAdapter, cellName)
 		}, func(cellName string) error {
@@ -354,6 +357,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			Config:           configAdapter,
 			Cells:            cellsAdapter,
 			SourceFactory:    provider.NewFactory(runner, workdir),
+			CellDirectory:    celldir.NewFilesystemAdapter(workdir),
 			ContainerFactory: provider.NewFactory(runner, workdir),
 			WorkspaceFactory: provider.NewFactory(runner, workdir),
 			IDs:              id.RandomGenerator{},
@@ -364,6 +368,7 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		uc := usecase.CleanCellUseCase{
 			Cells:            cellsAdapter,
 			SourceFactory:    provider.NewFactory(runner, workdir),
+			CellDirectory:    celldir.NewFilesystemAdapter(workdir),
 			ContainerFactory: provider.NewFactory(runner, workdir),
 			WorkspaceFactory: provider.NewFactory(runner, workdir),
 		}
@@ -382,19 +387,10 @@ func currentCell(workdir string) (string, error) {
 	if cell != "" {
 		return cell, nil
 	}
-	for dir := filepath.Clean(workdir); ; dir = filepath.Dir(dir) {
-		if filepath.Base(dir) == "source" {
-			cellDir := filepath.Dir(dir)
-			cellsDir := filepath.Dir(cellDir)
-			if filepath.Base(cellsDir) == "cells" && filepath.Base(filepath.Dir(cellsDir)) == ".paracell" {
-				return filepath.Base(cellDir), nil
-			}
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("PARACELL_CELL is required")
-		}
+	if cell, _, ok := cellForWorkdir(workdir); ok {
+		return cell, nil
 	}
+	return "", errors.New("PARACELL_CELL is required")
 }
 
 func projectRootForWorkdir(workdir string) string {
@@ -404,18 +400,25 @@ func projectRootForWorkdir(workdir string) string {
 		}
 		return filepath.Clean(root)
 	}
+	if _, root, ok := cellForWorkdir(workdir); ok {
+		return root
+	}
+	return workdir
+}
+
+// cellForWorkdir finds the Cell directory .paracell/cells/<cell> that contains
+// workdir, and returns the Cell name and the project root, the parent of
+// .paracell. The nearest such ancestor wins.
+func cellForWorkdir(workdir string) (string, string, bool) {
 	for dir := filepath.Clean(workdir); ; dir = filepath.Dir(dir) {
-		if filepath.Base(dir) == "source" {
-			cellDir := filepath.Dir(dir)
-			cellsDir := filepath.Dir(cellDir)
-			paracellDir := filepath.Dir(cellsDir)
-			if filepath.Base(cellsDir) == "cells" && filepath.Base(paracellDir) == ".paracell" {
-				return filepath.Dir(paracellDir)
-			}
+		cellsDir := filepath.Dir(dir)
+		paracellDir := filepath.Dir(cellsDir)
+		if filepath.Base(cellsDir) == "cells" && filepath.Base(paracellDir) == ".paracell" && dir != cellsDir {
+			return filepath.Base(dir), filepath.Dir(paracellDir), true
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return workdir
+			return "", "", false
 		}
 	}
 }

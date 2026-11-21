@@ -126,13 +126,13 @@ If the selected template's workspace windows do not consume `{{.Command}}`, chec
 - Ready notifications use the configured provider: `tmux`, `terminal-notifier` (macOS only), or `none` / omission. The Homebrew Cask installs the notification Formula dependency; do not add runtime installation or click navigation.
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set. The hooks `paracell init` installs already call them on `UserPromptSubmit` and `Stop` and do nothing outside a cell; do not add duplicate hooks by hand.
-- Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`.
+- Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`. Clean removes the whole cell directory `.paracell/cells/<cell>/` (worktrees at `<source.path>` inside it plus files copied by `workspace.copy`) once every worktree is removed.
 - A dependency container is shared, not copied: a cell owns only its attachment to that cell's network. Rollback and clean must preserve its original and other cell network attachments.
-- Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, sessions, containers, volumes, or networks while Paracell can manage them.
+- Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, cell directories, sessions, containers, volumes, or networks while Paracell can manage them.
 - Do not assume `clean --force` bypasses the done guard; check the installed version.
 
 ## Maintain the Skill
 
 When Paracell commands, configuration, variables, or lifecycle behavior change, update this Skill and its configuration reference together, keep `agents/openai.yaml` aligned, and run the Skill validator.
 
-Skill edits in the project root do not automatically update existing cell worktrees or instructions already loaded by a worker. When asked to apply a skill fix to an existing cell, preserve local changes, update its local skill files, and have the worker reread them before resuming. Do not claim that a root-only edit fixed an existing worker.
+Skill edits in the project root do not automatically update existing cell worktrees, files already copied by `workspace.copy`, or instructions already loaded by a worker. When asked to apply a skill fix to an existing cell, preserve local changes, update its local skill files, and have the worker reread them before resuming. Do not claim that a root-only edit fixed an existing worker.

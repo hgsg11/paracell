@@ -15,7 +15,7 @@ func TestCreateContainersはTargetを作りDependencyを接続する(t *testing.
 		`db-container`,
 		`{"Config":{"Image":"db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["db"]}}}}`,
 	}}
-	resources := domain.NewContainerResources("42", "sample", "cell-42", []domain.ContainerResource{
+	resources := domain.NewContainerResources("42", "sample", "cell-42", "", []domain.ContainerResource{
 		func() domain.ContainerResource {
 			r := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, []domain.Environment{{Name: "A", Value: "B"}}, nil)
 			r.SourcePath = ".paracell/cells/42/source"
@@ -143,7 +143,7 @@ func TestCreateContainersはDocker資源名を小文字に変換する(t *testin
 		`db-container`,
 		`{"Config":{"Image":"db:latest"},"Mounts":[],"NetworkSettings":{"Networks":{"default":{"Aliases":["db"]}}}}`,
 	}}
-	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", []domain.ContainerResource{
+	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", "", []domain.ContainerResource{
 		domain.NewContainerResource("paracell-Sample-ABC-42-Api-App", nil, "App", domain.Target, nil, nil),
 		domain.NewContainerResource("DB", nil, "DB", domain.Dependency, nil, nil),
 	})
@@ -175,7 +175,7 @@ func TestCreateContainersはDocker資源名を小文字に変換する(t *testin
 
 func TestCleanContainersはDocker資源名を小文字に変換する(t *testing.T) {
 	runner := &fakeRunner{gatewayInspectError: errors.New("No such container: paracell-gateway"), gatewayInspectOutput: new(string)}
-	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", []domain.ContainerResource{
+	resources := domain.NewContainerResources("ABC-42", "Sample", "paracell-Sample-ABC-42", "", []domain.ContainerResource{
 		domain.NewContainerResource("paracell-Sample-ABC-42-Api-App", nil, "App", domain.Target, nil, nil),
 	})
 	if err := (DockerCLIAdapter{Runner: runner}).CleanContainers(context.Background(), resources); err != nil {
@@ -203,7 +203,7 @@ func TestCreateContainersは同じServiceを使うターゲットを区別する
 	api.Target, api.Role = "API", "app.API"
 	worker := domain.NewContainerResource("paracell-Sample-42-worker-app", nil, "app", domain.Target, []domain.Environment{{Name: "ROLE", Value: "worker"}}, nil)
 	worker.Target, worker.Role = "worker", "app.worker"
-	resources := domain.NewContainerResources("42", "Sample", "paracell-Sample-42", []domain.ContainerResource{worker, api})
+	resources := domain.NewContainerResources("42", "Sample", "paracell-Sample-42", "", []domain.ContainerResource{worker, api})
 	networks, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), resources)
 	if err != nil {
 		t.Fatal(err)
@@ -244,15 +244,69 @@ func TestCreateContainersはFilesを元のMountより優先する(t *testing.T) 
 		t.Fatal(err)
 	}
 	app := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, nil, []domain.Mount{mount})
-	app.SourcePath = ".paracell/cells/42/api/source"
-	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerResources("42", "sample", "cell-42", []domain.ContainerResource{app})); err != nil {
+	app.SourcePath = ".paracell/cells/42"
+	if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerResources("42", "sample", "cell-42", ".paracell/cells/42", []domain.ContainerResource{app})); err != nil {
 		t.Fatal(err)
 	}
 	calls := strings.Join(runner.runCalls, "\n")
-	if !strings.Contains(calls, "-v /project/.paracell/cells/42/api/source/fixtures:/data") || !strings.Contains(calls, ":/cache") {
+	if !strings.Contains(calls, "-v /project/.paracell/cells/42/fixtures:/data") || !strings.Contains(calls, ":/cache") {
 		t.Fatalf("calls = %s", calls)
 	}
 	if strings.Contains(calls, "compose-data") || strings.Count(calls, ":/data") != 1 {
 		t.Fatalf("overridden mount was still used:\n%s", calls)
+	}
+}
+
+func TestCreateContainersはプロジェクト内のBindMountとFilesをCellの同じ相対パスに置き換える(t *testing.T) {
+	for _, tt := range []struct {
+		sourcePath string
+		worktree   string
+		bindSource string
+		wantBind   string
+		wantFiles  string
+	}{
+		{sourcePath: ".", worktree: ".paracell/cells/42", bindSource: "/project/data", wantBind: "/project/.paracell/cells/42/data:/data", wantFiles: "/project/.paracell/cells/42/fixtures:/fixtures"},
+		{sourcePath: "frontend", worktree: ".paracell/cells/42/frontend", bindSource: "/project/frontend/src", wantBind: "/project/.paracell/cells/42/frontend/src:/data", wantFiles: "/project/.paracell/cells/42/frontend/fixtures:/fixtures"},
+	} {
+		t.Run(tt.sourcePath, func(t *testing.T) {
+			runner := &fakeRunner{outputs: []string{
+				`{"Config":{"Image":"app:latest"},"Mounts":[{"Type":"bind","Source":"` + tt.bindSource + `","Destination":"/data","RW":true},{"Type":"bind","Source":"/outside/cache","Destination":"/cache","RW":true}],"NetworkSettings":{"Networks":{"default":{"Aliases":["app"]}}}}`,
+			}}
+			mount, err := domain.NewMount("/fixtures", "fixtures")
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := domain.NewContainerResource("cell-42-app", nil, "app", domain.Target, nil, []domain.Mount{mount})
+			app.SourcePath = tt.worktree
+			if _, err := (DockerCLIAdapter{Runner: runner, Root: "/project"}).CreateContainers(context.Background(), domain.NewContainerResources("42", "sample", "cell-42", ".paracell/cells/42", []domain.ContainerResource{app})); err != nil {
+				t.Fatal(err)
+			}
+			calls := strings.Join(runner.runCalls, "\n")
+			if !strings.Contains(calls, "-v "+tt.wantBind) || !strings.Contains(calls, "-v "+tt.wantFiles) {
+				t.Fatalf("want %q and %q in calls:\n%s", tt.wantBind, tt.wantFiles, calls)
+			}
+		})
+	}
+}
+
+func TestBindMountSpecはComposeのプロジェクト内パスをCellの同じ相対パスに置き換える(t *testing.T) {
+	adapter := DockerCLIAdapter{Root: "/project"}
+	plan := &composeMountPlan{
+		BindSources:        map[string]string{"/app": "/project/frontend", "/shared": "/elsewhere/shared"},
+		CellSourceRelPaths: map[string]string{"/app": "frontend"},
+	}
+	for _, tt := range []struct {
+		cellDirectory string
+		destination   string
+		want          string
+	}{
+		{cellDirectory: ".paracell/cells/42", destination: "/app", want: "/project/.paracell/cells/42/frontend:/app"},
+		{cellDirectory: ".paracell/cells/42", destination: "/shared", want: "/elsewhere/shared:/shared"},
+		{cellDirectory: "", destination: "/app", want: "/project/frontend:/app"},
+	} {
+		got, ok := adapter.bindMountSpec(tt.cellDirectory, dockerMount{Type: "bind", Destination: tt.destination, RW: true}, plan)
+		if !ok || got != tt.want {
+			t.Fatalf("bindMountSpec(%q, %q) = %q, %v, want %q", tt.cellDirectory, tt.destination, got, ok, tt.want)
+		}
 	}
 }

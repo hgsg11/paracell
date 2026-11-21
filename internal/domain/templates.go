@@ -2,7 +2,9 @@ package domain
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
+	"strings"
 )
 
 type Templates struct {
@@ -13,6 +15,9 @@ type Templates struct {
 	SourceDriverType       SourceDriverType
 	NotificationDriverType NotificationDriverType
 	Prefixes               map[string]string
+	// WorkspaceCopy lists the paths, relative to the workspace, that are copied
+	// into the Cell directory after its worktrees are created.
+	WorkspaceCopy []string
 }
 
 const (
@@ -60,7 +65,7 @@ func (t Templates) find(name string) (Template, error) {
 	return Template{}, fmt.Errorf("template %q not found", name)
 }
 
-func NewTemplates(projectName string, templates []Template, workspaceDriverType WorkspaceDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType, prefixes map[string]string) (Templates, error) {
+func NewTemplates(projectName string, templates []Template, workspaceDriverType WorkspaceDriverType, containerDriverType ContainerDriverType, sourceDriverType SourceDriverType, notificationDriverType NotificationDriverType, prefixes map[string]string, workspaceCopy []string) (Templates, error) {
 	names := make(map[string]struct{}, len(templates))
 	for _, item := range templates {
 		if item.Name == "" {
@@ -70,6 +75,14 @@ func NewTemplates(projectName string, templates []Template, workspaceDriverType 
 			return Templates{}, fmt.Errorf("duplicate template %q", item.Name)
 		}
 		names[item.Name] = struct{}{}
+	}
+	copyPaths := make([]string, 0, len(workspaceCopy))
+	for _, path := range workspaceCopy {
+		clean, err := newWorkspaceCopyPath(path)
+		if err != nil {
+			return Templates{}, err
+		}
+		copyPaths = append(copyPaths, clean)
 	}
 	resolvedPrefixes := make(map[string]string, len(defaultPrefixes)+len(prefixes))
 	for name, value := range defaultPrefixes {
@@ -81,6 +94,25 @@ func NewTemplates(projectName string, templates []Template, workspaceDriverType 
 	return Templates{
 		ProjectName: projectName, Templates: append([]Template(nil), templates...),
 		WorkspaceDriverType: workspaceDriverType, ContainerDriverType: containerDriverType, Prefixes: resolvedPrefixes,
-		SourceDriverType: sourceDriverType, NotificationDriverType: notificationDriverType,
+		SourceDriverType: sourceDriverType, NotificationDriverType: notificationDriverType, WorkspaceCopy: copyPaths,
 	}, nil
+}
+
+// newWorkspaceCopyPath validates one workspace.copy entry. It must name a path
+// inside the workspace other than the workspace itself.
+func newWorkspaceCopyPath(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("workspace.copy path is required")
+	}
+	if filepath.IsAbs(path) {
+		return "", fmt.Errorf("workspace.copy path %q must be relative to the workspace", path)
+	}
+	clean := filepath.Clean(path)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("workspace.copy path %q must stay within the workspace", path)
+	}
+	if clean == "." {
+		return "", fmt.Errorf("workspace.copy path %q must not be the workspace itself", path)
+	}
+	return clean, nil
 }

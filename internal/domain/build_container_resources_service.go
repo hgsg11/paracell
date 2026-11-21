@@ -22,5 +22,12 @@ func BuildContainerResourcesService(group CellGroup, targets []TargetCell, depen
 	for _, dependency := range dependencies {
 		items = append(items, NewContainerResource(dependency.Container.SourceContainer, dependency.Container.Network, dependency.Container.SourceContainer, dependency.Container.Mode, nil, nil))
 	}
-	return NewContainerResources(group.Name().Value, group.Project, group.ResourcePrefix(), items)
+	cellDirectory := ""
+	for _, target := range targets {
+		if target.Source != nil {
+			cellDirectory = layout.CellDirectory()
+			break
+		}
+	}
+	return NewContainerResources(group.Name().Value, group.Project, group.ResourcePrefix(), cellDirectory, items)
 }

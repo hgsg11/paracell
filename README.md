@@ -146,6 +146,43 @@ templates:
 
 `extends` または `abstract` を含む設定は、削除されたフィールドとして読込時にエラーになります。親の定義を各templateに直接書いて移行してください。template変数は、選択したtemplateの `issue`、`name`、`project`、`Command` で展開されます。
 
+### ワークスペースと Cell のディレクトリ
+
+`paracell.yaml` があるディレクトリを **ワークスペース** と呼びます。Cell のディレクトリ `.paracell/cells/<cell>/` は、ワークスペースと同じ相対パス構造の写しです。target の worktree は `.paracell/cells/<cell>/<source.path>` に作られ、ワークスペースからの相対パスが Cell の中でもそのまま通じます。
+
+```text
+ws/                          .paracell/cells/<cell>/
+  paracell.yaml
+  .claude/            コピー →   .claude/
+  frontend/  (repo)   worktree→  frontend/
+  backend/   (repo)   worktree→  backend/
+```
+
+- `source.path: .`（`paracell.yaml` がリポジトリの中にある構成）では、Cell のディレクトリそのものが worktree になります
+- 同じ `source.path` を持つ target は 1 つの worktree を共有します（cell の branch は 1 つのため）。target 名はディレクトリのパスに使いません
+- `source.path` は git リポジトリのトップレベルを指す必要があります。サブディレクトリを指すと source の工程で失敗します
+- `source.path` が入れ子になる場合（`.` と `services/api` が別リポジトリなど）は、浅いパスから順に worktree を作り、`clean` では深いパスから順に消します
+
+ワークスペースのファイルを Cell にコピーするには、最上位の `workspace.copy` にワークスペースからの相対パスを書きます。ファイルとディレクトリのどちらも書け、全 template 共通です。
+
+```yaml
+workspace:
+  copy:
+    - .claude/
+    - .env.local
+templates:
+  ...
+```
+
+- 既定でコピーするものはなく、書いたものだけをコピーします
+- 絶対パス、ワークスペースの外を指すパス（`..`）、`workspace` の未知のキーは設定の読み込みでエラーになります
+- コピーは source の工程で、すべての worktree を作った後に行います。symlink ではなく実体をコピーし、git で追跡されているファイルも含めて、コピー先に同じパスがあれば上書きします
+- 書いたパスがワークスペースに存在しなければ source の工程で失敗し、Cell は `failed` として残ります
+- source を持つ target がない template は Cell のディレクトリを作らないので、コピーもしません
+- `clean` はすべての worktree を消せた後に、コピーしたファイルを含む Cell のディレクトリごと削除します。worktree の削除に失敗したときは Cell のディレクトリを残します
+
+> **アップデート時の注意**: 以前の版は worktree を `.paracell/cells/<cell>/<target>/source` に作っていました。古い配置で作った Cell には対応しないため、アップデート前に既存の Cell を `paracell clean` で片付けてください。
+
 ## Container gateway
 
 Docker provider でcontainerを使うCommanderCellには専用networkが作られます。paracell は共有の `paracell-gateway` container（Traefik）を用意し、host の `127.0.0.1:80` だけに公開します。gateway は各CommanderCell専用networkへ接続され、公開済みTCP container portを使ってrouteを自動生成します。networkやgateway用の追加設定は必要ありません。
@@ -267,7 +304,7 @@ set -g @plugin 'tmux-plugins/tmux-continuum'
 run '~/.tmux/plugins/tpm/tpm'
 ```
 
-continuum が tmux server 起動時に通常の resurrect 復元を行います。復元後は従来どおり `paracell` から root session に入り、TUI から cell に入ってください。その際、resurrect が保存対象にしない `PARACELL_ROOT` / `PARACELL_CELL`、paracell key table、new-window hook、復元済み全 window の label を再設定します。復元時点ですでに起動済みの shell は後から session 環境変数を継承できないため、`pending` / `ready` は `PARACELL_CELL` がなくても `.paracell/cells/<cell>/source` 以下の作業ディレクトリから cell を判定します。
+continuum が tmux server 起動時に通常の resurrect 復元を行います。復元後は従来どおり `paracell` から root session に入り、TUI から cell に入ってください。その際、resurrect が保存対象にしない `PARACELL_ROOT` / `PARACELL_CELL`、paracell key table、new-window hook、復元済み全 window の label を再設定します。復元時点ですでに起動済みの shell は後から session 環境変数を継承できないため、`pending` / `ready` は `PARACELL_CELL` / `PARACELL_ROOT` がなくても `.paracell/cells/<cell>/` 以下の作業ディレクトリから cell とプロジェクトのルートを判定します。
 
 これらの plugin や設定がない場合、paracell の session 作成・接続動作は従来どおりです。独自の保存・復元コマンドは追加していません。
 
@@ -294,7 +331,7 @@ paracell --version
 - `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
 - `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
-- `clean`: cell の worktree / container / session を片付ける
+- `clean`: cell の worktree / Cell のディレクトリ（コピーしたファイルを含む）/ container / session を片付ける
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
@@ -306,7 +343,9 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - source を作る前に、repository に `origin` remote があれば `git fetch origin` を実行する。`origin` がなければ fetch せず、fetch が失敗すると source の工程で cell 作成が失敗する
 - cell branch（`<prefix><ticket-id>`）はローカルに既存 branch があればそれを使い（pull や rebase はしない）、ローカルになく `origin/<branch>` があればそれを追跡する branch を作り、どちらにもなければ `base` から新規作成する
 - 既存 branch が手元の作業ディレクトリや別の cell でチェックアウト中だと source の工程で失敗し、`paracell ls` にエラーが出る。`paracell clean` は worktree だけを消し、branch は残す
-- `files`: cell の source にコピーするファイル
+- `workspace.copy`: ワークスペースから Cell のディレクトリへコピーするパス（[ワークスペースと Cell のディレクトリ](#ワークスペースと-cell-のディレクトリ)）
+- `containers.<container>.files`: container に mount するファイル。source は target の worktree（`.paracell/cells/<cell>/<source.path>`）からの相対パス
+- source container の bind mount のうちプロジェクトのルート内を指すものは、Cell のディレクトリの同じ相対パス（`.paracell/cells/<cell>/<プロジェクトのルートからの相対パス>`）に置き換える
 - container serviceを持つcellには、cell専用Docker networkと自動HTTP gateway routeを常に作る
 - `containers.services.<service>.environment`: service ごとの環境変数を設定する。source container の環境変数をコピーした後、同名の変数をこの設定で上書きする
 - `volumeMode: copy`: named volume を複製する
@@ -323,7 +362,7 @@ tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます�
 
 TargetCell の `containers` には複数の Compose service を列挙できます。同じ CellGroup 内で同じ service と同じ mount path を使う Container は CellGroup 専用のコピー Volume を共有し、別 CellGroup とは共有しません。共有する Volume のコピーは cell 作成時に 1 回だけ行います。
 
-target 名と container 名は YAML のキーとして一意であればよく、複数の target に同じ container を書いて、それぞれ別の `environment` と `files` を指定できます。Paracell がディレクトリ名や Docker の名前に変換した後に同じになる名前（大文字・小文字・空白・記号だけが違う名前や、`a-b`/`c` と `a`/`b-c` のようにつなげると同じになる組）は、ぶつかる名前にだけ元の名前から作った 8 桁のハッシュを付けて区別します。ぶつからない名前は今までと同じです。gateway の URL の service role も、複数の container で同じになるときだけ `<service-role>.<target>` にします（例: `http://app.api.123.myapp.localhost`）。network alias にはプレフィックスもハッシュも付けません。同じ `source.path` を持つ target は 1 つの worktree を共有します（cell の branch は 1 つのため）。名前順で最初の target が worktree を持ち、ほかの target の `<target>/source` はそこへの symlink になります。`files` に書いたパスは、source container の同じパスの mount より優先します。この規則より前の版で、名前がぶつかる target を持つ cell（例: `API` と `api`）を作っていた場合、`paracell clean` はハッシュ付きの名前で削除するため、古いディレクトリやコンテナは手で削除してください。DependencyCell は service 名だけを `dependencies` に列挙し、既存の Compose service Container を CellGroup 専用 network に接続します。
+target 名と container 名は YAML のキーとして一意であればよく、複数の target に同じ container を書いて、それぞれ別の `environment` と `files` を指定できます。Paracell が Docker の名前に変換した後に同じになる名前（大文字・小文字・空白・記号だけが違う名前や、`a-b`/`c` と `a`/`b-c` のようにつなげると同じになる組）は、ぶつかる名前にだけ元の名前から作った 8 桁のハッシュを付けて区別します。ぶつからない名前は今までと同じです。gateway の URL の service role も、複数の container で同じになるときだけ `<service-role>.<target>` にします（例: `http://app.api.123.myapp.localhost`）。network alias にはプレフィックスもハッシュも付けません。同じ `source.path` を持つ target は 1 つの worktree を共有し、symlink は作りません。target 名はコンテナ名と gateway の service role にだけ使い、ディレクトリのパスには使いません。`files` に書いたパスは、source container の同じパスの mount より優先します。この規則より前の版で、名前がぶつかる target を持つ cell（例: `API` と `api`）を作っていた場合、`paracell clean` はハッシュ付きの名前で削除するため、古いコンテナは手で削除してください。DependencyCell は service 名だけを `dependencies` に列挙し、既存の Compose service Container を CellGroup 専用 network に接続します。
 
 container service の環境変数では `{{.issue}}`、`{{.name}}`、`{{.project}}` を使えます。`environment` にない変数は source container の値をそのまま引き継ぎ、空文字列を指定した変数は明示的に空へ上書きします。environmentはcell専用network上のapplication containerに適用され、共有gatewayの設定とrouteはそのまま維持されます。
 
@@ -381,7 +420,7 @@ templates:
 - `paracell.yaml`: 設定と template
 - `.claude/settings.json`: `paracell init` が Claude Code の `pending` / `ready` hook を足す Claude Code の設定
 - `.paracell/state.db`: cell の状態を保存するSQLite database
-- `.paracell/cells/<commander>/<target>/source`: TargetCell の git worktree。source を持つ Target がある Cell の tmux window はこの親の `.paracell/cells/<commander>/` で起動する
+- `.paracell/cells/<cell>/`: Cell のディレクトリ。ワークスペースの写しで、TargetCell の git worktree は `.paracell/cells/<cell>/<source.path>`（`source.path: .` なら Cell のディレクトリそのもの）にでき、`workspace.copy` のファイルもここにコピーされる。source を持つ Target がある Cell の tmux window はここで起動する
 
 SQLite の既存 CommanderCell 形式は読み込み時に CellGroup へ変換します。既存の CommanderCell ID を CellGroup ID として所属を復元し、次の変更時に新形式を transaction 内で保存します。Note、命令、状態、version、関連 Cell とリソース情報は保持し、不正な所属参照はエラーとして扱います。新規作成では CellGroup と各 Cell に別々の ID を割り当てます。
 

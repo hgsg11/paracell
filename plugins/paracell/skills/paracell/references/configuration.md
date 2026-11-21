@@ -31,6 +31,10 @@ providers:
 prefixes:
   feat: feat/
   fix: fix/
+workspace:
+  copy:
+    - .claude/
+    - .env.local
 templates:
   feat:
     commanderCell:
@@ -54,7 +58,7 @@ templates:
       - db
 ```
 
-Unknown keys are rejected while loading. A template accepts only `commanderCell`, `targets`, and `dependencies`; `commanderCell` accepts `name` and `workspace` (required); a target accepts `source` and `containers`.
+Unknown keys are rejected while loading. A template accepts only `commanderCell`, `targets`, and `dependencies`; `commanderCell` accepts `name` and `workspace` (required); a target accepts `source` and `containers`; the top-level `workspace` accepts only `copy`.
 
 `providers.source` is required and supports only `git`. `providers.workspace` supports only `tmux`. `providers.container` is `none` (default when omitted) or `docker`. `providers.notifications` is `tmux`, `terminal-notifier` (macOS desktop only), or `none` / omission to disable. The Homebrew Cask depends on the `terminal-notifier` Formula. Ready notifications do not provide a click action to enter a cell or workspace; execution failures are returned as notification errors.
 
@@ -76,9 +80,9 @@ templates:
 ```
 
 - Create it with `paracell fork <ticket-id> --template requirements`; `clean`, `pending` / `ready`, and the TUI work as for any other cell.
-- No worktree, branch, container, or cell directory is created. Only the tmux session is created, and its windows start in the project root (the directory containing `paracell.yaml`).
+- No worktree, branch, container, or cell directory is created, and `workspace.copy` is not applied. Only the tmux session is created, and its windows start in the project root (the directory containing `paracell.yaml`).
 - The same applies to any template without a source-backed target (for example, one whose targets only have `containers`).
-- Cells with at least one source-backed target start their windows in `.paracell/cells/<cell>/` as before.
+- Cells with at least one source-backed target start their windows in the cell directory `.paracell/cells/<cell>/`.
 - Caution: the project root is shared with other cells and with local work, so file edits made in this kind of cell can overwrite each other.
 
 ## Claude Code Status Hooks
@@ -101,16 +105,17 @@ templates:
 - `prefixes`: optional map from a key to a branch-name prefix. Keys and values control branch naming only; they do not select templates. Pass `--prefix <key>` when the configured prefix key for the intended branch naming is known and should be used, regardless of which template was selected. Omit `--prefix` only when the CLI's default `feat` branch prefix is intended. Never derive the prefix from a template key.
 - Template key: identifies a configured template. To select by target, match explicitly requested target names against the names under each compatible template's `targets` map by exact equality; do not compare target names to template keys. With one requested target, a candidate must contain that target entry. With several, a candidate must contain all of them. Choose the lexicographically smallest matching template key (case-sensitive byte order); if none match or no target is named, choose the lexicographically smallest compatible template key overall. Do not infer a match from a task kind, prefix, semantic closeness, or YAML declaration order.
 - Templates do not inherit. `extends` and `abstract` were removed; a `paracell.yaml` containing either fails to load with an error naming the template and field. Migrate by writing the parent's definition directly into each template and deleting the parent template.
-- `targets.<name>.source.path`: the repository to duplicate, relative to the project root (the directory containing `paracell.yaml`); defaults to `.`. Absolute paths and paths leaving the project root are rejected.
+- `targets.<name>.source.path`: the repository to duplicate, relative to the project root (the directory containing `paracell.yaml`, the workspace); defaults to `.`. Absolute paths and paths leaving the project root are rejected. It must name the top level of a git repository; a subdirectory of a repository fails the source stage. Its worktree is created at the same relative path inside the cell directory (see Cell Directory Layout).
+- `workspace.copy`: optional list of workspace-relative files or directories copied into the cell directory for every template. Nothing is copied by default. Absolute paths and paths leaving the workspace are rejected while loading. Copying happens in the source stage after every worktree exists; it copies real content (not symlinks) and overwrites anything at the same path, including files tracked by git. A listed path missing from the workspace fails the source stage.
 - `targets.<name>.source.base`: the start point for a newly created cell branch, passed to `git worktree add` as written. `main` starts from the local `main`; `origin/main` starts from the freshly fetched `origin/main`. Omit it or use `current` to start from the repository's current `HEAD`. It is ignored when an existing branch is reused.
 - Before creating a target worktree, Paracell runs `git fetch origin` when the repository has an `origin` remote; without `origin` it skips the fetch. A failed fetch fails the source stage.
 - Every target source uses the branch `<prefix><ticket-id>` (for example `feat/123`). An existing local branch is reused as-is (no pull or rebase); otherwise an existing `origin/<branch>` gets a local tracking branch; otherwise a new branch is created from `base`. Reuse always applies; there is no branch mode setting.
-- If the branch is already checked out elsewhere (the main working directory or another cell), `git worktree add` refuses it, the source stage fails, and the error appears in `paracell ls`. `paracell clean` removes only the worktree and keeps the branch.
+- If the branch is already checked out elsewhere (the main working directory or another cell), `git worktree add` refuses it, the source stage fails, and the error appears in `paracell ls`. `paracell clean` removes the worktrees and the cell directory but keeps the branch.
 - `targets.<name>.containers.<container>`: copies the running source container named `<container>` into the cell. `environment` adds environment variables (values are rendered with the template variables). `files` maps an absolute path inside the container to a path relative to that target's worktree and bind-mounts it.
 - A target needs a `source`, `containers`, or both. Its containers are always copies (mode `target`).
 - `dependencies`: names of running containers that the cell shares instead of copying. Each one is attached to the cell network with its existing aliases.
-- Target and container names only have to be unique as YAML keys. Several targets may declare the same container, each with its own `environment` and `files`. When names become equal after Paracell makes them safe for paths and Docker (case, spaces, and symbols are ignored), Paracell keeps them apart by adding a short hash only to the colliding directory or container names; names that do not collide are unchanged. Network aliases never get a prefix or hash.
-- Targets with the same `source.path` share one worktree, because a cell has a single branch: the target first in name order owns it, and the other targets' `<target>/source` is a symlink to it.
+- Target and container names only have to be unique as YAML keys. Several targets may declare the same container, each with its own `environment` and `files`. Target names never appear in paths; they only qualify container names and gateway service roles. When names become equal after Paracell makes them safe for Docker (case, spaces, and symbols are ignored), Paracell keeps them apart by adding a short hash only to the colliding container names; names that do not collide are unchanged. Network aliases never get a prefix or hash.
+- Targets with the same `source.path` share one worktree, because a cell has a single branch. No symlinks are created.
 - `commanderCell.workspace.windows`: tmux windows and their startup commands. At least one command must use `{{.Command}}` for prompt dispatch through `fork --command`.
 
 The issue's example configuration has prefix keys `feat` and `fix`, and template keys `feat`, `fix`, `review`, and `update`. These are independent namespaces even though two keys happen to be identical. If all four compatible templates contain `targets.repository`, a request for target `repository` matches all four and selects template `feat` by key order. If only `templates.update` contains `targets.web`, a request for `web` selects `update`; the template key itself is not the target match. For branch naming, pass `--prefix fix` to use `fix/` regardless of the selected template, or omit `--prefix` only when the CLI's default `feat/` is intended.
@@ -147,7 +152,7 @@ Keep YAML, Go-template, and shell quoting distinct.
 - Published TCP container ports follow the source container's bindings and use Docker-assigned random host ports. Unpublished source ports remain unpublished.
 - Mounts of the source container are carried over as follows:
   - Named volumes are always copied into a new cell-specific volume (`docker volume create` and `cp -a`); a read-only mount stays read-only. There is no shared or read-only volume mode.
-  - A bind mount whose host path is inside the project root is replaced with the same relative path inside the target's worktree. For a container created by docker compose, only binds declared in the compose service are kept, and a bind outside the project root keeps the original host path (shared with the source). For other containers, a bind outside the project root is dropped.
+  - A bind mount whose host path is inside the project root is replaced with the same relative path inside the cell directory (`.paracell/cells/<cell>/<path relative to the project root>`), which mirrors the workspace. Without a cell directory (no source-backed target) the original host path is kept. For a container created by docker compose, only binds declared in the compose service are kept, and a bind outside the project root keeps the original host path (shared with the source). For other containers, a bind outside the project root is dropped.
   - Other mount types, such as tmpfs, are dropped.
   - A path listed in `files` replaces the source container's mount at the same path. Paths are compared after cleaning (`/data/` equals `/data`); two `files` entries for the same path must mount the same source.
 - Dependency containers are not copied: the running container is attached to the cell network, and rollback and `clean` disconnect it only from that network.
@@ -161,11 +166,26 @@ Keep YAML, Go-template, and shell quoting distinct.
 - `PARACELL_ROOT` points commands to the managed project root.
 - `PARACELL_CELL` identifies the current cell inside its tmux session. When non-empty, perform development work directly in that cell instead of automatically dispatching again; the task issue need not match the cell identifier.
 - `.paracell/state.db` is Paracell-managed SQLite state. `paracell init` creates the relational schema. Legacy JSON-backed state is left unchanged.
-- `.paracell/cells/<cell>/` is the cell's workspace directory; tmux windows start there. Each target's worktree is `.paracell/cells/<cell>/<target>/source` (with `source.path` appended when it is not `.`).
+- `.paracell/cells/<cell>/` is the cell directory, a mirror of the workspace; tmux windows start there. Each target's worktree is `.paracell/cells/<cell>/<source.path>`, so with `source.path: .` the cell directory itself is the worktree.
+- Without `PARACELL_CELL` / `PARACELL_ROOT`, `pending` and `ready` find the cell and project root from the nearest ancestor `.paracell/cells/<cell>` of the working directory.
 - Root session names use `<project>-root`; cell sessions use `<project>-<cell>`.
 - CLI lists and tmux labels show the note when set, otherwise the cell name. The TUI shows `<cell name> | <note>`. Always use the CellGroup ID, issue, or name—not the note—to address a cell.
 
 Creation stages run in `source`, `containers`, `workspace` order. A failed cell keeps its failure stage and latest error for inspection.
+
+## Cell Directory Layout
+
+```text
+ws/                          .paracell/cells/<cell>/
+  paracell.yaml
+  .claude/            copy  →   .claude/
+  frontend/  (repo)   worktree→ frontend/
+  backend/   (repo)   worktree→ backend/
+```
+
+- Worktrees are created from the shallowest `source.path` to the deepest, so nested repositories (`.` and `services/api`) work; `clean` removes them deepest first.
+- `clean` removes the whole cell directory, including copied files, only after every worktree was removed. If a worktree cannot be removed, the cell directory is kept to protect its work.
+- Cells created by versions that used `.paracell/cells/<cell>/<target>/source` are not migrated. Clean them before upgrading.
 
 ## Source-of-Truth Checks
 

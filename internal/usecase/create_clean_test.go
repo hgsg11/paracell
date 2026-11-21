@@ -53,7 +53,7 @@ func TestForkCellはsourceを持つTargetがないTemplateではプロジェク�
 	ports := newFakePorts()
 	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
 	template, _ := domain.NewUnresolvedTemplate("requirements", &commander, nil, nil)
-	ports.config, _ = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.None, domain.Git, domain.NoNotification, nil)
+	ports.config, _ = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.None, domain.Git, domain.NoNotification, nil, nil)
 	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "requirements"})
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestForkCellはsourceを持つTargetがないTemplateではプロジェク�
 
 func TestForkCellはPrefixをTemplateから独立してSourceへ適用する(t *testing.T) {
 	ports := newFakePorts()
-	ports.config, _ = domain.NewTemplates("myapp", ports.config.Templates, domain.Tmux, domain.None, domain.Git, domain.NoNotification, map[string]string{"feat": "feature/", "topic": "work-"})
+	ports.config, _ = domain.NewTemplates("myapp", ports.config.Templates, domain.Tmux, domain.None, domain.Git, domain.NoNotification, map[string]string{"feat": "feature/", "topic": "work-"}, nil)
 	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat", Prefix: "topic"})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestForkCellはSource作成失敗時も作成対象をCellに保持する(t
 			t.Fatal(err)
 		}
 	}
-	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42/repository/source", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
+	if got, want := ports.cleanedSources, []domain.SourceResource{domain.NewSourceResource(".", ".paracell/cells/42", "main", "feat/42")}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleaned sources = %#v, want %#v", got, want)
 	}
 }
@@ -157,6 +157,10 @@ type fakePorts struct {
 	conflictOnSave       int
 	updateStatusLabelErr error
 	createSourceErr      error
+	cleanSourceErr       error
+	copyErr              error
+	copiedPaths          []string
+	cellDirectories      []string
 	cleanedSources       []domain.SourceResource
 	createdSources       []domain.SourceResource
 	containerResources   domain.ContainerResources
@@ -171,13 +175,13 @@ func newFakePorts() *fakePorts {
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	notificationDriver, _ := domain.NewNotificationDriverType("")
-	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil)
+	templates, _ := domain.NewTemplates("myapp", []domain.Template{template}, workspaceDriver, domain.NewContainerDriverType(""), sourceDriver, notificationDriver, nil, nil)
 	return &fakePorts{config: templates}
 }
 
 func newForkCellUseCase(ports *fakePorts) ForkCellUseCase {
 	return ForkCellUseCase{
-		Config: ports, Cells: ports, SourceFactory: ports,
+		Config: ports, Cells: ports, SourceFactory: ports, CellDirectory: ports,
 		ContainerFactory: ports, WorkspaceFactory: ports, IDs: &sequenceIDGenerator{},
 	}
 }
@@ -275,6 +279,17 @@ func (f *fakePorts) CreateSource(_ context.Context, resource domain.SourceResour
 func (f *fakePorts) CleanSource(_ context.Context, resource domain.SourceResource) error {
 	f.calls = append(f.calls, "source:clean")
 	f.cleanedSources = append(f.cleanedSources, resource)
+	return f.cleanSourceErr
+}
+func (f *fakePorts) CopyWorkspaceFiles(_ context.Context, cellDirectory string, paths []string) error {
+	f.calls = append(f.calls, "celldir:copy")
+	f.cellDirectories = append(f.cellDirectories, cellDirectory)
+	f.copiedPaths = append(f.copiedPaths, paths...)
+	return f.copyErr
+}
+func (f *fakePorts) RemoveCellDirectory(_ context.Context, cellDirectory string) error {
+	f.calls = append(f.calls, "celldir:remove")
+	f.cellDirectories = append(f.cellDirectories, cellDirectory)
 	return nil
 }
 func (f *fakePorts) CreateContainers(_ context.Context, resources domain.ContainerResources) (map[string][]string, error) {
@@ -365,7 +380,7 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 		t.Fatal(err)
 	}
 	template, _ := domain.NewUnresolvedTemplate("feat", &spec, []domain.TargetCellSpec{api, web}, []domain.DependencyCellSpec{database})
-	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil)
+	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.Docker, domain.Git, domain.NoNotification, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,29 +406,27 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
 		t.Fatal(err)
 	}
-	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	if err := clean.Execute(ctx, CleanCellInput{Cell: first.CellGroupID}); err != nil {
 		t.Fatal(err)
 	}
 	if len(ports.cells.Groups) != 1 || len(ports.cells.Commanders) != 1 || ports.cells.Commanders[0].ID != second.ID || len(ports.cells.Targets) != 2 || len(ports.cells.Dependencies) != 1 {
 		t.Fatalf("wrong group deleted: %#v", ports.cells)
 	}
-	// api and web share the source path ".", so they share one worktree and
-	// web's source directory is a link to api's.
-	if len(ports.cleanedSources) != 1 || len(ports.cleanedSources[0].Links) != 1 || ports.cleanedSources[0].Links[0].Path != ".paracell/cells/118/web/source" {
+	// api and web share the source path ".", so they share one worktree: the
+	// Cell directory itself.
+	if len(ports.cleanedSources) != 1 || ports.cleanedSources[0].WorktreePath != ".paracell/cells/118" {
 		t.Fatalf("cleaned sources: %#v", ports.cleanedSources)
 	}
-	for _, resource := range ports.cleanedSources {
-		if !strings.Contains(resource.WorktreePath, "/118/") {
-			t.Fatalf("unrelated source cleaned: %#v", resource)
-		}
+	if got := ports.cellDirectories; !reflect.DeepEqual(got, []string{".paracell/cells/118"}) {
+		t.Fatalf("removed cell directories = %#v", got)
 	}
 }
 
 func TestCleanCellは未完了のCellを消さない(t *testing.T) {
 	ports := newFakePorts()
 	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
-	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	if err := clean.Execute(context.Background(), CleanCellInput{Cell: "123"}); err == nil {
 		t.Fatal("an undone cell was cleaned")
 	}
@@ -426,7 +439,7 @@ func TestCleanCellは見つからないCellを伝える(t *testing.T) {
 	ports := newFakePorts()
 	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
 	ports.cells.Commanders[0].Done = true
-	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	// The CommanderCell ID is not a Cell identifier.
 	for _, identifier := range []string{"missing", "cell-1"} {
 		if err := clean.Execute(context.Background(), CleanCellInput{Cell: identifier}); err == nil || !strings.Contains(err.Error(), "not found") {
@@ -435,5 +448,134 @@ func TestCleanCellは見つからないCellを伝える(t *testing.T) {
 	}
 	if len(ports.cells.Groups) != 1 || len(ports.calls) != 0 {
 		t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
+	}
+}
+
+// newMultiSourcePorts configures a template whose targets live at ".",
+// "services/api" and "web", listed deepest first.
+func newMultiSourcePorts(t *testing.T, workspaceCopy []string) *fakePorts {
+	t.Helper()
+	ports := newFakePorts()
+	var targets []domain.TargetCellSpec
+	for name, path := range map[string]string{"api": "services/api", "root": ".", "web": "web"} {
+		source, err := domain.NewSourceTemplate(path, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		target, err := domain.NewTargetCellSpec(name, &source, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		targets = append(targets, target)
+	}
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+	template, err := domain.NewUnresolvedTemplate("feat", &commander, targets, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports.config, err = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.None, domain.Git, domain.NoNotification, nil, workspaceCopy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ports
+}
+
+func TestForkCellは浅いSourcePathから順にWorktreeを作り最後にワークスペースのファイルをコピーする(t *testing.T) {
+	ports := newMultiSourcePorts(t, []string{".claude/", ".env.local"})
+	if _, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"}); err != nil {
+		t.Fatal(err)
+	}
+	var worktrees []string
+	for _, resource := range ports.createdSources {
+		worktrees = append(worktrees, resource.WorktreePath)
+	}
+	if want := []string{".paracell/cells/42", ".paracell/cells/42/web", ".paracell/cells/42/services/api"}; !reflect.DeepEqual(worktrees, want) {
+		t.Fatalf("worktrees = %v, want %v", worktrees, want)
+	}
+	wantCalls := []string{"factory:source:git", "factory:container:none", "factory:workspace:tmux", "source:create", "source:create", "source:create", "celldir:copy", "containers:create", "workspace:create"}
+	if !reflect.DeepEqual(ports.calls, wantCalls) {
+		t.Fatalf("calls = %#v, want %#v", ports.calls, wantCalls)
+	}
+	if !reflect.DeepEqual(ports.copiedPaths, []string{".claude", ".env.local"}) || !reflect.DeepEqual(ports.cellDirectories, []string{".paracell/cells/42"}) {
+		t.Fatalf("copied %v into %v", ports.copiedPaths, ports.cellDirectories)
+	}
+}
+
+func TestForkCellはコピーに失敗するとSourceステージで失敗する(t *testing.T) {
+	ports := newMultiSourcePorts(t, []string{"missing"})
+	ports.copyErr = errors.New(`workspace.copy path "missing" does not exist in the workspace`)
+	_, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if !errors.Is(err, ports.copyErr) {
+		t.Fatalf("error = %v", err)
+	}
+	group := ports.cells.Groups[0]
+	if group.Creation.Status != domain.CreationFailed || group.Creation.FailedStage != domain.CreationStageSource {
+		t.Fatalf("group = %#v", group)
+	}
+}
+
+func TestForkCellはsourceを持つTargetがなければコピーしない(t *testing.T) {
+	ports := newFakePorts()
+	commander, _ := domain.NewCommanderCellSpec("workspace", domain.NewWorkspaceTemplate(nil))
+	template, _ := domain.NewUnresolvedTemplate("requirements", &commander, nil, nil)
+	ports.config, _ = domain.NewTemplates("myapp", []domain.Template{template}, domain.Tmux, domain.None, domain.Git, domain.NoNotification, nil, []string{".claude"})
+	if _, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "requirements"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range ports.calls {
+		if strings.HasPrefix(call, "celldir:") {
+			t.Fatalf("calls = %#v", ports.calls)
+		}
+	}
+}
+
+func TestCleanCellは深いWorktreeから消してからCellのディレクトリを消す(t *testing.T) {
+	ports := newMultiSourcePorts(t, nil)
+	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+		t.Fatal(err)
+	}
+	ports.calls = nil
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	if err := clean.Execute(context.Background(), CleanCellInput{Cell: ports.groupOf(t, cell).Name().Value}); err != nil {
+		t.Fatal(err)
+	}
+	var worktrees []string
+	for _, resource := range ports.cleanedSources {
+		worktrees = append(worktrees, resource.WorktreePath)
+	}
+	if want := []string{".paracell/cells/42/services/api", ".paracell/cells/42/web", ".paracell/cells/42"}; !reflect.DeepEqual(worktrees, want) {
+		t.Fatalf("cleaned worktrees = %v, want %v", worktrees, want)
+	}
+	if got := ports.calls[len(ports.calls)-1]; got != "celldir:remove" {
+		t.Fatalf("calls = %#v", ports.calls)
+	}
+}
+
+func TestCleanCellはWorktreeを消せなければCellのディレクトリを残す(t *testing.T) {
+	ports := newMultiSourcePorts(t, nil)
+	cell, err := newForkCellUseCase(ports).Execute(context.Background(), ForkCellInput{Issue: "42", Template: "feat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+		t.Fatal(err)
+	}
+	ports.calls = nil
+	ports.cleanSourceErr = errors.New("worktree contains modified files")
+	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+	if err := clean.Execute(context.Background(), CleanCellInput{Cell: ports.groupOf(t, cell).Name().Value}); !errors.Is(err, ports.cleanSourceErr) {
+		t.Fatalf("error = %v", err)
+	}
+	for _, call := range ports.calls {
+		if call == "celldir:remove" {
+			t.Fatalf("cell directory was removed: %#v", ports.calls)
+		}
+	}
+	if len(ports.cells.Groups) != 1 {
+		t.Fatalf("cell state was removed: %#v", ports.cells.Groups)
 	}
 }

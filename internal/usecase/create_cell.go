@@ -20,6 +20,7 @@ type ForkCellUseCase struct {
 	Config           ConfigPort
 	Cells            CellPort
 	SourceFactory    SourceProviderFactory
+	CellDirectory    CellDirectoryPort
 	ContainerFactory ContainerProviderFactory
 	WorkspaceFactory WorkspaceProviderFactory
 	IDs              IDGenerator
@@ -89,8 +90,8 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		return domain.CommanderCell{}, err
 	}
 	runner := cellCreationRunner{
-		Cells: u.Cells, Source: source, Containers: containers, Workspace: workspace,
-		Group: &group, Commander: &commander, Targets: targets, Dependencies: dependencies,
+		Cells: u.Cells, Source: source, CellDirectory: u.CellDirectory, Containers: containers, Workspace: workspace,
+		WorkspaceCopy: cfg.WorkspaceCopy, Group: &group, Commander: &commander, Targets: targets, Dependencies: dependencies,
 		ContainerTemplates: containerTemplates(resolved.Targets),
 	}
 	// The inserted CommanderCell received its first version from the state
@@ -118,6 +119,7 @@ func containerTemplates(targets []domain.TargetCellSpec) map[domain.ContainerTem
 type cellCreationRunner struct {
 	Cells              CellPort
 	Source             SourcePort
+	CellDirectory      CellDirectoryPort
 	Containers         ContainerPort
 	Workspace          WorkspacePort
 	Group              *domain.CellGroup
@@ -125,7 +127,9 @@ type cellCreationRunner struct {
 	Targets            []domain.TargetCell
 	Dependencies       []domain.DependencyCell
 	ContainerTemplates map[domain.ContainerTemplateKey]domain.ContainerTemplate
-	BeforeTerminal     func() error
+	// WorkspaceCopy lists the workspace paths copied into the Cell directory.
+	WorkspaceCopy  []string
+	BeforeTerminal func() error
 }
 
 func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
@@ -159,12 +163,7 @@ func (r cellCreationRunner) run(ctx context.Context, cells *CellSet) error {
 func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationStage) error {
 	switch stage {
 	case domain.CreationStageSource:
-		for _, resource := range domain.BuildSourceResourcesService(*r.Group, r.Targets) {
-			if err := r.Source.CreateSource(ctx, resource); err != nil {
-				return err
-			}
-		}
-		return nil
+		return r.createSources(ctx)
 	case domain.CreationStageContainers:
 		resources := domain.BuildContainerResourcesService(*r.Group, r.Targets, r.Dependencies, r.ContainerTemplates)
 		networks, err := r.Containers.CreateContainers(ctx, resources)
@@ -193,6 +192,23 @@ func (r cellCreationRunner) runStage(ctx context.Context, stage domain.CreationS
 	default:
 		return fmt.Errorf("unsupported creation stage %q", stage)
 	}
+}
+
+// createSources creates the worktrees from the shallowest source path, then
+// copies the workspace files over them. A CellGroup without worktrees has no
+// Cell directory, so nothing is copied.
+func (r cellCreationRunner) createSources(ctx context.Context) error {
+	resources := domain.BuildSourceResourcesService(*r.Group, r.Targets)
+	for _, resource := range resources {
+		if err := r.Source.CreateSource(ctx, resource); err != nil {
+			return err
+		}
+	}
+	if len(resources) == 0 || len(r.WorkspaceCopy) == 0 {
+		return nil
+	}
+	cellDirectory := domain.BuildCellResourceLayoutService(*r.Group, r.Targets).CellDirectory()
+	return r.CellDirectory.CopyWorkspaceFiles(ctx, cellDirectory, r.WorkspaceCopy)
 }
 
 func (r cellCreationRunner) rollbackContainers(ctx context.Context, failedStage domain.CreationStage) error {

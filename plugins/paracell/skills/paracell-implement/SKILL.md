@@ -14,7 +14,7 @@ Before reading the ticket, find out where you are and what the cell contains. Us
 1. Read `PARACELL_CELL` (the current cell name) and `PARACELL_ROOT` (the project root). If `PARACELL_CELL` is empty, you are not in a cell; stop and report that instead of implementing.
 2. Run `paracell ls` from `PARACELL_ROOT` and find the row for the current cell: its template, creation status, and any failed stage.
 3. Read `PARACELL_ROOT/paracell.yaml` and the cell's template. From its `targets` and `dependencies`, determine:
-   - each target repository, its worktree under `.paracell/cells/<cell>/<target>/source`, and the branch it is on (`git -C <worktree> branch --show-current`);
+   - each target repository, its worktree at `.paracell/cells/<cell>/<source.path>` (the cell directory mirrors the workspace, so `source.path: .` makes the cell directory itself the worktree), and the branch it is on (`git -C <worktree> branch --show-current`);
    - the containers copied for each target and the shared dependency containers (`docker ps --filter network=paracell-<project>-<cell>` when containers are enabled).
 4. Report the environment in a few lines (cell, template, targets with worktree and branch, containers) before starting work. Make code changes only inside the target worktrees.
 

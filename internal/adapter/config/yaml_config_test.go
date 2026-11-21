@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -292,5 +293,59 @@ func TestParacellYAMLUsesPeerCellDefinitions(t *testing.T) {
 	}
 	if resolved.Commander == nil || len(resolved.Targets) != 1 || resolved.Targets[0].Name != "repository" || len(resolved.Dependencies) != 0 {
 		t.Fatalf("resolved peer template = %#v", resolved)
+	}
+}
+
+func TestYAMLConfigはWorkspaceCopyを読み込み保存後も維持する(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "paracell.yaml")
+	data := []byte(`project: {name: sample}
+providers: {source: git, workspace: tmux}
+workspace:
+  copy:
+    - .claude/
+    - .env.local
+templates: {}
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewYAMLConfigAdapter(path)
+	cfg, err := adapter.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{".claude", ".env.local"}; !reflect.DeepEqual(cfg.WorkspaceCopy, want) {
+		t.Fatalf("workspace copy = %#v, want %#v", cfg.WorkspaceCopy, want)
+	}
+	if err := adapter.SaveConfig(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := adapter.Load(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reloaded.WorkspaceCopy, cfg.WorkspaceCopy) {
+		t.Fatalf("workspace copy after save = %#v", reloaded.WorkspaceCopy)
+	}
+}
+
+func TestYAMLConfigは不正なWorkspaceCopyを拒否する(t *testing.T) {
+	for name, workspace := range map[string]string{
+		"absolute":    "{copy: [/etc/passwd]}",
+		"outside":     "{copy: [../secret]}",
+		"outside2":    "{copy: [a/../../secret]}",
+		"workspace":   "{copy: [.]}",
+		"unknown key": "{copy: [.claude], link: [.env]}",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "paracell.yaml")
+			data := "project: {name: sample}\nproviders: {source: git, workspace: tmux}\nworkspace: " + workspace + "\ntemplates: {}\n"
+			if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewYAMLConfigAdapter(path).Load(context.Background()); err == nil {
+				t.Fatalf("workspace %s was accepted", workspace)
+			}
+		})
 	}
 }

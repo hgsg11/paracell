@@ -16,7 +16,7 @@ func TestResolveTemplateはCommanderCell仕様とRuntime変数を解決する(t 
 	feat, _ := NewUnresolvedTemplate("feat", &commander, []TargetCellSpec{target}, []DependencyCellSpec{dependency})
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
-	config, _ := NewTemplates("sample", []Template{feat}, workspaceDriver, Docker, sourceDriver, NoNotification, nil)
+	config, _ := NewTemplates("sample", []Template{feat}, workspaceDriver, Docker, sourceDriver, NoNotification, nil, nil)
 
 	resolved, err := config.Resolve("feat", NewTemplateVars("42", "42", "sample", "make test"))
 	if err != nil {
@@ -38,7 +38,7 @@ func TestResolveTemplateは存在しないTemplateとCommanderCell未定義を�
 	workspaceDriver, _ := NewWorkspaceDriverType("tmux")
 	sourceDriver, _ := NewSourceDriverType("git")
 	bare, _ := NewUnresolvedTemplate("bare", nil, nil, nil)
-	config, _ := NewTemplates("sample", []Template{bare}, workspaceDriver, None, sourceDriver, NoNotification, nil)
+	config, _ := NewTemplates("sample", []Template{bare}, workspaceDriver, None, sourceDriver, NoNotification, nil, nil)
 	if _, err := config.Resolve("bare", NewTemplateVars("", "", "", "")); err == nil {
 		t.Fatal("template without CommanderCell must be rejected")
 	}

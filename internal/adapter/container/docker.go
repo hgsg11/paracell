@@ -218,7 +218,7 @@ func (a DockerCLIAdapter) CreateContainers(ctx context.Context, resources domain
 			networks[service.SourceContainer] = append(networks[service.SourceContainer], network)
 			continue
 		}
-		mounts, err := a.prepareMounts(ctx, network, service.SourcePath, service, inspection, preparedVolumes)
+		mounts, err := a.prepareMounts(ctx, network, resources.CellDirectory, service, inspection, preparedVolumes)
 		if err != nil {
 			return nil, err
 		}
@@ -368,8 +368,9 @@ func (a DockerCLIAdapter) inspectContainer(ctx context.Context, source string) (
 }
 
 // prepareMounts returns the mounts of a copied container. A mount declared in
-// the template's files replaces the source container's mount at the same path.
-func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, inspection containerInspection, preparedVolumes map[string]struct{}) ([]string, error) {
+// the template's files replaces the source container's mount at the same path,
+// and its source is relative to the TargetCell's worktree.
+func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string, cellDirectory string, service domain.ContainerResource, inspection containerInspection, preparedVolumes map[string]struct{}) ([]string, error) {
 	composeMounts, err := a.resolveComposeMounts(ctx, inspection.Config.Labels)
 	if err != nil {
 		return nil, err
@@ -385,12 +386,12 @@ func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string,
 		}
 		inherited = append(inherited, mount)
 	}
-	mounts, err := a.copyMounts(ctx, volumeScope, sourcePath, service, inherited, composeMounts, preparedVolumes)
+	mounts, err := a.copyMounts(ctx, volumeScope, cellDirectory, service, inherited, composeMounts, preparedVolumes)
 	if err != nil {
 		return nil, err
 	}
 	for _, mount := range service.Mounts {
-		source := filepath.Join(a.Root, sourcePath, mount.SourcePath)
+		source := filepath.Join(a.Root, service.SourcePath, mount.SourcePath)
 		mounts = append(mounts, source+":"+mount.TargetPath)
 	}
 	return mounts, nil
@@ -400,7 +401,7 @@ func (a DockerCLIAdapter) prepareMounts(ctx context.Context, volumeScope string,
 // the same CellGroup that copy the same service share the copied volume, so a
 // volume is copied only once per CreateContainers call; copying it again would
 // overwrite what an already started container wrote.
-func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, sourcePath string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan, preparedVolumes map[string]struct{}) ([]string, error) {
+func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, cellDirectory string, service domain.ContainerResource, mounts []dockerMount, composeMounts *composeMountPlan, preparedVolumes map[string]struct{}) ([]string, error) {
 	out := make([]string, 0, len(mounts))
 	for _, mount := range mounts {
 		if mount.Type == "volume" && mount.Name != "" {
@@ -421,7 +422,7 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, so
 		if mount.Type != "bind" {
 			continue
 		}
-		spec, ok := a.bindMountSpec(sourcePath, mount, composeMounts)
+		spec, ok := a.bindMountSpec(cellDirectory, mount, composeMounts)
 		if !ok {
 			continue
 		}
@@ -430,29 +431,30 @@ func (a DockerCLIAdapter) copyMounts(ctx context.Context, volumeScope string, so
 	return out, nil
 }
 
-func (a DockerCLIAdapter) bindMountSpec(sourcePath string, mount dockerMount, composeMounts *composeMountPlan) (string, bool) {
+// bindMountSpec returns the bind mount of a copied container. A bind source
+// inside the project root is replaced by the same relative path inside the
+// Cell directory, which mirrors the workspace. Without a Cell directory the
+// source container's path is kept.
+func (a DockerCLIAdapter) bindMountSpec(cellDirectory string, mount dockerMount, composeMounts *composeMountPlan) (string, bool) {
 	source := mount.Source
+	rel, inProject := "", false
 	if composeMounts != nil {
 		composeSource, ok := composeMounts.BindSources[mount.Destination]
 		if !ok {
 			return "", false
 		}
 		source = composeSource
-		if rel, ok := composeMounts.CellSourceRelPaths[mount.Destination]; ok {
-			source = a.cellSourcePath(sourcePath)
-			if rel != "." {
-				source = filepath.Join(source, rel)
-			}
-		}
+		rel, inProject = composeMounts.CellSourceRelPaths[mount.Destination]
 	} else {
-		rel, err := filepath.Rel(a.Root, mount.Source)
+		var err error
+		rel, err = filepath.Rel(a.Root, mount.Source)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return "", false
 		}
-		source = a.cellSourcePath(sourcePath)
-		if rel != "." {
-			source = filepath.Join(source, rel)
-		}
+		inProject = true
+	}
+	if inProject && cellDirectory != "" {
+		source = filepath.Join(a.cellPath(cellDirectory), rel)
 	}
 	spec := source + ":" + mount.Destination
 	if !mount.RW {
@@ -539,14 +541,11 @@ func canonicalUserPath(path string, base string) (string, error) {
 	return filepath.Clean(absolute), nil
 }
 
-func (a DockerCLIAdapter) cellSourcePath(sourcePath string) string {
-	if sourcePath == "" {
-		return ""
+func (a DockerCLIAdapter) cellPath(cellDirectory string) string {
+	if filepath.IsAbs(cellDirectory) {
+		return filepath.Clean(cellDirectory)
 	}
-	if filepath.IsAbs(sourcePath) {
-		return filepath.Clean(sourcePath)
-	}
-	return filepath.Join(a.Root, sourcePath)
+	return filepath.Join(a.Root, cellDirectory)
 }
 
 func (a DockerCLIAdapter) copyNamedVolume(ctx context.Context, source string, target string) error {
