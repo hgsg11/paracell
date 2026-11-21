@@ -25,7 +25,7 @@ var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // already safe resource names, so the Cell name equals the issue.
 func viewTestCell(id string, issue string, templateName string) query.CellView {
 	_ = id
-	return query.CellView{Name: issue, Label: issue, Template: templateName, Status: "ready", CreationStatus: "ready"}
+	return query.CellView{Name: issue, Label: issue, Template: templateName, Status: "ready", Progress: "in_progress", CreationStatus: "ready"}
 }
 
 func TestModelはjで選択を下げる(t *testing.T) {
@@ -104,10 +104,10 @@ func TestModelViewはCell一覧にNameTemplateDoneStatusを表示する(t *testi
 	if !strings.Contains(got, "default") {
 		t.Fatal("template not shown")
 	}
-	if !strings.Contains(got, "[ ]") {
-		t.Fatal("done checkbox not shown")
+	if !strings.Contains(got, "impl") {
+		t.Fatal("progress not shown")
 	}
-	if !strings.Contains(got, "[ ]  ..") {
+	if !strings.Contains(got, "impl     ..") {
 		t.Fatalf("pending status not shown at row end: %q", got)
 	}
 }
@@ -161,7 +161,7 @@ func TestModelViewはNoteだけを表示してStatusを維持する(t *testing.T
 	if strings.Contains(got, "123") || strings.Contains(got, " | ") {
 		t.Fatalf("cell name or separator should not appear: %q", got)
 	}
-	if !strings.Contains(got, "[ ]  ..") {
+	if !strings.Contains(got, "impl     ..") {
 		t.Fatalf("pending status missing: %q", got)
 	}
 }
@@ -208,7 +208,7 @@ func TestModelViewは長いIssueを省略してPendingStatusを表示する(t *t
 	if strings.Contains(got, cell.Name) {
 		t.Fatalf("full issue should not be shown: %q", got)
 	}
-	if !strings.Contains(got, "[ ]  ..") {
+	if !strings.Contains(got, "impl     ..") {
 		t.Fatalf("pending status should remain visible: %q", got)
 	}
 }
@@ -223,7 +223,7 @@ func TestModelViewはReadyでStatusを表示しない(t *testing.T) {
 	if strings.Contains(got, "✓") {
 		t.Fatalf("ready status should be blank: %q", got)
 	}
-	if !strings.Contains(got, "default   [ ]") {
+	if !strings.Contains(got, "default   impl") {
 		t.Fatalf("ready row layout unexpected: %q", got)
 	}
 }
@@ -536,45 +536,6 @@ func TestModelはspaceで選択中Cellを返す(t *testing.T) {
 	}
 }
 
-func TestModelはEnterで選択中CellのDoneを切り替える(t *testing.T) {
-	model := NewModel([]query.CellView{
-		viewTestCell("cell-1", "123", "default"),
-	})
-	var markedDone []string
-	model.MarkDone = func(name string) error {
-		markedDone = append(markedDone, name)
-		return nil
-	}
-	model.MarkUndone = func(name string) error {
-		t.Fatalf("mark undone was called for an undone cell %q", name)
-		return nil
-	}
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Enterでコマンドが返らなかった")
-	}
-	if next.(Model).Cells[0].Done {
-		t.Fatal("the cell was shown done before the handler finished")
-	}
-	updated, nextCmd := next.(Model).Update(cmd())
-	got := updated.(Model)
-	if len(markedDone) != 1 || markedDone[0] != "123" {
-		t.Fatalf("mark done calls = %#v, want [123]", markedDone)
-	}
-	if !got.Cells[0].Done {
-		t.Fatal("Done = false, want true")
-	}
-	if !strings.Contains(got.View(), "[x]") {
-		t.Fatalf("done marker not shown: %q", got.View())
-	}
-	if got.Result.Action != ActionNone {
-		t.Fatalf("action = %q, want %q", got.Result.Action, ActionNone)
-	}
-	if nextCmd != nil {
-		t.Fatal("Enterで終了コマンドが返った")
-	}
-}
-
 func TestModelはddで選択中Cellを削除する(t *testing.T) {
 	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
@@ -649,10 +610,10 @@ func TestModelはRefreshでPendingStatusのアニメーションを進める(t *
 	if first == second {
 		t.Fatalf("view did not animate: first=%q second=%q", first, second)
 	}
-	if !strings.Contains(first, "[ ]  ..") {
+	if !strings.Contains(first, "impl     ..") {
 		t.Fatalf("first frame = %q, want initial pending frame", first)
 	}
-	if !strings.Contains(second, "[ ]  o.") {
+	if !strings.Contains(second, "impl     o.") {
 		t.Fatalf("second frame = %q, want advanced pending frame", second)
 	}
 }
@@ -841,7 +802,7 @@ func TestModelはParacellエラーを共通ログへ保存する(t *testing.T) {
 	model := NewModel(nil)
 	model.Logger = logger
 
-	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
 	got := next.(Model)
 	if got.Error != "no cells available" {
 		t.Fatalf("error = %q", got.Error)
@@ -898,31 +859,6 @@ func TestModelはGoRootをCleanできない(t *testing.T) {
 	}
 }
 
-func TestModelはGoRootをDoneにできない(t *testing.T) {
-	model := NewModel([]query.CellView{
-		viewTestCell("cell-1", "123", "default"),
-	})
-	model.Focus = FocusExit
-	model.MarkDone = func(name string) error {
-		t.Fatalf("go rootでmark done handlerが呼ばれた: %q", name)
-		return nil
-	}
-	model.MarkUndone = func(name string) error {
-		t.Fatalf("go rootでmark undone handlerが呼ばれた: %q", name)
-		return nil
-	}
-
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-
-	if cmd != nil {
-		t.Fatal("go rootのEnterでコマンドが返った")
-	}
-	got := next.(Model)
-	if got.Error != "go root cannot be marked done" {
-		t.Fatalf("error = %q, want %q", got.Error, "go root cannot be marked done")
-	}
-}
-
 func TestModelはdのあと別キーなら削除待機を解除する(t *testing.T) {
 	model := NewModel([]query.CellView{
 		viewTestCell("cell-1", "123", "default"),
@@ -948,87 +884,6 @@ func TestModelはdのあと別キーなら削除待機を解除する(t *testing
 	}
 	if got.Selected != 1 {
 		t.Fatalf("selected = %d, want %d", got.Selected, 1)
-	}
-}
-
-func TestModelはEnterでdone状態のCellを解除する(t *testing.T) {
-	done := viewTestCell("cell-1", "123", "default")
-	done.Done = true
-	model := NewModel([]query.CellView{viewTestCell("cell-0", "122", "default"), done})
-	model.Selected = 1
-	model.MarkDone = func(name string) error {
-		t.Fatalf("mark done was called for a done cell %q", name)
-		return nil
-	}
-	var markedUndone []string
-	model.MarkUndone = func(name string) error {
-		markedUndone = append(markedUndone, name)
-		return nil
-	}
-
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Enterでコマンドが返らなかった")
-	}
-	updated, _ := next.(Model).Update(cmd())
-	got := updated.(Model)
-	if len(markedUndone) != 1 || markedUndone[0] != "123" {
-		t.Fatalf("mark undone calls = %#v, want [123]", markedUndone)
-	}
-	if got.Cells[1].Done || got.Cells[0].Done {
-		t.Fatalf("cells = %#v, want both undone", got.Cells)
-	}
-	if got.Error != "" {
-		t.Fatalf("error = %q", got.Error)
-	}
-}
-
-func TestModelは完了キーの失敗をエラー欄に出し表示を変えない(t *testing.T) {
-	for _, initiallyDone := range []bool{false, true} {
-		cell := viewTestCell("cell-1", "123", "default")
-		cell.Done = initiallyDone
-		model := NewModel([]query.CellView{cell})
-		model.MarkDone = func(string) error { return errors.New("cell is already done") }
-		model.MarkUndone = func(string) error { return errors.New("cell is not done") }
-
-		next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		if cmd == nil {
-			t.Fatal("Enterでコマンドが返らなかった")
-		}
-		updated, _ := next.(Model).Update(cmd())
-		got := updated.(Model)
-		want := "cell is already done"
-		if initiallyDone {
-			want = "cell is not done"
-		}
-		if got.Error != want || got.Cells[0].Done != initiallyDone {
-			t.Fatalf("done=%t: error = %q, cells = %#v", initiallyDone, got.Error, got.Cells)
-		}
-	}
-}
-
-func TestModelは完了キーのHandlerがなければエラーにする(t *testing.T) {
-	done := viewTestCell("cell-1", "123", "default")
-	done.Done = true
-	model := NewModel([]query.CellView{done})
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ := next.(Model).Update(cmd())
-	if got := updated.(Model); got.Error != "mark undone handler is not configured" || !got.Cells[0].Done {
-		t.Fatalf("model = %#v", got)
-	}
-}
-
-func TestModelは完了キー処理中に一覧が変わっても同じ名前のCellを反転する(t *testing.T) {
-	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default"), viewTestCell("cell-2", "456", "webapp")})
-	model.Selected = 1
-	model.MarkDone = func(string) error { return nil }
-	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	moved := next.(Model)
-	moved.Cells = []query.CellView{viewTestCell("cell-2", "456", "webapp"), viewTestCell("cell-1", "123", "default")}
-	updated, _ := moved.Update(cmd())
-	got := updated.(Model)
-	if !got.Cells[0].Done || got.Cells[1].Done {
-		t.Fatalf("cells = %#v, want 456 done", got.Cells)
 	}
 }
 
@@ -1437,5 +1292,172 @@ func TestModelはhでTemplates端からExitParacellへフォーカスを移す(t
 
 	if got.Focus != FocusExit {
 		t.Fatalf("focus = %v, want %v", got.Focus, FocusExit)
+	}
+}
+
+func pressKey(t *testing.T, model Model, key rune) (Model, tea.Cmd) {
+	t.Helper()
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
+	return next.(Model), cmd
+}
+
+func TestModelはmを2回押すと確認してmerge済みにする(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-0", "122", "default"), viewTestCell("cell-1", "123", "default")})
+	model.Selected = 1
+	var merged []string
+	model.MarkMerged = func(name string) error {
+		merged = append(merged, name)
+		return nil
+	}
+	model.MarkAbandoned = func(name string) error {
+		t.Fatalf("mark abandoned was called for %q", name)
+		return nil
+	}
+	got, cmd := pressKey(t, model, 'm')
+	if cmd != nil || len(merged) != 0 {
+		t.Fatal("the first m ran the handler without confirmation")
+	}
+	if got.AwaitingProgress != "merged" || !strings.Contains(got.View(), "mark 123 merged? press m again (cannot be undone)") {
+		t.Fatalf("confirmation not shown: awaiting = %q, view = %q", got.AwaitingProgress, got.View())
+	}
+	got, cmd = pressKey(t, got, 'm')
+	if cmd == nil {
+		t.Fatal("the second m returned no command")
+	}
+	if got.AwaitingProgress != "" || got.Cells[1].Progress != "in_progress" {
+		t.Fatalf("model changed before the handler finished: %#v", got)
+	}
+	updated, _ := got.Update(cmd())
+	got = updated.(Model)
+	if len(merged) != 1 || merged[0] != "123" || got.Cells[1].Progress != "merged" || got.Cells[0].Progress != "in_progress" {
+		t.Fatalf("merged calls = %#v, cells = %#v", merged, got.Cells)
+	}
+	if !strings.Contains(got.View(), "merged") || got.Error != "" || got.Result.Action != ActionNone {
+		t.Fatalf("model = %#v, view = %q", got, got.View())
+	}
+}
+
+func TestModelはaを2回押すと確認して中止にする(t *testing.T) {
+	cell := viewTestCell("cell-1", "123", "default")
+	cell.Progress = "in_review"
+	model := NewModel([]query.CellView{cell})
+	var abandoned []string
+	model.MarkAbandoned = func(name string) error {
+		abandoned = append(abandoned, name)
+		return nil
+	}
+	got, _ := pressKey(t, model, 'a')
+	if !strings.Contains(got.View(), "mark 123 abandoned? press a again (cannot be undone)") {
+		t.Fatalf("confirmation not shown: %q", got.View())
+	}
+	got, cmd := pressKey(t, got, 'a')
+	updated, _ := got.Update(cmd())
+	got = updated.(Model)
+	if len(abandoned) != 1 || abandoned[0] != "123" || got.Cells[0].Progress != "abandoned" || !strings.Contains(got.View(), "abandon") {
+		t.Fatalf("abandoned calls = %#v, cells = %#v", abandoned, got.Cells)
+	}
+}
+
+func TestModelは確認中に別キーを押すとmergeと中止を取り消す(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default"), viewTestCell("cell-2", "456", "webapp")})
+	model.MarkMerged = func(name string) error {
+		t.Fatalf("mark merged was called for %q", name)
+		return nil
+	}
+	model.MarkAbandoned = func(name string) error {
+		t.Fatalf("mark abandoned was called for %q", name)
+		return nil
+	}
+	got, _ := pressKey(t, model, 'm')
+	got, cmd := pressKey(t, got, 'j')
+	if cmd != nil || got.AwaitingProgress != "" || got.Selected != 1 {
+		t.Fatalf("m then j: awaiting = %q, selected = %d", got.AwaitingProgress, got.Selected)
+	}
+	got, _ = pressKey(t, got, 'm')
+	got, cmd = pressKey(t, got, 'a')
+	if cmd != nil || got.AwaitingProgress != "abandoned" {
+		t.Fatalf("m then a: awaiting = %q, want the abandon confirmation", got.AwaitingProgress)
+	}
+	if strings.Contains(got.View(), "merged?") {
+		t.Fatalf("the merge confirmation is still shown: %q", got.View())
+	}
+}
+
+func TestModelは終端のCellにmとaを押すとエラーにする(t *testing.T) {
+	for _, progress := range []string{"merged", "abandoned"} {
+		for _, key := range []rune{'m', 'a'} {
+			cell := viewTestCell("cell-1", "123", "default")
+			cell.Progress = progress
+			model := NewModel([]query.CellView{cell})
+			model.MarkMerged = func(name string) error {
+				t.Fatalf("mark merged was called for %q", name)
+				return nil
+			}
+			model.MarkAbandoned = model.MarkMerged
+			got, cmd := pressKey(t, model, key)
+			want := "cell 123 is already " + progress + " and cannot be changed"
+			if cmd != nil || got.AwaitingProgress != "" || got.Error != want {
+				t.Fatalf("%s/%c: error = %q, awaiting = %q", progress, key, got.Error, got.AwaitingProgress)
+			}
+		}
+	}
+}
+
+func TestModelはGoRootをmerge済みにも中止にもできない(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")})
+	model.Focus = FocusExit
+	for key, want := range map[rune]string{'m': "go root cannot be marked merged", 'a': "go root cannot be marked abandoned"} {
+		got, cmd := pressKey(t, model, key)
+		if cmd != nil || got.AwaitingProgress != "" || got.Error != want {
+			t.Fatalf("%c: error = %q, awaiting = %q", key, got.Error, got.AwaitingProgress)
+		}
+	}
+}
+
+func TestModelは進み具合キーの失敗をエラー欄に出し表示を変えない(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")})
+	model.MarkMerged = func(string) error { return errors.New("cell cannot move from merged to merged") }
+	got, _ := pressKey(t, model, 'm')
+	got, cmd := pressKey(t, got, 'm')
+	updated, _ := got.Update(cmd())
+	got = updated.(Model)
+	if got.Error != "cell cannot move from merged to merged" || got.Cells[0].Progress != "in_progress" {
+		t.Fatalf("error = %q, cells = %#v", got.Error, got.Cells)
+	}
+}
+
+func TestModelは進み具合キーのHandlerがなければエラーにする(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")})
+	got, _ := pressKey(t, model, 'a')
+	got, cmd := pressKey(t, got, 'a')
+	updated, _ := got.Update(cmd())
+	if got := updated.(Model); got.Error != "mark abandoned handler is not configured" || got.Cells[0].Progress != "in_progress" {
+		t.Fatalf("model = %#v", got)
+	}
+}
+
+func TestModelは進み具合キー処理中に一覧が変わっても同じ名前のCellを更新する(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default"), viewTestCell("cell-2", "456", "webapp")})
+	model.Selected = 1
+	model.MarkMerged = func(string) error { return nil }
+	got, _ := pressKey(t, model, 'm')
+	got, cmd := pressKey(t, got, 'm')
+	got.Cells = []query.CellView{viewTestCell("cell-2", "456", "webapp"), viewTestCell("cell-1", "123", "default")}
+	updated, _ := got.Update(cmd())
+	got = updated.(Model)
+	if got.Cells[0].Progress != "merged" || got.Cells[1].Progress != "in_progress" {
+		t.Fatalf("cells = %#v", got.Cells)
+	}
+}
+
+func TestModelはEnterで進み具合を変えない(t *testing.T) {
+	model := NewModel([]query.CellView{viewTestCell("cell-1", "123", "default")})
+	model.MarkMerged = func(name string) error {
+		t.Fatalf("mark merged was called for %q", name)
+		return nil
+	}
+	next, cmd := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil || next.(Model).Cells[0].Progress != "in_progress" {
+		t.Fatalf("enter changed the progress: %#v", next)
 	}
 }

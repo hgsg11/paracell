@@ -14,7 +14,11 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
 | `paracell pending` | Set the current cell to pending | Requires `PARACELL_CELL` |
 | `paracell ready` | Set the current cell to ready and optionally notify | Requires `PARACELL_CELL` |
-| `paracell clean <cell> [--force]` | Remove managed cell resources | Potentially destructive; current source requires a done cell |
+| `paracell review` | Move the current cell from in progress to in review | Requires `PARACELL_CELL`; run right after opening the PR |
+| `paracell implement` | Move the current cell from in review back to in progress | Requires `PARACELL_CELL`; run when going back to address review |
+| `paracell merged <cell>` | Mark a cell merged | Works outside a cell; cannot be undone |
+| `paracell abandon <cell>` | Mark a cell abandoned | Works outside a cell; cannot be undone |
+| `paracell clean <cell> [--force]` | Remove managed cell resources | Potentially destructive; requires a merged or abandoned cell |
 | `paracell exit` | Detach the current tmux client | Intended for managed sessions |
 | `paracell version` | Print build version information | Safe inspection command |
 
@@ -160,7 +164,9 @@ Keep YAML, Go-template, and shell quoting distinct.
 
 ## Runtime State
 
-- CellGroup is the aggregate root: it holds the shared issue, project, template, note, resource drivers, and creation state, and is stored on its own. CommanderCell refers to it by CellGroupID and retains the workspace commands and execution state (status, done); TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
+- CellGroup is the aggregate root: it holds the shared issue, project, template, note, resource drivers, and creation state, and is stored on its own. CommanderCell refers to it by CellGroupID and retains the workspace commands, the agent status (`pending` / `ready`), and the implementation progress; TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
+- Implementation progress is separate from the agent status: `in_progress` (the initial value; also while addressing review), `in_review` (PR open), `merged`, and `abandoned`. Only in_progress ⇄ in_review and in_progress / in_review → merged / abandoned are allowed; moving to the same progress fails, and merged and abandoned are terminal. `paracell ls` shows it in the `PROGRESS` column, and the TUI marks a cell merged with `m` `m` or abandoned with `a` `a`.
+- Records saved with the former `done` flag are not converted. Clean existing cells before upgrading.
 - A CellGroup ID, issue, or cell name addresses the cell for note updates, status changes, or cleanup. SQLite records in the two earlier formats (CellGroup nested in the CommanderCell, and the Commander-owned format before it) are read into the new model and rewritten transactionally on their next change, preserving existing resources and execution state.
 
 - `PARACELL_ROOT` points commands to the managed project root.

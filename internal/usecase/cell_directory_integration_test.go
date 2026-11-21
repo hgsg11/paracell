@@ -140,7 +140,7 @@ func TestSourceステージはCellのディレクトリをワークスペース�
 		t.Fatalf("worktrees:\n%s", worktrees)
 	}
 
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+	if err := ports.cells.Commanders[0].MarkMerged(); err != nil {
 		t.Fatal(err)
 	}
 	if err := clean.Execute(context.Background(), CleanCellInput{Cell: "42"}); err != nil {
@@ -161,7 +161,7 @@ func TestSourceステージはSourcePathごとにCellの同じ場所へWorktree�
 	assertExists(t, filepath.Join(cell, "frontend/package.json"))
 	assertExists(t, filepath.Join(cell, "backend/go.mod"))
 
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+	if err := ports.cells.Commanders[0].MarkMerged(); err != nil {
 		t.Fatal(err)
 	}
 	if err := clean.Execute(context.Background(), CleanCellInput{Cell: "42"}); err != nil {

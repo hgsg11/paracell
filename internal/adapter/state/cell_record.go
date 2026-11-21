@@ -36,7 +36,7 @@ type commanderRecord struct {
 	CellGroupID string          `json:"cellGroupId"`
 	Workspace   workspaceRecord `json:"workspace"`
 	Status      string          `json:"status"`
-	Done        bool            `json:"done"`
+	Progress    string          `json:"progress"`
 }
 
 type workspaceRecord struct {
@@ -86,7 +86,7 @@ func newCellRecord(group domain.CellGroup, commander domain.CommanderCell, targe
 		Commander: commanderRecord{
 			ID: commander.ID, CellGroupID: commander.CellGroupID,
 			Workspace: workspaceRecord{Driver: string(commander.Workspace.Driver)},
-			Status:    string(commander.Status), Done: commander.Done,
+			Status:    string(commander.Status), Progress: string(commander.Progress),
 		},
 	}
 	for _, window := range commander.Workspace.Windows {
@@ -130,7 +130,7 @@ func (r cellRecord) restore(version uint64) (domain.CellGroup, domain.CommanderC
 	for _, window := range r.Commander.Workspace.Windows {
 		windows = append(windows, domain.RestoredWorkspaceWindow{Name: window.Name, Command: window.Command})
 	}
-	commander, err := domain.CommanderCellFactory{}.Restore(r.Commander.ID, r.Commander.CellGroupID, r.Commander.Workspace.Driver, windows, r.Commander.Status, r.Commander.Done, version)
+	commander, err := domain.CommanderCellFactory{}.Restore(r.Commander.ID, r.Commander.CellGroupID, r.Commander.Workspace.Driver, windows, r.Commander.Status, r.Commander.Progress, version)
 	if err != nil {
 		return domain.CellGroup{}, domain.CommanderCell{}, nil, nil, err
 	}

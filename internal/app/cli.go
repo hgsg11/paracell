@@ -41,14 +41,24 @@ var (
 		}
 		return uc.Execute(ctx)
 	}
-	runMarkDone = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
-		uc := usecase.MarkCellDoneUseCase{Cells: cells}
-		_, err := uc.Execute(ctx, usecase.MarkCellDoneInput{Cell: cellName})
+	runMarkInReview = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
+		uc := usecase.MarkCellInReviewUseCase{Cells: cells}
+		_, err := uc.Execute(ctx, usecase.MarkCellInReviewInput{Cell: cellName})
 		return err
 	}
-	runMarkUndone = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
-		uc := usecase.MarkCellUndoneUseCase{Cells: cells}
-		_, err := uc.Execute(ctx, usecase.MarkCellUndoneInput{Cell: cellName})
+	runMarkInProgress = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
+		uc := usecase.MarkCellInProgressUseCase{Cells: cells}
+		_, err := uc.Execute(ctx, usecase.MarkCellInProgressInput{Cell: cellName})
+		return err
+	}
+	runMarkMerged = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
+		uc := usecase.MarkCellMergedUseCase{Cells: cells}
+		_, err := uc.Execute(ctx, usecase.MarkCellMergedInput{Cell: cellName})
+		return err
+	}
+	runMarkAbandoned = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
+		uc := usecase.MarkCellAbandonedUseCase{Cells: cells}
+		_, err := uc.Execute(ctx, usecase.MarkCellAbandonedInput{Cell: cellName})
 		return err
 	}
 	runPending = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
@@ -96,21 +106,25 @@ type CommandKind string
 const AppName = "paracell"
 
 const (
-	CommandInit     CommandKind = "init"
-	CommandFork     CommandKind = "fork"
-	CommandAnnotate CommandKind = "annotate"
-	CommandClean    CommandKind = "clean"
-	CommandList     CommandKind = "ls"
-	CommandPending  CommandKind = "pending"
-	CommandReady    CommandKind = "ready"
-	CommandRoot     CommandKind = "root"
-	CommandExit     CommandKind = "exit"
-	CommandView     CommandKind = "view"
-	CommandVersion  CommandKind = "version"
-	CommandHelp     CommandKind = "help"
+	CommandInit      CommandKind = "init"
+	CommandFork      CommandKind = "fork"
+	CommandAnnotate  CommandKind = "annotate"
+	CommandClean     CommandKind = "clean"
+	CommandList      CommandKind = "ls"
+	CommandPending   CommandKind = "pending"
+	CommandReady     CommandKind = "ready"
+	CommandReview    CommandKind = "review"
+	CommandImplement CommandKind = "implement"
+	CommandMerged    CommandKind = "merged"
+	CommandAbandon   CommandKind = "abandon"
+	CommandRoot      CommandKind = "root"
+	CommandExit      CommandKind = "exit"
+	CommandView      CommandKind = "view"
+	CommandVersion   CommandKind = "version"
+	CommandHelp      CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
 
 const (
 	forkUsage     = "usage: paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]"
@@ -174,6 +188,26 @@ func ParseCommand(args []string) (Command, error) {
 			return Command{}, errors.New("usage: paracell ready")
 		}
 		return Command{Kind: CommandReady}, nil
+	case "review":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell review")
+		}
+		return Command{Kind: CommandReview}, nil
+	case "implement":
+		if len(args) != 1 {
+			return Command{}, errors.New("usage: paracell implement")
+		}
+		return Command{Kind: CommandImplement}, nil
+	case "merged":
+		if len(args) != 2 || args[1] == "" {
+			return Command{}, errors.New("usage: paracell merged <cell>")
+		}
+		return Command{Kind: CommandMerged, Cell: args[1]}, nil
+	case "abandon":
+		if len(args) != 2 || args[1] == "" {
+			return Command{}, errors.New("usage: paracell abandon <cell>")
+		}
+		return Command{Kind: CommandAbandon, Cell: args[1]}, nil
 	case "exit":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell exit")
@@ -303,6 +337,22 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return err
 		}
 		return runReady(ctx, cellsAdapter, provider.NewFactory(quietRunner, workdir), cellName)
+	case CommandReview:
+		cellName, err := currentCell(invocationWorkdir)
+		if err != nil {
+			return err
+		}
+		return runMarkInReview(ctx, cellsAdapter, cellName)
+	case CommandImplement:
+		cellName, err := currentCell(invocationWorkdir)
+		if err != nil {
+			return err
+		}
+		return runMarkInProgress(ctx, cellsAdapter, cellName)
+	case CommandMerged:
+		return runMarkMerged(ctx, cellsAdapter, cmd.Cell)
+	case CommandAbandon:
+		return runMarkAbandoned(ctx, cellsAdapter, cmd.Cell)
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.NewFactory(runner, workdir))
 	case CommandExit:
@@ -338,9 +388,9 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			factory := provider.NewFactory(viewRunner, workdir)
 			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cellName, workdir)
 		}, func(cellName string) error {
-			return runMarkDone(ctx, cellsAdapter, cellName)
+			return runMarkMerged(ctx, cellsAdapter, cellName)
 		}, func(cellName string) error {
-			return runMarkUndone(ctx, cellsAdapter, cellName)
+			return runMarkAbandoned(ctx, cellsAdapter, cellName)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				factory := provider.NewFactory(viewRunner, workdir)

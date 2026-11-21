@@ -37,7 +37,7 @@ func newCellView(record cellRecord) query.CellView {
 	}
 	view := query.CellView{
 		Name: name, Label: label, Template: group.Template,
-		Status: record.Commander.Status, Done: record.Commander.Done,
+		Status: record.Commander.Status, Progress: record.Commander.Progress,
 		CreationStatus: group.Creation.Status,
 	}
 	if group.Creation.Status == string(domain.CreationFailed) {

@@ -347,7 +347,7 @@ func newUsecaseTestCell(t *testing.T, id string, issue string, templateName stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	cell, err := domain.CommanderCellFactory{}.Restore(id, group.ID, "tmux", nil, "ready", false, 1)
+	cell, err := domain.CommanderCellFactory{}.Restore(id, group.ID, "tmux", nil, "ready", "in_progress", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	if firstGroup.WorkspaceResource(first.Workspace).DisplayLabel != "API 実装" || first.Workspace.Windows[0].Command != "codex implement 118" || firstGroup.Creation.Status != domain.CreationReady {
 		t.Fatalf("commands/status/note not preserved: %#v / %#v", first, firstGroup)
 	}
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+	if err := ports.cells.Commanders[0].MarkMerged(); err != nil {
 		t.Fatal(err)
 	}
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
@@ -423,22 +423,25 @@ func TestCellGroupsPreserveTemplateLinksAndCleanOnlySelectedGroup(t *testing.T) 
 	}
 }
 
-func TestCleanCellは未完了のCellを消さない(t *testing.T) {
-	ports := newFakePorts()
-	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
-	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
-	if err := clean.Execute(context.Background(), CleanCellInput{Cell: "123"}); err == nil {
-		t.Fatal("an undone cell was cleaned")
-	}
-	if len(ports.cells.Groups) != 1 || len(ports.calls) != 0 {
-		t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
+func TestCleanCellは実装中とレビュー中のCellを消さない(t *testing.T) {
+	for _, progress := range []domain.CellProgress{domain.InProgress, domain.InReview} {
+		ports := newFakePorts()
+		ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
+		ports.cells.Commanders[0].Progress = progress
+		clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
+		if err := clean.Execute(context.Background(), CleanCellInput{Cell: "123"}); err == nil {
+			t.Fatalf("a %s cell was cleaned", progress)
+		}
+		if len(ports.cells.Groups) != 1 || len(ports.calls) != 0 {
+			t.Fatalf("cells = %#v, calls = %#v", ports.cells, ports.calls)
+		}
 	}
 }
 
 func TestCleanCellは見つからないCellを伝える(t *testing.T) {
 	ports := newFakePorts()
 	ports.cells = newUsecaseCellSet(t, [3]string{"cell-1", "123", "feat"})
-	ports.cells.Commanders[0].Done = true
+	ports.cells.Commanders[0].Progress = domain.Merged
 	clean := CleanCellUseCase{Cells: ports, SourceFactory: ports, CellDirectory: ports, ContainerFactory: ports, WorkspaceFactory: ports}
 	// The CommanderCell ID is not a Cell identifier.
 	for _, identifier := range []string{"missing", "cell-1"} {
@@ -535,7 +538,7 @@ func TestCleanCellは深いWorktreeから消してからCellのディレクト�
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+	if err := ports.cells.Commanders[0].MarkMerged(); err != nil {
 		t.Fatal(err)
 	}
 	ports.calls = nil
@@ -561,7 +564,7 @@ func TestCleanCellはWorktreeを消せなければCellのディレクトリを�
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ports.cells.Commanders[0].MarkDone(); err != nil {
+	if err := ports.cells.Commanders[0].MarkMerged(); err != nil {
 		t.Fatal(err)
 	}
 	ports.calls = nil

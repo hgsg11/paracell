@@ -23,17 +23,17 @@ var newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 	return tea.NewProgram(model, opts...)
 }
 
-// Run shows the Cell list. The enter, delete, markDone, and markUndone callbacks
+// Run shows the Cell list. The enter, delete, markMerged, and markAbandoned callbacks
 // receive the selected Cell name.
-func Run(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, delete func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (Result, error) {
+func Run(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, delete func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (Result, error) {
 	model := NewModel(cells, templates)
 	model.Logger, _ = ctx.Value(loggerContextKey{}).(*logging.Logger)
 	model.CurrentCell = currentCell
 	model.Reload = reload
 	model.Enter = enter
 	model.Delete = delete
-	model.MarkDone = markDone
-	model.MarkUndone = markUndone
+	model.MarkMerged = markMerged
+	model.MarkAbandoned = markAbandoned
 	model.Fork = fork
 	p := newProgram(model)
 	final, err := p.Run()

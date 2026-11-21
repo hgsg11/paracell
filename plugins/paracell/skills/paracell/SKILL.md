@@ -126,10 +126,11 @@ If the selected template's workspace windows do not consume `{{.Command}}`, chec
 - Ready notifications use the configured provider: `tmux`, `terminal-notifier` (macOS only), or `none` / omission. The Homebrew Cask installs the notification Formula dependency; do not add runtime installation or click navigation.
 - Use `paracell view` or the project root session to resume work; do not create a duplicate cell.
 - Use `paracell pending` and `paracell ready` only inside a cell with `PARACELL_CELL` set. The hooks `paracell init` installs already call them on `UserPromptSubmit` and `Stop` and do nothing outside a cell; do not add duplicate hooks by hand.
-- Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`. Clean removes the whole cell directory `.paracell/cells/<cell>/` (worktrees at `<source.path>` inside it plus files copied by `workspace.copy`) once every worktree is removed.
+- Track implementation progress separately from `pending` / `ready`: a new cell is `in_progress`; `paracell review` / `paracell implement` move the current cell between in progress and in review, and `paracell merged <cell>` / `paracell abandon <cell>` mark it merged or abandoned from outside the cell. Merged and abandoned cannot be undone, so mark them only when the user confirms the PR was merged or the work was dropped.
+- Resolve an exact cell with `paracell ls`, inspect its git status, and preserve work before `paracell clean`. Clean refuses a cell that is not merged or abandoned. Clean removes the whole cell directory `.paracell/cells/<cell>/` (worktrees at `<source.path>` inside it plus files copied by `workspace.copy`) once every worktree is removed.
 - A dependency container is shared, not copied: a cell owns only its attachment to that cell's network. Rollback and clean must preserve its original and other cell network attachments.
 - Do not hand-edit `.paracell/state.db` or manually remove managed worktrees, cell directories, sessions, containers, volumes, or networks while Paracell can manage them.
-- Do not assume `clean --force` bypasses the done guard; check the installed version.
+- Do not assume `clean --force` bypasses the merged-or-abandoned guard; check the installed version.
 
 ## Maintain the Skill
 

@@ -13,7 +13,7 @@ type CommanderCellFactory struct{}
 
 // Restore validates the raw persisted values and rebuilds a CommanderCell. It is
 // the only place that sets CommanderCell.Version.
-func (CommanderCellFactory) Restore(id, cellGroupID, workspaceDriver string, windows []RestoredWorkspaceWindow, status string, done bool, version uint64) (CommanderCell, error) {
+func (CommanderCellFactory) Restore(id, cellGroupID, workspaceDriver string, windows []RestoredWorkspaceWindow, status string, progress string, version uint64) (CommanderCell, error) {
 	driver, err := NewWorkspaceDriverType(workspaceDriver)
 	if err != nil {
 		return CommanderCell{}, err
@@ -30,6 +30,10 @@ func (CommanderCellFactory) Restore(id, cellGroupID, workspaceDriver string, win
 	if err != nil {
 		return CommanderCell{}, err
 	}
+	validatedProgress, err := NewCellProgress(progress)
+	if err != nil {
+		return CommanderCell{}, err
+	}
 	validatedVersion, err := NewCellVersion(version)
 	if err != nil {
 		return CommanderCell{}, fmt.Errorf("restore CommanderCell %q: %w", id, err)
@@ -38,6 +42,6 @@ func (CommanderCellFactory) Restore(id, cellGroupID, workspaceDriver string, win
 	if err != nil {
 		return CommanderCell{}, err
 	}
-	cell.Status, cell.Done, cell.Version = validatedStatus, done, validatedVersion
+	cell.Status, cell.Progress, cell.Version = validatedStatus, validatedProgress, validatedVersion
 	return cell, nil
 }
