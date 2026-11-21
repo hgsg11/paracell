@@ -21,7 +21,7 @@ AI agent を並行実行すると、同じファイル、同じcontainer名、�
 | Cell | 役割 |
 | --- | --- |
 | CellGroup | ID、Issue、Project、Template、Note、通知・Source・Container driver の共通情報 |
-| CommanderCell | CellGroup への参照、Workspace と `pending` / `ready`、`done` などの作業状態 |
+| CommanderCell | CellGroup への参照、Workspace と `pending` / `ready`（稼働状況）、実装の進み具合（[進み具合](#進み具合)） |
 | TargetCell | CellGroupID と、Source、Container のいずれかまたは両方を持つ開発対象 |
 | DependencyCell | CellGroupID と Compose service から解決した Container 依存環境 |
 
@@ -46,11 +46,34 @@ docker logs -f paracell-gateway
 curl http://gateway.paracell.localhost/metrics
 ```
 
-CommanderCell を使い終えたら、関連する TargetCell / DependencyCell の worktree、tmux workspace、container、network をまとめて片付けます。
+CommanderCell を使い終えたら、merge 済みか中止にしてから、関連する TargetCell / DependencyCell の worktree、tmux workspace、container、network をまとめて片付けます。
 
 ```sh
+paracell merged 123
 paracell clean 123
 ```
+
+### 進み具合
+
+CommanderCell は、AI agent の稼働状況（`pending` / `ready`）とは別の軸として、実装の進み具合を持ちます。
+
+| 段階 | 値 | 意味 |
+| --- | --- | --- |
+| 実装中 | `in_progress` | 作っている。レビューの指摘を直しているときもここ。Cell を作った直後の状態 |
+| レビュー中 | `in_review` | PR を出してレビューを待っている |
+| merge 済み | `merged` | base に入った |
+| 中止 | `abandoned` | merge せずにやめた |
+
+```text
+実装中 ⇄ レビュー中 ──→ merge 済み（戻せない）
+   └──────────┴──────→ 中止（戻せない）
+```
+
+- 許す遷移は図の矢印だけです。同じ段階への遷移や、merge 済み・中止からの遷移はエラーになります
+- `clean` できるのは merge 済みか中止の Cell だけです
+- PR の作成や merge は自動では検知しません。`paracell review` / `paracell implement` / `paracell merged` / `paracell abandon` か TUI で付けます
+
+> **アップデート時の注意**: 以前の版は進み具合の代わりに `done`（true / false）を保存していました。古い記録は変換しないため、アップデート前に既存の Cell を `paracell clean` で片付けてください。
 
 ## インストール
 
@@ -237,9 +260,9 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 ## TUI
 
 ```text
-  CELL       TEMPLATE  STATUS   DONE
-> API実装中  feat      ready    [ ]
-  456   fix       pending  [x]
+  CELL       TEMPLATE  PROGRESS STATUS
+> API実装中  feat      impl
+  456        fix       review   ..
 
   go root
 ```
@@ -247,11 +270,14 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 - `j` / `k`: 移動
 - `tab`: cell 一覧と template 一覧のフォーカス切り替え
 - `l`: cell に入る
-- `enter`: done を切り替える
+- `m` `m`: merge 済みにする（戻せないので 2 回押して確認する）
+- `a` `a`: 中止にする（戻せないので 2 回押して確認する）
 - `d` `d`: clean
 - template 一覧で `y` `y`: issue 番号入力モード
 - issue 番号入力後 `enter`: fork
 - `q`: 閉じる
+
+進み具合は `impl`（実装中）、`review`（レビュー中）、`merged`（merge 済み）、`abandon`（中止）と表示します。merge 済み・中止の Cell で `m` や `a` を押すとエラーを表示します。
 
 TUI から実行した Git、Docker、tmux などの標準出力・標準エラーと Paracell 自身のエラーは、画面下部の共通ログ領域へリアルタイム表示されます。長い行と複数行のエラーは画面幅で折り返され、表示は常に最新行へ追従します。
 
@@ -321,6 +347,10 @@ paracell ls
 paracell clean <cell> [--force]
 paracell pending
 paracell ready
+paracell review
+paracell implement
+paracell merged <cell>
+paracell abandon <cell>
 paracell exit
 paracell version
 paracell --version
@@ -330,9 +360,11 @@ paracell --version
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
 - `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
-- `ls`: cell一覧と作成状態、work status、done状態を出す。failed cellでは失敗工程と直近errorも1行で表示する
-- `clean`: cell の worktree / Cell のディレクトリ（コピーしたファイルを含む）/ container / session を片付ける
+- `ls`: cell一覧と作成状態、work status、進み具合（`PROGRESS`）を出す。failed cellでは失敗工程と直近errorも1行で表示する
+- `clean`: cell の worktree / Cell のディレクトリ（コピーしたファイルを含む）/ container / session を片付ける。merge 済みか中止の cell だけを片付けられる
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
+- `review` / `implement`: `PARACELL_CELL` の進み具合を、実装中からレビュー中に、レビュー中から実装中に変える
+- `merged` / `abandon`: 指定した cell を merge 済み / 中止にする。Cell の外からも使える。戻せない
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
 note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は CellGroup 全体の表示専用情報であり、cell の指定には CommanderCell ID、CellGroup ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。

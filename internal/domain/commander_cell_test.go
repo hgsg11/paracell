@@ -15,9 +15,9 @@ func newTestCommanderCell(t *testing.T) CommanderCell {
 	return cell
 }
 
-func TestNewCommanderCellはReadyで未完了かつ版なしで作る(t *testing.T) {
+func TestNewCommanderCellはReadyで実装中かつ版なしで作る(t *testing.T) {
 	cell := newTestCommanderCell(t)
-	if cell.ID != "commander" || cell.CellGroupID != "group" || cell.Status != Ready || cell.Done || cell.Version != 0 {
+	if cell.ID != "commander" || cell.CellGroupID != "group" || cell.Status != Ready || cell.Progress != InProgress || cell.Version != 0 {
 		t.Fatalf("cell = %#v", cell)
 	}
 	if cell.Workspace.Driver != Tmux || len(cell.Workspace.Windows) != 1 || cell.Workspace.Windows[0].Command != "codex" {
@@ -62,48 +62,66 @@ func TestMarkPendingとMarkReadyは同じ状態でも成功する(t *testing.T) 
 	}
 }
 
-func TestMarkDoneは未完了のCellだけを完了にする(t *testing.T) {
-	cell := newTestCommanderCell(t)
-	if err := cell.MarkDone(); err != nil {
-		t.Fatal(err)
+func TestCommanderCellの進み具合は決めた遷移だけを許す(t *testing.T) {
+	marks := map[CellProgress]func(*CommanderCell) error{
+		InProgress: (*CommanderCell).MarkInProgress,
+		InReview:   (*CommanderCell).MarkInReview,
+		Merged:     (*CommanderCell).MarkMerged,
+		Abandoned:  (*CommanderCell).MarkAbandoned,
 	}
-	if !cell.Done {
-		t.Fatal("cell was not marked done")
+	allowed := map[[2]CellProgress]bool{
+		{InProgress, InReview}:  true,
+		{InReview, InProgress}:  true,
+		{InProgress, Merged}:    true,
+		{InReview, Merged}:      true,
+		{InProgress, Abandoned}: true,
+		{InReview, Abandoned}:   true,
 	}
-	if err := cell.MarkDone(); err == nil {
-		t.Fatal("marking a done cell done returned no error")
-	}
-	if !cell.Done {
-		t.Fatal("a rejected MarkDone changed the state")
+	for _, from := range []CellProgress{InProgress, InReview, Merged, Abandoned} {
+		for _, to := range []CellProgress{InProgress, InReview, Merged, Abandoned} {
+			cell := newTestCommanderCell(t)
+			cell.Progress = from
+			err := marks[to](&cell)
+			if allowed[[2]CellProgress{from, to}] {
+				if err != nil || cell.Progress != to {
+					t.Fatalf("%s -> %s: err = %v, progress = %s", from, to, err, cell.Progress)
+				}
+				continue
+			}
+			if err == nil || cell.Progress != from {
+				t.Fatalf("%s -> %s: err = %v, progress = %s, want rejected", from, to, err, cell.Progress)
+			}
+		}
 	}
 }
 
-func TestMarkUndoneは完了済みのCellだけを未完了に戻す(t *testing.T) {
-	cell := newTestCommanderCell(t)
-	if err := cell.MarkUndone(); err == nil {
-		t.Fatal("marking an undone cell undone returned no error")
-	}
-	if cell.Done {
-		t.Fatal("a rejected MarkUndone changed the state")
-	}
-	cell.Done = true
-	if err := cell.MarkUndone(); err != nil {
-		t.Fatal(err)
-	}
-	if cell.Done {
-		t.Fatal("cell was not marked undone")
+func TestCellProgressはmerge済みと中止だけを終端にする(t *testing.T) {
+	for progress, want := range map[CellProgress]bool{InProgress: false, InReview: false, Merged: true, Abandoned: true} {
+		if progress.IsTerminal() != want {
+			t.Fatalf("%s.IsTerminal() = %t", progress, !want)
+		}
 	}
 }
 
-func TestEnsureCanBeCleanedは完了済みのCellだけを許す(t *testing.T) {
-	cell := newTestCommanderCell(t)
-	if err := cell.EnsureCanBeCleaned(); err == nil {
-		t.Fatal("an undone cell can be cleaned")
+func TestNewCellProgressは決めた値だけを受け付ける(t *testing.T) {
+	for _, value := range []string{"in_progress", "in_review", "merged", "abandoned"} {
+		if _, err := NewCellProgress(value); err != nil {
+			t.Fatalf("NewCellProgress(%q): %v", value, err)
+		}
 	}
-	if err := cell.MarkDone(); err != nil {
-		t.Fatal(err)
+	for _, value := range []string{"", "done", "IN_PROGRESS"} {
+		if _, err := NewCellProgress(value); err == nil {
+			t.Fatalf("NewCellProgress(%q) returned no error", value)
+		}
 	}
-	if err := cell.EnsureCanBeCleaned(); err != nil {
-		t.Fatalf("a done cell cannot be cleaned: %v", err)
+}
+
+func TestEnsureCanBeCleanedはmerge済みか中止のCellだけを許す(t *testing.T) {
+	for progress, cleanable := range map[CellProgress]bool{InProgress: false, InReview: false, Merged: true, Abandoned: true} {
+		cell := newTestCommanderCell(t)
+		cell.Progress = progress
+		if err := cell.EnsureCanBeCleaned(); (err == nil) != cleanable {
+			t.Fatalf("%s: EnsureCanBeCleaned() = %v, want cleanable %t", progress, err, cleanable)
+		}
 	}
 }

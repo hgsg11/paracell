@@ -85,7 +85,7 @@ const currentGroupRecord = `{
   "cellGroup": {"ID":"grp","Note":"current note","Issue":"43","Project":"sample","Template":"feat","NotificationDriver":"tmux","SourceDriver":"git","ContainerDriver":"docker"},
   "workspace": {"Driver":"tmux","Windows":[{"Name":"agent","Command":"codex implement"}]},
   "creation": {"Status":"failed","FailedStage":"containers","LastError":"docker failed"},
-  "status": "pending", "done": true
+  "status": "pending", "progress": "in_review"
  },
  "targets": [{"ID":"api","CellGroupID":"grp","Name":"api","Source":{"Path":".","Base":"main","Branch":"feat/43"},"Containers":[{"Network":["net"],"SourceContainer":"web","Mode":"target"}]}],
  "dependencies": [{"ID":"db","CellGroupID":"grp","Name":"database","Container":{"Network":["net"],"SourceContainer":"postgres","Mode":"dependency"}}]
@@ -97,7 +97,7 @@ const legacyGroupRecord = `{
   "version": 3, "id": "old", "issue": "42", "project": "sample", "note": "old note", "template": "feat",
   "workspace": {"Driver":"tmux","Windows":[{"Name":"agent","Command":"codex implement"}]},
   "targets":["api"], "dependencies":["db"], "sourceDriver":"git", "containerDriver":"docker", "notificationDriver":"none",
-  "creation":{"Status":"ready"}, "status":"pending", "done":true
+  "creation":{"Status":"ready"}, "status":"pending", "progress":"merged"
  },
  "targets":[{"ID":"api","CommanderID":"old","Name":"api","Source":{"Path":".","Base":"main","Branch":"feat/42"},"Dependencies":["db"]}],
  "dependencies":[{"ID":"db","CommanderID":"old","Name":"database","Container":{"SourceContainer":"postgres","Mode":"dependency","Network":["original"]}}]
@@ -142,7 +142,7 @@ func TestCurrentFormatRecordLoadsAndUpdatesInNewFormat(t *testing.T) {
 	if group.ID != "grp" || group.Issue != "43" || group.Note != "current note" || group.NotificationDriver != domain.TmuxNotification || group.ContainerDriver != domain.Docker || group.Creation != wantCreation {
 		t.Fatalf("CellGroup changed: %#v", group)
 	}
-	if cell.ID != "cur" || cell.CellGroupID != "grp" || cell.Version != 2 || cell.Status != domain.Pending || !cell.Done || cell.Workspace.Windows[0].Command != "codex implement" {
+	if cell.ID != "cur" || cell.CellGroupID != "grp" || cell.Version != 2 || cell.Status != domain.Pending || cell.Progress != domain.InReview || cell.Workspace.Windows[0].Command != "codex implement" {
 		t.Fatalf("CommanderCell changed: %#v", cell)
 	}
 	if set.Targets[0].CellGroupID != "grp" || set.Targets[0].Containers[0].Network[0] != "net" || set.Dependencies[0].Container.SourceContainer != "postgres" {
@@ -156,7 +156,7 @@ func TestCurrentFormatRecordLoadsAndUpdatesInNewFormat(t *testing.T) {
 		t.Fatalf("unchanged row was rewritten: %s", got)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
-		return set, set.Commanders[0].MarkUndone()
+		return set, set.Commanders[0].MarkInProgress()
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestCurrentFormatRecordLoadsAndUpdatesInNewFormat(t *testing.T) {
 		t.Fatalf("not rewritten in the new format: %v (version %d)", record, version)
 	}
 	set, err = adapter.LoadCells(ctx)
-	if err != nil || set.Commanders[0].Done || set.Groups[0].Note != "current note" || set.Groups[0].Creation != wantCreation || len(set.Targets) != 1 || len(set.Dependencies) != 1 {
+	if err != nil || set.Commanders[0].Progress != domain.InProgress || set.Groups[0].Note != "current note" || set.Groups[0].Creation != wantCreation || len(set.Targets) != 1 || len(set.Dependencies) != 1 {
 		t.Fatalf("rewritten row = %#v, %v", set, err)
 	}
 }
@@ -182,7 +182,7 @@ func TestLegacyCommanderRecordLoadsAndUpdatesAsCellGroup(t *testing.T) {
 	if group.ID != "old" || group.Note != "old note" || group.Issue != "42" || group.Creation.Status != domain.CreationReady {
 		t.Fatalf("legacy CellGroup changed: %#v", group)
 	}
-	if cell.CellGroupID != "old" || cell.Version != 3 || cell.Status != domain.Pending || !cell.Done || cell.Workspace.Windows[0].Command != "codex implement" {
+	if cell.CellGroupID != "old" || cell.Version != 3 || cell.Status != domain.Pending || cell.Progress != domain.Merged || cell.Workspace.Windows[0].Command != "codex implement" {
 		t.Fatalf("legacy runtime information changed: %#v", cell)
 	}
 	if set.Targets[0].CellGroupID != "old" || set.Dependencies[0].CellGroupID != "old" || set.Dependencies[0].Container.Network[0] != "original" {
@@ -198,7 +198,7 @@ func TestLegacyCommanderRecordLoadsAndUpdatesAsCellGroup(t *testing.T) {
 		t.Fatalf("not rewritten: %s", data)
 	}
 	set, err = adapter.LoadCells(ctx)
-	if err != nil || set.Groups[0].Note != "new note" || set.Commanders[0].Version != 4 || !set.Commanders[0].Done || len(set.Targets) != 1 {
+	if err != nil || set.Groups[0].Note != "new note" || set.Commanders[0].Version != 4 || set.Commanders[0].Progress != domain.Merged || len(set.Targets) != 1 {
 		t.Fatalf("updated group = %#v, error = %v", set, err)
 	}
 }

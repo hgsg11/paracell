@@ -332,6 +332,32 @@ func TestReadyコマンドを解析できる(t *testing.T) {
 	}
 }
 
+func Test進み具合のコマンドを解析できる(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		kind CommandKind
+		cell string
+	}{
+		{[]string{"review"}, CommandReview, ""},
+		{[]string{"implement"}, CommandImplement, ""},
+		{[]string{"merged", "123"}, CommandMerged, "123"},
+		{[]string{"abandon", "123"}, CommandAbandon, "123"},
+	} {
+		cmd, err := ParseCommand(tc.args)
+		if err != nil {
+			t.Fatalf("%v: %v", tc.args, err)
+		}
+		if cmd.Kind != tc.kind || cmd.Cell != tc.cell {
+			t.Fatalf("%v: command = %#v", tc.args, cmd)
+		}
+	}
+	for _, args := range [][]string{{"review", "123"}, {"implement", "123"}, {"merged"}, {"merged", ""}, {"merged", "1", "2"}, {"abandon"}} {
+		if _, err := ParseCommand(args); err == nil {
+			t.Fatalf("%v returned no error", args)
+		}
+	}
+}
+
 func TestExitコマンドを解析できる(t *testing.T) {
 	cmd, err := ParseCommand([]string{"exit"})
 
@@ -364,7 +390,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|exit|version|help]\n"
+	want := "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -459,7 +485,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\nPostgreSQL案\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\nPostgreSQL案\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -506,7 +532,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -534,7 +560,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -556,7 +582,7 @@ func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootの
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tfalse\t-\t-\n456\twebapp\tready\tready\tfalse\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -573,7 +599,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -611,7 +637,7 @@ templates:
 	defer func() { runClean = originalClean }()
 
 	var got []query.CellView
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -619,7 +645,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		got = append([]query.CellView(nil), cells...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -637,8 +663,8 @@ templates:
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
 	want := []query.CellView{
-		{Name: "123", Label: "123", Template: "default", Status: "ready", CreationStatus: "ready"},
-		{Name: "456", Label: "456", Template: "webapp", Status: "ready", CreationStatus: "ready"},
+		{Name: "123", Label: "123", Template: "default", Status: "ready", Progress: "in_progress", CreationStatus: "ready"},
+		{Name: "456", Label: "456", Template: "webapp", Status: "ready", Progress: "in_progress", CreationStatus: "ready"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cells = %#v, want %#v", got, want)
@@ -691,7 +717,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -699,7 +725,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		gotTemplates = append([]string(nil), templates...)
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -737,7 +763,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -745,7 +771,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		gotCurrentCell = currentCell
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -805,7 +831,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default").Commander, nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -814,7 +840,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		cmd := fork("123", "default")
 		if cmd == nil {
 			t.Fatal("fork handlerがコマンドを返さなかった")
@@ -887,7 +913,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default").Commander, nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -896,7 +922,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		cmd := fork("123", "default")
 		if cmd == nil {
 			t.Fatal("fork handlerがコマンドを返さなかった")
@@ -952,14 +978,14 @@ templates: {}
 		gotProject = loaded.ProjectName
 		return nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		t.Fatal("viewが呼ばれた")
 		return viewadapter.Result{}, nil
@@ -1049,7 +1075,7 @@ templates:
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1058,7 +1084,7 @@ templates:
 		_ = enter
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		called = true
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
@@ -1099,14 +1125,14 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
 		_ = reload
 		_ = exit
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		cmd := enter(cells[0].Name)
 		if cmd == nil {
@@ -1162,14 +1188,14 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
 		_ = reload
 		_ = enter
 		_ = exit
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		if err := clean(cells[0].Name); err != nil {
 			t.Fatalf("cleanでエラーが返った: %v", err)
@@ -1195,7 +1221,7 @@ templates: {}
 	}
 }
 
-func TestRunはViewの完了と完了の取り消しをCell名でStateに保存する(t *testing.T) {
+func TestRunはViewのmerge済みと中止をCell名でStateに保存する(t *testing.T) {
 	t.Setenv("PARACELL_ROOT", "")
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
@@ -1208,31 +1234,25 @@ func TestRunはViewの完了と完了の取り消しをCell名でStateに保存�
 	originalView := runView
 	defer func() { runView = originalView }()
 
-	var doneViews, undoneViews []query.CellView
+	var views []query.CellView
 	var errs []error
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
-		errs = append(errs, markDone("456"))
-		doneViews, _ = reload()
-		errs = append(errs, markDone("456"), markUndone("456"))
-		undoneViews, _ = reload()
-		errs = append(errs, markUndone("456"))
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+		errs = append(errs, markMerged("456"), markAbandoned("123"))
+		views, _ = reload()
+		errs = append(errs, markMerged("456"), markAbandoned("456"), markMerged("123"))
 		return viewadapter.Result{Action: viewadapter.ActionQuit}, nil
 	}
 
 	if err := Run(context.Background(), []string{"view"}, dir); err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	if errs[0] != nil || errs[1] == nil || errs[2] != nil || errs[3] == nil {
+	if errs[0] != nil || errs[1] != nil || errs[2] == nil || errs[3] == nil || errs[4] == nil {
 		t.Fatalf("errors = %v", errs)
 	}
-	if len(doneViews) != 2 || doneViews[0].Done || !doneViews[1].Done {
-		t.Fatalf("after done = %#v", doneViews)
-	}
-	if len(undoneViews) != 2 || undoneViews[1].Done {
-		t.Fatalf("after undone = %#v", undoneViews)
+	if len(views) != 2 || views[0].Progress != "abandoned" || views[1].Progress != "merged" {
+		t.Fatalf("views = %#v", views)
 	}
 }
-
 func TestRunはViewのGoRoot選択でRootWorkspaceEnterを実行する(t *testing.T) {
 	dir := t.TempDir()
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
@@ -1269,7 +1289,7 @@ templates:
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, clean func(string) error, markDone func(string) error, markUndone func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1277,7 +1297,7 @@ templates:
 		_ = reload
 		_ = enter
 		_ = clean
-		_ = markDone
+		_ = markMerged
 		_ = fork
 		if err := goRoot(); err != nil {
 			t.Fatalf("goRootでエラーが返った: %v", err)
@@ -1441,6 +1461,78 @@ func TestRunはPendingでPARACELL_CELLのStatusを更新する(t *testing.T) {
 	t.Setenv("PARACELL_CELL", "missing")
 	if err := Run(context.Background(), []string{"pending"}, dir); err == nil || !strings.Contains(err.Error(), `cell "missing" not found`) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestRunはReviewとImplementでPARACELL_CELLの進み具合を更新する(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PARACELL_CELL", "456")
+	t.Setenv("PARACELL_ROOT", "")
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	if err := saveAppCells(store, appTestCell("cell-1", "123", "default"), appTestCell("cell-2", "456", "webapp")); err != nil {
+		t.Fatal(err)
+	}
+	progress := func() [2]domain.CellProgress {
+		t.Helper()
+		cells, err := store.LoadCells(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return [2]domain.CellProgress{cells.Commanders[0].Progress, cells.Commanders[1].Progress}
+	}
+	if err := Run(context.Background(), []string{"review"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := progress(); got != [2]domain.CellProgress{domain.InProgress, domain.InReview} {
+		t.Fatalf("after review = %v", got)
+	}
+	if err := Run(context.Background(), []string{"review"}, dir); err == nil {
+		t.Fatal("review on an in-review cell returned no error")
+	}
+	if err := Run(context.Background(), []string{"implement"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := progress(); got != [2]domain.CellProgress{domain.InProgress, domain.InProgress} {
+		t.Fatalf("after implement = %v", got)
+	}
+	t.Setenv("PARACELL_CELL", "")
+	for _, command := range []string{"review", "implement"} {
+		if err := Run(context.Background(), []string{command}, dir); err == nil || err.Error() != "PARACELL_CELL is required" {
+			t.Fatalf("%s outside a cell: error = %v", command, err)
+		}
+	}
+}
+
+func TestRunはMergedとAbandonをCellの外から名前で記録しclean可能にする(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("PARACELL_CELL", "")
+	t.Setenv("PARACELL_ROOT", "")
+	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
+	if err := saveAppCells(store, appTestCell("cell-1", "123", "default"), appTestCell("cell-2", "456", "webapp")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"merged", "123"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), []string{"abandon", "456"}, dir); err != nil {
+		t.Fatal(err)
+	}
+	cells, err := store.LoadCells(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cells.Commanders[0].Progress != domain.Merged || cells.Commanders[1].Progress != domain.Abandoned {
+		t.Fatalf("cells = %#v", cells.Commanders)
+	}
+	for _, args := range [][]string{{"abandon", "123"}, {"merged", "456"}, {"merged", "missing"}} {
+		if err := Run(context.Background(), args, dir); err == nil {
+			t.Fatalf("%v returned no error", args)
+		}
+	}
+	for _, commander := range cells.Commanders {
+		if err := commander.EnsureCanBeCleaned(); err != nil {
+			t.Fatalf("%s cannot be cleaned: %v", commander.ID, err)
+		}
 	}
 }
 

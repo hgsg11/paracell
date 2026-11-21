@@ -15,11 +15,15 @@ const (
 
 func FormatCellList(cells []query.CellView) string {
 	var b strings.Builder
-	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tDONE\tFAILED_STAGE\tLAST_ERROR\n")
+	b.WriteString("CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n")
 	for _, cell := range cells {
 		status := statusReady
 		if cell.Status == statusPending {
 			status = statusPending
+		}
+		progress := cell.Progress
+		if progress == "" {
+			progress = "-"
 		}
 		failedStage := "-"
 		lastError := "-"
@@ -27,8 +31,8 @@ func FormatCellList(cells []query.CellView) string {
 			failedStage = cell.FailedStage
 			lastError = singleLine(cell.LastError, 120)
 		}
-		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
-			cell.Label, cell.Template, cell.CreationStatus, status, cell.Done, failedStage, lastError)
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			cell.Label, cell.Template, cell.CreationStatus, status, progress, failedStage, lastError)
 	}
 	return b.String()
 }

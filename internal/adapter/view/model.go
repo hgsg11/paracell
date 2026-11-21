@@ -35,6 +35,11 @@ const (
 const (
 	cellStatusPending = "pending"
 	cellStatusReady   = "ready"
+
+	cellProgressInProgress = "in_progress"
+	cellProgressInReview   = "in_review"
+	cellProgressMerged     = "merged"
+	cellProgressAbandoned  = "abandoned"
 )
 
 // Result reports the action that ended the view and the name of the Cell it acted on.
@@ -57,24 +62,28 @@ type Model struct {
 	StatusFrame      int
 	Quitting         bool
 	AwaitingDelete   bool
-	AwaitingFork     bool
-	ForksInProgress  int
-	IssueInputActive bool
-	ForkTemplate     string
-	IssueInput       string
-	Error            string
-	Logs             []logging.Entry
-	Width            int
-	Height           int
-	Result           Result
-	// Enter, Delete, MarkDone, and MarkUndone receive the Cell name.
-	Enter      func(cellName string) tea.Cmd
-	Fork       func(issue string, template string) tea.Cmd
-	Delete     func(cellName string) error
-	MarkDone   func(cellName string) error
-	MarkUndone func(cellName string) error
-	Reload     func() ([]query.CellView, error)
-	Logger     *logging.Logger
+	// AwaitingProgress is the progress, merged or abandoned, waiting for the
+	// confirming second key press on the Cell named AwaitingProgressCell.
+	AwaitingProgress     string
+	AwaitingProgressCell string
+	AwaitingFork         bool
+	ForksInProgress      int
+	IssueInputActive     bool
+	ForkTemplate         string
+	IssueInput           string
+	Error                string
+	Logs                 []logging.Entry
+	Width                int
+	Height               int
+	Result               Result
+	// Enter, Delete, MarkMerged, and MarkAbandoned receive the Cell name.
+	Enter         func(cellName string) tea.Cmd
+	Fork          func(issue string, template string) tea.Cmd
+	Delete        func(cellName string) error
+	MarkMerged    func(cellName string) error
+	MarkAbandoned func(cellName string) error
+	Reload        func() ([]query.CellView, error)
+	Logger        *logging.Logger
 }
 
 func NewModel(cells []query.CellView, templates ...[]string) Model {
@@ -170,6 +179,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+		if m.AwaitingProgress != "" {
+			progress, name := m.AwaitingProgress, m.AwaitingProgressCell
+			m.AwaitingProgress, m.AwaitingProgressCell = "", ""
+			if key == progressKey(progress) {
+				return m, m.markProgressCmd(name, progress)
+			}
+		}
 		switch key {
 		case "h":
 			switch m.Focus {
@@ -223,9 +239,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.AwaitingFork = true
 				return m, nil
 			}
-		case "enter":
+		case "m", "a":
+			// Merged and abandoned cannot be undone, so the same key must be
+			// pressed twice.
+			progress := cellProgressMerged
+			if key == "a" {
+				progress = cellProgressAbandoned
+			}
 			if m.Focus == FocusExit {
-				m.setError("go root cannot be marked done")
+				m.setError("go root cannot be marked " + progress)
 				return m, nil
 			}
 			if m.Focus != FocusCells {
@@ -235,18 +257,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setError("no cells available")
 				return m, nil
 			}
-			// One key toggles completion: an undone Cell is marked done, a done Cell undone.
 			cell := m.Cells[m.Selected]
-			change, handlerName := m.MarkDone, "mark done"
-			if cell.Done {
-				change, handlerName = m.MarkUndone, "mark undone"
+			if isTerminalProgress(cell.Progress) {
+				m.setError(fmt.Sprintf("cell %s is already %s and cannot be changed", cell.Name, cell.Progress))
+				return m, nil
 			}
-			return m, func() tea.Msg {
-				if change == nil {
-					return markDoneResultMsg{name: cell.Name, err: errors.New(handlerName + " handler is not configured")}
-				}
-				return markDoneResultMsg{name: cell.Name, done: !cell.Done, err: change(cell.Name)}
-			}
+			m.AwaitingProgress, m.AwaitingProgressCell = progress, cell.Name
+			return m, nil
 		case " ":
 			if m.Focus == FocusExit {
 				m.Result = Result{Action: ActionGoRoot}
@@ -291,7 +308,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.Result = Result{Action: ActionDelete, Cell: msg.name}
 		return m, nil
-	case markDoneResultMsg:
+	case markProgressResultMsg:
 		if msg.err != nil {
 			m.setError(msg.err.Error())
 			return m, nil
@@ -303,7 +320,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Show the change at once; the periodic reload corrects any other drift.
 		m.Cells = append([]query.CellView(nil), m.Cells...)
-		m.Cells[index].Done = msg.done
+		m.Cells[index].Progress = msg.progress
 		return m, nil
 	case forkResultMsg:
 		if m.ForksInProgress > 0 {
@@ -359,6 +376,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitLogCmd()
 	}
 	return m, nil
+}
+
+// markProgressCmd runs the handler that marks the Cell merged or abandoned.
+func (m Model) markProgressCmd(name string, progress string) tea.Cmd {
+	change, handlerName := m.MarkMerged, "mark merged"
+	if progress == cellProgressAbandoned {
+		change, handlerName = m.MarkAbandoned, "mark abandoned"
+	}
+	return func() tea.Msg {
+		if change == nil {
+			return markProgressResultMsg{name: name, err: errors.New(handlerName + " handler is not configured")}
+		}
+		return markProgressResultMsg{name: name, progress: progress, err: change(name)}
+	}
+}
+
+func progressKey(progress string) string {
+	if progress == cellProgressAbandoned {
+		return "a"
+	}
+	return "m"
+}
+
+func isTerminalProgress(progress string) bool {
+	return progress == cellProgressMerged || progress == cellProgressAbandoned
+}
+
+// renderCellProgress shortens the progress so that the Cell row stays narrow.
+func renderCellProgress(progress string) string {
+	label := "-"
+	switch progress {
+	case cellProgressInProgress:
+		label = "impl"
+	case cellProgressInReview:
+		label = "review"
+	case cellProgressMerged:
+		label = "merged"
+	case cellProgressAbandoned:
+		label = "abandon"
+	}
+	return padded(label, lipgloss.Width("abandon"))
 }
 
 // cellIndex returns the position of the Cell with the given name, or -1.
@@ -449,11 +507,7 @@ func renderCellsPane(m Model, width int, height int) []string {
 	} else {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
-			done := "[ ]"
-			if cell.Done {
-				done = "[x]"
-			}
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), done, renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), renderCellProgress(cell.Progress), renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
 	selected := m.Selected
@@ -581,6 +635,9 @@ func renderSelectedLine(value string) string {
 func renderIssueInputLine(m Model) string {
 	if m.IssueInputActive {
 		return "issue: " + m.IssueInput
+	}
+	if m.AwaitingProgress != "" {
+		return fmt.Sprintf("mark %s %s? press %s again (cannot be undone)", m.AwaitingProgressCell, m.AwaitingProgress, progressKey(m.AwaitingProgress))
 	}
 	return ""
 }
@@ -905,12 +962,12 @@ type deleteResultMsg struct {
 	err  error
 }
 
-// markDoneResultMsg reports the result of the completion key. done is the
-// completion state the Cell has when err is nil.
-type markDoneResultMsg struct {
-	name string
-	done bool
-	err  error
+// markProgressResultMsg reports the result of the merged or abandoned key.
+// progress is the progress the Cell has when err is nil.
+type markProgressResultMsg struct {
+	name     string
+	progress string
+	err      error
 }
 
 type refreshMsg struct{}

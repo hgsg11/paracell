@@ -36,9 +36,9 @@ func TestListCellViewsは3つの形式の行を一覧の順で読む(t *testing.
 		t.Fatal(err)
 	}
 	want := []query.CellView{
-		{Name: "feat-44-api", Label: "feat-44-api", Template: "feat", Status: "ready", Done: false, CreationStatus: "creating"},
-		{Name: "43", Label: "current note", Template: "feat", Status: "pending", Done: true, CreationStatus: "failed", FailedStage: "containers", LastError: "docker failed"},
-		{Name: "42", Label: "old note", Template: "feat", Status: "pending", Done: true, CreationStatus: "ready"},
+		{Name: "feat-44-api", Label: "feat-44-api", Template: "feat", Status: "ready", Progress: "in_progress", CreationStatus: "creating"},
+		{Name: "43", Label: "current note", Template: "feat", Status: "pending", Progress: "in_review", CreationStatus: "failed", FailedStage: "containers", LastError: "docker failed"},
+		{Name: "42", Label: "old note", Template: "feat", Status: "pending", Progress: "merged", CreationStatus: "ready"},
 	}
 	if !reflect.DeepEqual(views, want) {
 		t.Fatalf("views = %#v, want %#v", views, want)

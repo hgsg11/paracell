@@ -11,7 +11,7 @@ type CommanderCell struct {
 	CellGroupID string
 	Workspace   Workspace
 	Status      CellStatus
-	Done        bool
+	Progress    CellProgress
 	Version     CellVersion
 }
 
@@ -24,7 +24,7 @@ func NewCommanderCell(id string, cellGroupID string, workspace Workspace) (Comma
 	return CommanderCell{
 		ID: id, CellGroupID: cellGroupID,
 		Workspace: NewWorkspace(workspace.Driver, workspace.Windows),
-		Status:    Ready,
+		Status:    Ready, Progress: InProgress,
 	}, nil
 }
 
@@ -36,25 +36,40 @@ func (c *CommanderCell) MarkReady() {
 	c.Status = Ready
 }
 
+// EnsureCanBeCleaned allows cleaning only a merged or abandoned Cell.
 func (c CommanderCell) EnsureCanBeCleaned() error {
-	if !c.Done {
-		return fmt.Errorf("完了済みではないので消せない")
+	if !c.Progress.IsTerminal() {
+		return fmt.Errorf("merge 済みでも中止でもないので消せない (progress: %s)", c.Progress)
 	}
 	return nil
 }
 
-func (c *CommanderCell) MarkDone() error {
-	if c.Done {
-		return fmt.Errorf("cell is already done")
-	}
-	c.Done = true
-	return nil
+// MarkInReview records that a PR is open and waiting for review.
+func (c *CommanderCell) MarkInReview() error {
+	return c.moveTo(InReview)
 }
 
-func (c *CommanderCell) MarkUndone() error {
-	if !c.Done {
-		return fmt.Errorf("cell is not done")
+// MarkInProgress records that the Cell went back to implementation, for
+// example to address review comments.
+func (c *CommanderCell) MarkInProgress() error {
+	return c.moveTo(InProgress)
+}
+
+// MarkMerged records that the work reached the base. It cannot be undone.
+func (c *CommanderCell) MarkMerged() error {
+	return c.moveTo(Merged)
+}
+
+// MarkAbandoned records that the work stopped without a merge. It cannot be undone.
+func (c *CommanderCell) MarkAbandoned() error {
+	return c.moveTo(Abandoned)
+}
+
+func (c *CommanderCell) moveTo(next CellProgress) error {
+	progress, err := c.Progress.transitionTo(next)
+	if err != nil {
+		return err
 	}
-	c.Done = false
+	c.Progress = progress
 	return nil
 }

@@ -101,7 +101,7 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 	}
 }
 
-func TestRunはEnterでDone状態を切り替える(t *testing.T) {
+func TestRunはmを2回押すとmerge済みにする(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()
 
@@ -109,7 +109,11 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	newProgram = func(model tea.Model, opts ...tea.ProgramOption) program {
 		_ = opts
 		return programFunc(func() (tea.Model, error) {
-			updated, cmd := model.(Model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+			var updated tea.Model = model
+			var cmd tea.Cmd
+			for range 2 {
+				updated, cmd = updated.(Model).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+			}
 			if cmd != nil {
 				updated, _ = updated.(Model).Update(cmd())
 			}
@@ -121,7 +125,7 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	cells := []query.CellView{
 		viewTestCell("cell-1", "123", "default"),
 	}
-	var markedDone []string
+	var merged []string
 	result, err := Run(
 		context.Background(),
 		cells,
@@ -132,11 +136,11 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 		func() error { return nil },
 		noCellAction,
 		func(name string) error {
-			markedDone = append(markedDone, name)
+			merged = append(merged, name)
 			return nil
 		},
 		func(name string) error {
-			t.Fatalf("mark undone was called for %q", name)
+			t.Fatalf("mark abandoned was called for %q", name)
 			return nil
 		},
 		nil,
@@ -147,11 +151,10 @@ func TestRunはEnterでDone状態を切り替える(t *testing.T) {
 	if result.Action != ActionNone {
 		t.Fatalf("action = %q, want %q", result.Action, ActionNone)
 	}
-	if len(markedDone) != 1 || markedDone[0] != "123" || !final.Cells[0].Done {
-		t.Fatalf("mark done calls = %#v, cells = %#v", markedDone, final.Cells)
+	if len(merged) != 1 || merged[0] != "123" || final.Cells[0].Progress != "merged" {
+		t.Fatalf("mark merged calls = %#v, cells = %#v", merged, final.Cells)
 	}
 }
-
 func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 	original := newProgram
 	defer func() { newProgram = original }()

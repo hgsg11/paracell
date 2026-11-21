@@ -115,12 +115,12 @@ func TestSQLiteStateは更新のたびにSQLで版を1進め読み込みと変�
 		t.Fatalf("version = %d", version)
 	}
 	if err := adapter.UpdateCells(ctx, func(set usecase.CellSet) (usecase.CellSet, error) {
-		return set, set.Commanders[0].MarkDone()
+		return set, set.Commanders[0].MarkMerged()
 	}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := adapter.LoadCells(ctx)
-	if err != nil || got.Commanders[0].Version != 3 || !got.Commanders[0].Done || got.Groups[0].Note != "updated" {
+	if err != nil || got.Commanders[0].Version != 3 || got.Commanders[0].Progress != domain.Merged || got.Groups[0].Note != "updated" {
 		t.Fatalf("got = %#v, %v", got, err)
 	}
 }
@@ -162,7 +162,7 @@ func TestSQLiteStateは版を持つ新しいCellの追加を拒否する(t *test
 	ctx := context.Background()
 	adapter := newTestAdapter(t)
 	group, _ := persistedTestCell(t, "group-id", "id", "42")
-	restored, err := domain.CommanderCellFactory{}.Restore("id", group.ID, "tmux", nil, "ready", false, 3)
+	restored, err := domain.CommanderCellFactory{}.Restore("id", group.ID, "tmux", nil, "ready", "in_progress", 3)
 	if err != nil {
 		t.Fatal(err)
 	}

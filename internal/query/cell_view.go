@@ -13,7 +13,8 @@ type CellView struct {
 	Template string
 	// Status is "pending" or "ready".
 	Status string
-	Done   bool
+	// Progress is "in_progress", "in_review", "merged", or "abandoned".
+	Progress string
 	// CreationStatus is "creating", "failed", or "ready".
 	CreationStatus string
 	// FailedStage and LastError are set only when the creation failed.
