@@ -7,8 +7,8 @@ type CellGroupFactory struct{}
 
 // Restore validates the raw persisted values and rebuilds a CellGroup, including
 // its normalized note and creation state.
-func (CellGroupFactory) Restore(id, issue, project, template, note, sourceDriver, containerDriver, notificationDriver, creationStatus, failedStage, lastError string) (CellGroup, error) {
-	group, err := NewCellGroup(id, issue, project, template, SourceDriverType(sourceDriver), ContainerDriverType(containerDriver), NotificationDriverType(notificationDriver))
+func (CellGroupFactory) Restore(id, queueEntryID, issue, project, template, note, sourceDriver, containerDriver, notificationDriver, creationStatus, failedStage, lastError string) (CellGroup, error) {
+	group, err := NewCellGroup(id, issue, project, template, SourceDriverType(sourceDriver), ContainerDriverType(containerDriver), NotificationDriverType(notificationDriver), queueEntryID)
 	if err != nil {
 		return CellGroup{}, err
 	}

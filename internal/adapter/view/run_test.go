@@ -44,7 +44,7 @@ func TestRunはspace成功で結果を返す(t *testing.T) {
 	}
 	result, err := Run(context.Background(), cells, nil, "123", func() ([]query.CellView, error) {
 		return cells, nil
-	}, func(name string) tea.Cmd {
+	}, nil, func(name string) tea.Cmd {
 		if name != "123" {
 			t.Fatalf("enter cell = %q, want %q", name, "123")
 		}
@@ -87,7 +87,7 @@ func TestRunはspace失敗後もエラーを表示して継続できる(t *testi
 	}
 	result, err := Run(context.Background(), cells, nil, "", func() ([]query.CellView, error) {
 		return cells, nil
-	}, func(name string) tea.Cmd {
+	}, nil, func(name string) tea.Cmd {
 		return func() tea.Msg { return enterResultMsg{name: name, err: fmt.Errorf("attach failed")} }
 	}, func() error { return nil }, noCellAction, noCellAction, noCellAction, nil)
 	if err != nil {
@@ -132,6 +132,7 @@ func TestRunはmを2回押すとmerge済みにする(t *testing.T) {
 		nil,
 		"",
 		func() ([]query.CellView, error) { return cells, nil },
+		nil,
 		func(string) tea.Cmd { return nil },
 		func() error { return nil },
 		noCellAction,
@@ -181,6 +182,7 @@ func TestRunはGoRoot選択後にGoRoot処理を実行する(t *testing.T) {
 		func() ([]query.CellView, error) {
 			return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
 		},
+		nil,
 		func(string) tea.Cmd { return nil },
 		func() error {
 			goRootCalled = true
@@ -235,6 +237,7 @@ func TestRunはFork成功後にReloadされたCellを保持する(t *testing.T) 
 			reloaded = true
 			return []query.CellView{viewTestCell("cell-1", "123", "default")}, nil
 		},
+		nil,
 		func(string) tea.Cmd { return nil },
 		func() error { return nil },
 		noCellAction,

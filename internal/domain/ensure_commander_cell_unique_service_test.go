@@ -7,7 +7,7 @@ import (
 
 func newServiceTestGroup(t *testing.T, id string, issue string) CellGroup {
 	t.Helper()
-	group, err := NewCellGroup(id, issue, "sample", "feat", Git, None, NoNotification)
+	group, err := NewCellGroup(id, issue, "sample", "feat", Git, None, NoNotification, "")
 	if err != nil {
 		t.Fatal(err)
 	}

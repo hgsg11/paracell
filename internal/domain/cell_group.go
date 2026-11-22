@@ -10,8 +10,11 @@ import (
 // CellGroup is the aggregate root that holds the shared identity, configuration,
 // and creation state of a set of runtime Cells. Membership is recorded only by
 // CommanderCell, TargetCell, and DependencyCell through their CellGroup ID.
+// QueueEntryID is the QueueEntry the group was started from; it is empty for a
+// group created directly by fork.
 type CellGroup struct {
 	ID                 string
+	QueueEntryID       string
 	Note               string
 	Issue              string
 	Project            string
@@ -22,7 +25,7 @@ type CellGroup struct {
 	Creation           CellCreation
 }
 
-func NewCellGroup(id, issue, project, template string, source SourceDriverType, container ContainerDriverType, notification NotificationDriverType) (CellGroup, error) {
+func NewCellGroup(id, issue, project, template string, source SourceDriverType, container ContainerDriverType, notification NotificationDriverType, queueEntryID string) (CellGroup, error) {
 	if id == "" || issue == "" || template == "" {
 		return CellGroup{}, fmt.Errorf("cell group id, issue, and template are required")
 	}
@@ -37,7 +40,7 @@ func NewCellGroup(id, issue, project, template string, source SourceDriverType, 
 		return CellGroup{}, err
 	}
 	return CellGroup{
-		ID: id, Issue: issue, Project: project, Template: template,
+		ID: id, QueueEntryID: queueEntryID, Issue: issue, Project: project, Template: template,
 		SourceDriver: source, ContainerDriver: container, NotificationDriver: validatedNotification,
 		Creation: NewCellCreation(),
 	}, nil

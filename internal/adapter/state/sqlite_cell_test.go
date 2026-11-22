@@ -20,7 +20,7 @@ func newTestAdapter(t *testing.T) SQLiteCellAdapter {
 // persistedTestCell returns an unsaved CellGroup and its CommanderCell.
 func persistedTestCell(t *testing.T, groupID string, commanderID string, issue string) (domain.CellGroup, domain.CommanderCell) {
 	t.Helper()
-	group, err := domain.NewCellGroup(groupID, issue, "sample", "feat", domain.Git, domain.Docker, domain.NoNotification)
+	group, err := domain.NewCellGroup(groupID, issue, "sample", "feat", domain.Git, domain.Docker, domain.NoNotification, "")
 	if err != nil {
 		t.Fatal(err)
 	}

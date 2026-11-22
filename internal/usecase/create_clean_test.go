@@ -250,6 +250,11 @@ func commanderByID(commanders []domain.CommanderCell, id string) (domain.Command
 
 func copyCellSet(set CellSet) CellSet {
 	copied := NewCellSet(set.Groups, set.Commanders, set.Targets, set.Dependencies)
+	copied.Queue = domain.NewQueue()
+	for _, entry := range set.Queue.Entries {
+		entry.Plan = domain.ChangePlan{Modify: append([]domain.WorkspacePath(nil), entry.Plan.Modify...), Create: append([]domain.WorkspacePath(nil), entry.Plan.Create...)}
+		copied.Queue.Entries = append(copied.Queue.Entries, entry)
+	}
 	for i := range copied.Commanders {
 		copied.Commanders[i].Workspace = domain.NewWorkspace(copied.Commanders[i].Workspace.Driver, copied.Commanders[i].Workspace.Windows)
 	}
@@ -343,7 +348,7 @@ func (g *sequenceIDGenerator) NewID() string {
 // CommanderCell "<id>" at version 1.
 func newUsecaseTestCell(t *testing.T, id string, issue string, templateName string) (domain.CellGroup, domain.CommanderCell) {
 	t.Helper()
-	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, domain.Git, domain.None, domain.NoNotification)
+	group, err := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, domain.Git, domain.None, domain.NoNotification, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -73,7 +73,7 @@ func appTestCell(id string, issue string, templateName string) appCell {
 	}
 	sourceDriver, _ := domain.NewSourceDriverType("git")
 	workspaceDriver, _ := domain.NewWorkspaceDriverType("tmux")
-	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification)
+	group, _ := domain.NewCellGroup("group-"+id, issue, "myapp", templateName, sourceDriver, domain.None, domain.NoNotification, "")
 	cell, _ := domain.NewCommanderCell(id, group.ID, domain.NewWorkspace(workspaceDriver, nil))
 	return appCell{Group: group, Commander: cell}
 }
@@ -390,7 +390,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
+	want := "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -637,7 +637,7 @@ templates:
 	defer func() { runClean = originalClean }()
 
 	var got []query.CellView
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -717,7 +717,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	var gotTemplates []string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = currentCell
@@ -763,7 +763,7 @@ templates:
 	defer func() { runView = originalView }()
 
 	gotCurrentCell := ""
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -831,7 +831,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default").Commander, nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -913,7 +913,7 @@ templates:
 		}
 		return appTestCell("cell-1", "123", "default").Commander, nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -978,7 +978,7 @@ templates: {}
 		gotProject = loaded.ProjectName
 		return nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = templates
 		_ = currentCell
 		_ = reload
@@ -1075,7 +1075,7 @@ templates:
 		return nil
 	}
 	called := false
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
@@ -1125,7 +1125,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var entered string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1188,7 +1188,7 @@ templates: {}
 	defer func() { runClean = originalClean }()
 
 	var deleted string
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = templates
 		_ = currentCell
@@ -1236,7 +1236,7 @@ func TestRunはViewのmerge済みと中止をCell名でStateに保存する(t *t
 
 	var views []query.CellView
 	var errs []error
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, exit func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		errs = append(errs, markMerged("456"), markAbandoned("123"))
 		views, _ = reload()
 		errs = append(errs, markMerged("456"), markAbandoned("456"), markMerged("123"))
@@ -1289,7 +1289,7 @@ templates:
 		goRootCalled = true
 		return nil
 	}
-	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), enter func(string) tea.Cmd, goRoot func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
+	runView = func(ctx context.Context, cells []query.CellView, templates []string, currentCell string, reload func() ([]query.CellView, error), reloadQueue func() ([]query.QueueView, error), enter func(string) tea.Cmd, goRoot func() error, clean func(string) error, markMerged func(string) error, markAbandoned func(string) error, fork func(issue string, template string) tea.Cmd) (viewadapter.Result, error) {
 		_ = ctx
 		_ = cells
 		_ = templates
