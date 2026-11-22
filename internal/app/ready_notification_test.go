@@ -35,7 +35,7 @@ func prepareNotifierProject(t *testing.T, dir string, notifierExitCode int, inst
 	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	group, err := domain.NewCellGroup("group-cell-1", "123", "myapp", "default", domain.Git, domain.None, domain.TerminalNotifierNotification)
+	group, err := domain.NewCellGroup("group-cell-1", "123", "myapp", "default", domain.Git, domain.None, domain.TerminalNotifierNotification, "")
 	if err != nil {
 		t.Fatal(err)
 	}

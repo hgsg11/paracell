@@ -91,7 +91,9 @@ func (u CleanCellUseCase) Execute(ctx context.Context, input CleanCellInput) err
 				remainingDependencies = append(remainingDependencies, dependency)
 			}
 		}
-		return NewCellSet(groups, commanders, remainingTargets, remainingDependencies), nil
+		next := NewCellSet(groups, commanders, remainingTargets, remainingDependencies)
+		next.Queue = latest.Queue
+		return next, nil
 	})
 }
 

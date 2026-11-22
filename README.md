@@ -73,6 +73,35 @@ CommanderCell は、AI agent の稼働状況（`pending` / `ready`）とは別�
 - `clean` できるのは merge 済みか中止の Cell だけです
 - PR の作成や merge は自動では検知しません。`paracell review` / `paracell implement` / `paracell merged` / `paracell abandon` か TUI で付けます
 
+### キュー: 同じファイルを触る Cell を順番に動かす
+
+並べて動かす Cell どうしが同じファイルを変えると、あとで git のコンフリクトになります。`paracell queue` は、変更予定のファイルを宣言して Cell をキューに入れ、ほかの未完了の Cell とぶつからなければすぐに作り、ぶつかれば先行する Cell が merge 済み・中止になるまで待たせます。
+
+```sh
+# 既存のファイルを変える（削除も --modify）
+paracell queue 201 --template self --modify internal/app/cli.go
+# 新しいファイルを作る。201 と internal/app/cli.go が重なるので待つ
+paracell queue 202 --template self --modify internal/app/cli.go --create internal/app/queue.go
+# => waiting 202 for 201
+paracell planned internal/      # 未完了のエントリが宣言しているパスを引く
+paracell merged 201             # 201 のエントリが消え、202 が開始される
+```
+
+| ルール | 内容 |
+| --- | --- |
+| 宣言 | `--modify`（既存のファイル。削除もここ）と `--create`（新しいファイル）を、それぞれ何度でも書ける。パスはワークスペース（`paracell.yaml` のあるディレクトリ）からの相対パスで、ファイルだけ。絶対パス・`..`・末尾 `/`・glob はエラー。rename は扱わない |
+| 衝突 | 宣言したパスが 1 つでも重なれば衝突。後から入ったエントリが、先に入った未完了のエントリの後ろに並ぶ |
+| modify の検証 | ディスクにある、または未完了のエントリが create と宣言している。どちらでもなければエラー |
+| create の検証 | ディスクにも、未完了のエントリの create にもない。あればエラー |
+| 検証のタイミング | キューに入れる時だけ。違反はまとめて 1 つのエラーで返す。存在しない template・prefix、同じ issue のエントリや Cell もここでエラーになる |
+| 開始 | 先行する Cell を `merged` / `abandon`（TUI の `m` `m` / `a` `a` も）にすると、そのエントリを消し、もう誰ともぶつからない待ちのエントリを入れた順に開始する |
+| 取り消し | 待ちのエントリは `paracell dequeue <issue>` で消せる。実行中（Cell になった）エントリは `merged` / `abandon` で終える |
+| 対象外 | `fork` で直接作った Cell はキューの判定に入らない。`fork` の動きは変わらない |
+
+- 開始の fork が失敗した Cell は `failed` で残り、エントリは実行中のまま後ろを待たせます。`paracell abandon` してから入れ直してください
+- 宣言を直すときは `dequeue` して入れ直します
+- `paracell ls` と TUI は、待ちのエントリと待っている相手も表示します
+
 > **アップデート時の注意**: 以前の版は進み具合の代わりに `done`（true / false）を保存していました。古い記録は変換しないため、アップデート前に既存の Cell を `paracell clean` で片付けてください。
 
 ## インストール
@@ -277,7 +306,9 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 - issue 番号入力後 `enter`: fork
 - `q`: 閉じる
 
-進み具合は `impl`（実装中）、`review`（レビュー中）、`merged`（merge 済み）、`abandon`（中止）と表示します。merge 済み・中止の Cell で `m` や `a` を押すとエラーを表示します。
+進み具合は `impl`（実装中）、`review`（レビュー中）、`merged`（merge 済み）、`abandon`（中止）と表示します。merge 済み・中止の Cell で `m` や `a` を押すとエラーを表示します。`m` `m` / `a` `a` は `paracell merged` / `paracell abandon` と同じく、キューのエントリを消して待ちのエントリを開始します。
+
+キューで待っているエントリは、cell 一覧の下に `<note か issue>  wait <待っている相手>` と表示します（選択はできません）。
 
 TUI から実行した Git、Docker、tmux などの標準出力・標準エラーと Paracell 自身のエラーは、画面下部の共通ログ領域へリアルタイム表示されます。長い行と複数行のエラーは画面幅で折り返され、表示は常に最新行へ追従します。
 
@@ -341,6 +372,9 @@ continuum が tmux server 起動時に通常の resurrect 復元を行います�
 ```text
 paracell init
 paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]
+paracell queue <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>] [--modify <path>]... [--create <path>]...
+paracell planned [prefix]
+paracell dequeue <issue>
 paracell annotate <cell> --note <note>
 paracell view
 paracell ls
@@ -358,13 +392,16 @@ paracell --version
 
 - `init`: `paracell.yaml`（なければ）と `.paracell/state.db` を用意し、`.claude/settings.json` に Claude Code の `pending` / `ready` hook を入れる
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
+- `queue`: 変更予定のファイルを宣言して cell をキューに入れる。ぶつからなければすぐに開始し（`started <issue>`）、ぶつかれば待つ相手を出す（`waiting <issue> for <issue>, ...`）。fork と同じ option に加えて、`--modify` / `--create` を 1 つ以上、何度でも書ける
+- `planned`: 未完了のエントリが宣言しているパスを `KIND`・`PATH`・`ISSUE`・`NOTE` で一覧する。`prefix` を渡すとパスの前方一致で絞り込む
+- `dequeue`: 待ちのエントリを取り消し、待ちが解けたエントリを開始する。実行中のエントリにはエラーになる
 - `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
-- `ls`: cell一覧と作成状態、work status、進み具合（`PROGRESS`）を出す。failed cellでは失敗工程と直近errorも1行で表示する
+- `ls`: cell一覧と作成状態、work status、進み具合（`PROGRESS`）を出す。failed cellでは失敗工程と直近errorも1行で表示する。キューで待っているエントリがあれば、続けて `WAITING`・`NOTE`・`BLOCKED_BY` の表を出す
 - `clean`: cell の worktree / Cell のディレクトリ（コピーしたファイルを含む）/ container / session を片付ける。merge 済みか中止の cell だけを片付けられる
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
 - `review` / `implement`: `PARACELL_CELL` の進み具合を、実装中からレビュー中に、レビュー中から実装中に変える
-- `merged` / `abandon`: 指定した cell を merge 済み / 中止にする。Cell の外からも使える。戻せない
+- `merged` / `abandon`: 指定した cell を merge 済み / 中止にする。Cell の外からも使える。戻せない。キューから始まった cell なら、同じトランザクションでエントリを消し、待ちが解けたエントリを開始する
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
 note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は CellGroup 全体の表示専用情報であり、cell の指定には CommanderCell ID、CellGroup ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。

@@ -9,15 +9,18 @@ Read this reference when selecting a template, creating or editing `paracell.yam
 | `paracell` | Enter the project root tmux session | Run from the project or with `PARACELL_ROOT` set |
 | `paracell init` | Create `paracell.yaml`, initialize `.paracell/state.db`, and add the Claude Code status hooks to `.claude/settings.json` | Keeps an existing configuration unchanged; the hooks are added even when `paracell.yaml` exists |
 | `paracell fork <ticket-id> --template <name> [--prefix <name>] [--command <text>] [--note <note>]` | Create and start a cell | Options may appear in any order; note is display-only and 1-20 Unicode characters after normalization |
+| `paracell queue <ticket-id> --template <name> [--prefix <name>] [--command <text>] [--note <note>] [--modify <path>]... [--create <path>]...` | Declare the files the cell will change, queue it, and start it at once unless it overlaps an unfinished queued cell | At least one `--modify` (existing file, deletions included) or `--create` (new file); workspace-relative file paths only, no absolute path, `..`, trailing `/`, or glob; prints `started <id>` or `waiting <id> for <ids>` |
+| `paracell planned [prefix]` | List the paths declared by unfinished queue entries (`KIND`, `PATH`, `ISSUE`, `NOTE`) | `prefix` filters by path prefix; read-only |
+| `paracell dequeue <ticket-id>` | Remove a waiting queue entry and start the entries it released | Fails for a running entry; use `merged` / `abandon` instead |
 | `paracell annotate <cell> --note <note>` | Set or replace a cell note | Resolve `<cell>` by ID, issue, or name; there is no clear operation |
 | `paracell view` | Open the cell/template TUI | Interactive |
-| `paracell ls` | List cells and status | Use before dispatch to avoid duplicates |
+| `paracell ls` | List cells and status, then the waiting queue entries and whom they wait for | Use before dispatch to avoid duplicates |
 | `paracell pending` | Set the current cell to pending | Requires `PARACELL_CELL` |
 | `paracell ready` | Set the current cell to ready and optionally notify | Requires `PARACELL_CELL` |
 | `paracell review` | Move the current cell from in progress to in review | Requires `PARACELL_CELL`; run right after opening the PR |
 | `paracell implement` | Move the current cell from in review back to in progress | Requires `PARACELL_CELL`; run when going back to address review |
-| `paracell merged <cell>` | Mark a cell merged | Works outside a cell; cannot be undone |
-| `paracell abandon <cell>` | Mark a cell abandoned | Works outside a cell; cannot be undone |
+| `paracell merged <cell>` | Mark a cell merged; for a queued cell, remove its queue entry and start the released entries | Works outside a cell; cannot be undone |
+| `paracell abandon <cell>` | Mark a cell abandoned; for a queued cell, remove its queue entry and start the released entries | Works outside a cell; cannot be undone |
 | `paracell clean <cell> [--force]` | Remove managed cell resources | Potentially destructive; requires a merged or abandoned cell |
 | `paracell exit` | Detach the current tmux client | Intended for managed sessions |
 | `paracell version` | Print build version information | Safe inspection command |
@@ -166,6 +169,7 @@ Keep YAML, Go-template, and shell quoting distinct.
 
 - CellGroup is the aggregate root: it holds the shared issue, project, template, note, resource drivers, and creation state, and is stored on its own. CommanderCell refers to it by CellGroupID and retains the workspace commands, the agent status (`pending` / `ready`), and the implementation progress; TargetCells / DependencyCells record membership with CellGroupID. Existing template syntax is unchanged.
 - Implementation progress is separate from the agent status: `in_progress` (the initial value; also while addressing review), `in_review` (PR open), `merged`, and `abandoned`. Only in_progress ⇄ in_review and in_progress / in_review → merged / abandoned are allowed; moving to the same progress fails, and merged and abandoned are terminal. `paracell ls` shows it in the `PROGRESS` column, and the TUI marks a cell merged with `m` `m` or abandoned with `a` `a`.
+- The queue is one per project and stored in `.paracell/state.db` with the cells. `queue` validates the declaration only at enqueue: a modify path must exist on disk or be declared create by an unfinished entry; a create path must exist in neither; every violation is reported in one error, and an unknown template or prefix, or an issue that already has a cell or entry, is rejected before queueing. Entries overlap when they share any declared path; a later entry waits for every earlier overlapping entry, waiting or running. A cell started from the queue records the entry as its CellGroup's queue entry; marking it merged or abandoned removes the entry in the same transaction and then forks the waiting entries that no longer overlap anything, in enqueue order. A failed start leaves the cell `failed` and its entry running; abandon it and queue again. Cells created by `fork` are never part of the queue judgment.
 - Records saved with the former `done` flag are not converted. Clean existing cells before upgrading.
 - A CellGroup ID, issue, or cell name addresses the cell for note updates, status changes, or cleanup. SQLite records in the two earlier formats (CellGroup nested in the CommanderCell, and the Commander-owned format before it) are read into the new model and rewritten transactionally on their next change, preserving existing resources and execution state.
 

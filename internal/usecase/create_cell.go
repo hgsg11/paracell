@@ -14,6 +14,8 @@ type ForkCellInput struct {
 	Prefix   string
 	Command  string
 	Note     *string
+	// QueueEntryID is the QueueEntry the Cell starts from; empty for a direct fork.
+	QueueEntryID string
 }
 
 type ForkCellUseCase struct {
@@ -55,7 +57,7 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 	if err := domain.EnsureCommanderCellUniqueService(current.Groups, input.Issue, name); err != nil {
 		return domain.CommanderCell{}, err
 	}
-	group, err := domain.NewCellGroup(u.IDs.NewID(), input.Issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType)
+	group, err := domain.NewCellGroup(u.IDs.NewID(), input.Issue, cfg.ProjectName, resolved.Name, cfg.SourceDriverType, cfg.ContainerDriverType, cfg.NotificationDriverType, input.QueueEntryID)
 	if err != nil {
 		return domain.CommanderCell{}, err
 	}
@@ -85,7 +87,9 @@ func (u ForkCellUseCase) Execute(ctx context.Context, input ForkCellInput) (doma
 		if err := domain.EnsureCommanderCellUniqueService(latest.Groups, input.Issue, name); err != nil {
 			return CellSet{}, err
 		}
-		return NewCellSet(append(latest.Groups, group), append(latest.Commanders, commander), append(latest.Targets, targets...), append(latest.Dependencies, dependencies...)), nil
+		next := NewCellSet(append(latest.Groups, group), append(latest.Commanders, commander), append(latest.Targets, targets...), append(latest.Dependencies, dependencies...))
+		next.Queue = latest.Queue
+		return next, nil
 	}); err != nil {
 		return domain.CommanderCell{}, err
 	}

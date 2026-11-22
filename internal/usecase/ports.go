@@ -32,13 +32,15 @@ type CellPort interface {
 	UpdateCells(context.Context, func(CellSet) (CellSet, error)) error
 }
 
-// CellSet is a state snapshot of CellGroups and the runtime Cells associated
-// with them by CellGroup ID.
+// CellSet is a state snapshot of CellGroups, the runtime Cells associated
+// with them by CellGroup ID, and the project's Queue. One UpdateCells saves all
+// of them in the same transaction.
 type CellSet struct {
 	Groups       []domain.CellGroup
 	Commanders   []domain.CommanderCell
 	Targets      []domain.TargetCell
 	Dependencies []domain.DependencyCell
+	Queue        domain.Queue
 }
 
 func NewCellSet(groups []domain.CellGroup, commanders []domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) CellSet {
@@ -107,6 +109,14 @@ type CellDirectoryPort interface {
 	CopyWorkspaceFiles(ctx context.Context, cellDirectory string, paths []string) error
 	// RemoveCellDirectory removes the Cell directory and everything left in it.
 	RemoveCellDirectory(ctx context.Context, cellDirectory string) error
+}
+
+// WorkspaceFilePort looks at the files in the workspace, the directory that
+// holds paracell.yaml.
+type WorkspaceFilePort interface {
+	// ExistingPaths returns the paths that exist on disk as files. A directory
+	// counts as missing.
+	ExistingPaths(ctx context.Context, paths []domain.WorkspacePath) (domain.ExistingPaths, error)
 }
 
 type ContainerPort interface {

@@ -53,7 +53,10 @@ type forkResultMsg struct {
 }
 
 type Model struct {
-	Cells            []query.CellView
+	Cells []query.CellView
+	// Waiting is the queue entries that wait for earlier Cells. They are shown
+	// below the Cells and cannot be selected.
+	Waiting          []query.QueueView
 	Templates        []string
 	CurrentCell      string
 	Focus            FocusArea
@@ -83,6 +86,7 @@ type Model struct {
 	MarkMerged    func(cellName string) error
 	MarkAbandoned func(cellName string) error
 	Reload        func() ([]query.CellView, error)
+	ReloadQueue   func() ([]query.QueueView, error)
 	Logger        *logging.Logger
 }
 
@@ -335,6 +339,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Cells = cells
 			}
 		}
+		reloadErr = errors.Join(reloadErr, m.reloadWaiting())
 		if msg.err != nil || reloadErr != nil {
 			m.setError(errors.Join(msg.err, reloadErr).Error())
 			return m, nil
@@ -348,6 +353,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cells, err := m.Reload()
 		if err != nil {
+			m.setError(err.Error())
+			return m, nil
+		}
+		if err := m.reloadWaiting(); err != nil {
 			m.setError(err.Error())
 			return m, nil
 		}
@@ -376,6 +385,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitLogCmd()
 	}
 	return m, nil
+}
+
+// reloadWaiting replaces the waiting entries with the stored ones.
+func (m *Model) reloadWaiting() error {
+	if m.ReloadQueue == nil {
+		return nil
+	}
+	entries, err := m.ReloadQueue()
+	if err != nil {
+		return err
+	}
+	m.Waiting = waitingEntries(entries)
+	return nil
+}
+
+func waitingEntries(entries []query.QueueView) []query.QueueView {
+	var waiting []query.QueueView
+	for _, entry := range entries {
+		if entry.State == query.QueueStateWaiting {
+			waiting = append(waiting, entry)
+		}
+	}
+	return waiting
 }
 
 // markProgressCmd runs the handler that marks the Cell merged or abandoned.
@@ -510,12 +542,29 @@ func renderCellsPane(m Model, width int, height int) []string {
 			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), renderCellProgress(cell.Progress), renderCellStatus(cell, m.StatusFrame)))
 		}
 	}
+	// Waiting entries follow the Cells, so the selection index stays a Cell index.
+	for _, entry := range m.Waiting {
+		lines = append(lines, renderWaitingEntry(entry))
+	}
 	selected := m.Selected
 	lines, selected = visibleRows(lines, selected, height)
 	for i := range lines {
 		lines[i] = renderPaneLine(lines[i], width, m.Focus == FocusCells && i == selected)
 	}
 	return lines
+}
+
+// renderWaitingEntry shows a waiting entry and the issues it waits for.
+func renderWaitingEntry(entry query.QueueView) string {
+	label := entry.Note
+	if label == "" {
+		label = entry.Issue
+	}
+	line := "  " + ellipsize(label, maxIssueDisplayWidth) + "  wait"
+	if len(entry.BlockedBy) > 0 {
+		line += " " + strings.Join(entry.BlockedBy, ",")
+	}
+	return line
 }
 
 func renderExitLine(m Model) string {
@@ -551,7 +600,7 @@ func paneHeight(m Model) int {
 }
 
 func naturalPaneHeights(m Model) (int, int) {
-	return max(1, len(m.Templates)), max(1, len(m.Cells))
+	return max(1, len(m.Templates)), max(1, len(m.Cells)) + len(m.Waiting)
 }
 
 func visibleRows(lines []string, selected int, height int) ([]string, int) {

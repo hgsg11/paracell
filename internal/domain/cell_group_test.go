@@ -8,7 +8,7 @@ import (
 
 func newTestCellGroup(t *testing.T, issue string) CellGroup {
 	t.Helper()
-	group, err := NewCellGroup("group", issue, "My App", "feat", Git, Docker, NoNotification)
+	group, err := NewCellGroup("group", issue, "My App", "feat", Git, Docker, NoNotification, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -16,7 +16,7 @@ func newTestCellGroup(t *testing.T, issue string) CellGroup {
 }
 
 func TestCellGroupPreservesNotificationDefaultAndValidatesIdentity(t *testing.T) {
-	group, err := NewCellGroup("group", "118", "sample", "feat", Git, None, "")
+	group, err := NewCellGroup("group", "118", "sample", "feat", Git, None, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,11 +27,11 @@ func TestCellGroupPreservesNotificationDefaultAndValidatesIdentity(t *testing.T)
 		t.Fatalf("creation = %#v", group.Creation)
 	}
 	for _, input := range [][3]string{{"", "118", "feat"}, {"group", "", "feat"}, {"group", "118", ""}} {
-		if _, err := NewCellGroup(input[0], input[1], "sample", input[2], Git, None, NoNotification); err == nil {
+		if _, err := NewCellGroup(input[0], input[1], "sample", input[2], Git, None, NoNotification, ""); err == nil {
 			t.Fatalf("invalid identity accepted: %v", input)
 		}
 	}
-	if _, err := NewCellGroup("group", "118", "sample", "feat", Git, "podman", NoNotification); err == nil {
+	if _, err := NewCellGroup("group", "118", "sample", "feat", Git, "podman", NoNotification, ""); err == nil {
 		t.Fatal("invalid container driver accepted")
 	}
 }

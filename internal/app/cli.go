@@ -20,6 +20,7 @@ import (
 	"github.com/hgsg11/paracell/internal/adapter/state"
 	"github.com/hgsg11/paracell/internal/adapter/system"
 	viewadapter "github.com/hgsg11/paracell/internal/adapter/view"
+	"github.com/hgsg11/paracell/internal/adapter/workspacefile"
 	"github.com/hgsg11/paracell/internal/domain"
 	"github.com/hgsg11/paracell/internal/query"
 	"github.com/hgsg11/paracell/internal/usecase"
@@ -51,13 +52,13 @@ var (
 		_, err := uc.Execute(ctx, usecase.MarkCellInProgressInput{Cell: cellName})
 		return err
 	}
-	runMarkMerged = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
-		uc := usecase.MarkCellMergedUseCase{Cells: cells}
+	runMarkMerged = func(ctx context.Context, cells usecase.CellPort, fork usecase.ForkCellUseCase, cellName string) error {
+		uc := usecase.MarkCellMergedUseCase{Cells: cells, Fork: fork}
 		_, err := uc.Execute(ctx, usecase.MarkCellMergedInput{Cell: cellName})
 		return err
 	}
-	runMarkAbandoned = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
-		uc := usecase.MarkCellAbandonedUseCase{Cells: cells}
+	runMarkAbandoned = func(ctx context.Context, cells usecase.CellPort, fork usecase.ForkCellUseCase, cellName string) error {
+		uc := usecase.MarkCellAbandonedUseCase{Cells: cells, Fork: fork}
 		_, err := uc.Execute(ctx, usecase.MarkCellAbandonedInput{Cell: cellName})
 		return err
 	}
@@ -89,6 +90,19 @@ var (
 	}
 )
 
+// newForkCellUseCase builds the fork use case that also starts queued Cells.
+func newForkCellUseCase(cfg usecase.ConfigPort, cells usecase.CellPort, factory provider.Factory, root string) usecase.ForkCellUseCase {
+	return usecase.ForkCellUseCase{
+		Config:           cfg,
+		Cells:            cells,
+		SourceFactory:    factory,
+		CellDirectory:    celldir.NewFilesystemAdapter(root),
+		ContainerFactory: factory,
+		WorkspaceFactory: factory,
+		IDs:              id.RandomGenerator{},
+	}
+}
+
 var runClean = func(ctx context.Context, cfg usecase.ConfigPort, source usecase.SourceProviderFactory, container usecase.ContainerProviderFactory, session usecase.WorkspaceProviderFactory, cells usecase.CellPort, cellName string, root string) error {
 	_ = cfg
 	uc := usecase.CleanCellUseCase{
@@ -115,6 +129,9 @@ const (
 	CommandReady     CommandKind = "ready"
 	CommandReview    CommandKind = "review"
 	CommandImplement CommandKind = "implement"
+	CommandQueue     CommandKind = "queue"
+	CommandPlanned   CommandKind = "planned"
+	CommandDequeue   CommandKind = "dequeue"
 	CommandMerged    CommandKind = "merged"
 	CommandAbandon   CommandKind = "abandon"
 	CommandRoot      CommandKind = "root"
@@ -124,10 +141,11 @@ const (
 	CommandHelp      CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
 
 const (
 	forkUsage     = "usage: paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]"
+	queueUsage    = "usage: paracell queue <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>] [--modify <path>]... [--create <path>]..."
 	annotateUsage = "usage: paracell annotate <cell> --note <note>"
 )
 
@@ -146,6 +164,11 @@ type Command struct {
 	Note     *string
 	Cell     string
 	Force    bool
+	// Modify and Create are the paths declared by queue.
+	Modify []string
+	Create []string
+	// PathPrefix filters the paths listed by planned.
+	PathPrefix string
 }
 
 func ParseCommand(args []string) (Command, error) {
@@ -220,6 +243,22 @@ func ParseCommand(args []string) (Command, error) {
 		return Command{Kind: CommandVersion}, nil
 	case "fork":
 		return parseForkCommand(args)
+	case "queue":
+		return parseQueueCommand(args)
+	case "planned":
+		if len(args) > 2 {
+			return Command{}, errors.New("usage: paracell planned [prefix]")
+		}
+		cmd := Command{Kind: CommandPlanned}
+		if len(args) == 2 {
+			cmd.PathPrefix = args[1]
+		}
+		return cmd, nil
+	case "dequeue":
+		if len(args) != 2 || args[1] == "" {
+			return Command{}, errors.New("usage: paracell dequeue <issue>")
+		}
+		return Command{Kind: CommandDequeue, Issue: args[1]}, nil
 	case "annotate":
 		if len(args) != 4 || args[1] == "" || args[2] != "--note" {
 			return Command{}, errors.New(annotateUsage)
@@ -274,6 +313,52 @@ func parseForkCommand(args []string) (Command, error) {
 	return cmd, nil
 }
 
+// parseQueueCommand reads the fork options once each and --modify and --create
+// any number of times.
+func parseQueueCommand(args []string) (Command, error) {
+	if len(args) < 4 || args[1] == "" || (len(args)-2)%2 != 0 {
+		return Command{}, errors.New(queueUsage)
+	}
+	cmd := Command{Kind: CommandQueue, Issue: args[1]}
+	seen := map[string]bool{}
+	for i := 2; i < len(args); i += 2 {
+		option, value := args[i], args[i+1]
+		if option != "--modify" && option != "--create" {
+			if seen[option] {
+				return Command{}, errors.New(queueUsage)
+			}
+			seen[option] = true
+		}
+		switch option {
+		case "--template":
+			if value == "" {
+				return Command{}, errors.New(queueUsage)
+			}
+			cmd.Template = value
+		case "--prefix":
+			if value == "" {
+				return Command{}, errors.New(queueUsage)
+			}
+			cmd.Prefix = value
+		case "--command":
+			cmd.Command = value
+		case "--note":
+			note := value
+			cmd.Note = &note
+		case "--modify":
+			cmd.Modify = append(cmd.Modify, value)
+		case "--create":
+			cmd.Create = append(cmd.Create, value)
+		default:
+			return Command{}, errors.New(queueUsage)
+		}
+	}
+	if cmd.Template == "" || len(cmd.Modify)+len(cmd.Create) == 0 {
+		return Command{}, errors.New(queueUsage)
+	}
+	return cmd, nil
+}
+
 func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	invocationWorkdir := workdir
 	workdir = projectRootForWorkdir(workdir)
@@ -320,7 +405,44 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		return writeCLIOutput(logger, output.FormatCellList(cells))
+		queue, err := cellsAdapter.ListQueueViews(ctx)
+		if err != nil {
+			return err
+		}
+		list := output.FormatCellList(cells)
+		if waiting := output.FormatWaitingQueue(queue); waiting != "" {
+			list += "\n" + waiting
+		}
+		return writeCLIOutput(logger, list)
+	case CommandQueue:
+		uc := usecase.EnqueueCellUseCase{
+			Config: configAdapter,
+			Cells:  cellsAdapter,
+			Files:  workspacefile.NewFilesystemAdapter(workdir),
+			IDs:    id.RandomGenerator{},
+			Fork:   newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(runner, workdir), workdir),
+		}
+		result, err := uc.Execute(ctx, usecase.EnqueueCellInput{
+			Issue: cmd.Issue, Template: cmd.Template, Prefix: cmd.Prefix, Command: cmd.Command, Note: cmd.Note,
+			Modify: cmd.Modify, Create: cmd.Create,
+		})
+		if result.Entry.ID == "" {
+			return err
+		}
+		return errors.Join(writeCLIOutput(logger, output.FormatEnqueueResult(cmd.Issue, result.Started, result.BlockedBy)), err)
+	case CommandPlanned:
+		paths, err := cellsAdapter.ListPlannedPaths(ctx, cmd.PathPrefix)
+		if err != nil {
+			return err
+		}
+		return writeCLIOutput(logger, output.FormatPlannedPaths(paths))
+	case CommandDequeue:
+		uc := usecase.DequeueCellUseCase{
+			Cells: cellsAdapter,
+			Fork:  newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(runner, workdir), workdir),
+		}
+		_, err := uc.Execute(ctx, usecase.DequeueCellInput{Issue: cmd.Issue})
+		return err
 	case CommandAnnotate:
 		uc := usecase.AnnotateCellUseCase{Cells: cellsAdapter, WorkspaceFactory: provider.NewFactory(quietRunner, workdir)}
 		_, err = uc.Execute(ctx, usecase.AnnotateCellInput{Cell: cmd.Cell, Note: *cmd.Note})
@@ -350,9 +472,9 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		}
 		return runMarkInProgress(ctx, cellsAdapter, cellName)
 	case CommandMerged:
-		return runMarkMerged(ctx, cellsAdapter, cmd.Cell)
+		return runMarkMerged(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(runner, workdir), workdir), cmd.Cell)
 	case CommandAbandon:
-		return runMarkAbandoned(ctx, cellsAdapter, cmd.Cell)
+		return runMarkAbandoned(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(runner, workdir), workdir), cmd.Cell)
 	case CommandRoot:
 		return runEnterRoot(ctx, configAdapter, provider.NewFactory(runner, workdir))
 	case CommandExit:
@@ -376,6 +498,8 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		}
 		_, err = runView(viewContext, cells, names, os.Getenv("PARACELL_CELL"), func() ([]query.CellView, error) {
 			return cellsAdapter.ListCellViews(ctx)
+		}, func() ([]query.QueueView, error) {
+			return cellsAdapter.ListQueueViews(ctx)
 		}, func(cellName string) tea.Cmd {
 			cmd, err := runEnterCmd(ctx, cellsAdapter, provider.NewFactory(viewRunner, workdir), cellName)
 			if err != nil {
@@ -388,9 +512,9 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			factory := provider.NewFactory(viewRunner, workdir)
 			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cellName, workdir)
 		}, func(cellName string) error {
-			return runMarkMerged(ctx, cellsAdapter, cellName)
+			return runMarkMerged(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(viewRunner, workdir), workdir), cellName)
 		}, func(cellName string) error {
-			return runMarkAbandoned(ctx, cellsAdapter, cellName)
+			return runMarkAbandoned(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(viewRunner, workdir), workdir), cellName)
 		}, func(issue string, template string) tea.Cmd {
 			return func() tea.Msg {
 				factory := provider.NewFactory(viewRunner, workdir)

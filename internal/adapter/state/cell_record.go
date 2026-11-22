@@ -15,6 +15,7 @@ type cellRecord struct {
 
 type cellGroupRecord struct {
 	ID                 string         `json:"id"`
+	QueueEntryID       string         `json:"queueEntryId,omitempty"`
 	Note               string         `json:"note"`
 	Issue              string         `json:"issue"`
 	Project            string         `json:"project"`
@@ -79,7 +80,7 @@ type dependencyRecord struct {
 func newCellRecord(group domain.CellGroup, commander domain.CommanderCell, targets []domain.TargetCell, dependencies []domain.DependencyCell) cellRecord {
 	record := cellRecord{
 		CellGroup: &cellGroupRecord{
-			ID: group.ID, Note: group.Note, Issue: group.Issue, Project: group.Project, Template: group.Template,
+			ID: group.ID, QueueEntryID: group.QueueEntryID, Note: group.Note, Issue: group.Issue, Project: group.Project, Template: group.Template,
 			NotificationDriver: string(group.NotificationDriver), SourceDriver: string(group.SourceDriver), ContainerDriver: string(group.ContainerDriver),
 			Creation: creationRecord{Status: string(group.Creation.Status), FailedStage: string(group.Creation.FailedStage), LastError: group.Creation.LastError},
 		},
@@ -122,7 +123,7 @@ func newContainerRecord(container domain.Container) containerRecord {
 // values; Target and Dependency Cells keep their existing restore functions.
 func (r cellRecord) restore(version uint64) (domain.CellGroup, domain.CommanderCell, []domain.TargetCell, []domain.DependencyCell, error) {
 	raw := r.CellGroup
-	group, err := domain.CellGroupFactory{}.Restore(raw.ID, raw.Issue, raw.Project, raw.Template, raw.Note, raw.SourceDriver, raw.ContainerDriver, raw.NotificationDriver, raw.Creation.Status, raw.Creation.FailedStage, raw.Creation.LastError)
+	group, err := domain.CellGroupFactory{}.Restore(raw.ID, raw.QueueEntryID, raw.Issue, raw.Project, raw.Template, raw.Note, raw.SourceDriver, raw.ContainerDriver, raw.NotificationDriver, raw.Creation.Status, raw.Creation.FailedStage, raw.Creation.LastError)
 	if err != nil {
 		return domain.CellGroup{}, domain.CommanderCell{}, nil, nil, err
 	}

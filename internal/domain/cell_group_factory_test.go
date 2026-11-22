@@ -3,7 +3,7 @@ package domain
 import "testing"
 
 func TestCellGroupFactoryRestoreは保存値からCellGroupを戻す(t *testing.T) {
-	group, err := CellGroupFactory{}.Restore("group", "118", "sample", "feat", "", "git", "docker", "tmux", "ready", "", "")
+	group, err := CellGroupFactory{}.Restore("group", "", "118", "sample", "feat", "", "git", "docker", "tmux", "ready", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,8 +17,18 @@ func TestCellGroupFactoryRestoreは保存値からCellGroupを戻す(t *testing.
 	}
 }
 
+func TestCellGroupFactoryRestoreはQueueEntryIDを戻す(t *testing.T) {
+	group, err := CellGroupFactory{}.Restore("group", "entry-1", "118", "sample", "feat", "", "git", "none", "none", "ready", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if group.QueueEntryID != "entry-1" {
+		t.Fatalf("QueueEntryID = %q", group.QueueEntryID)
+	}
+}
+
 func TestCellGroupFactoryRestoreはNoteを正規化し通知の既定値を戻す(t *testing.T) {
-	group, err := CellGroupFactory{}.Restore("group", "118", "sample", "feat", "  API\t実装 ", "git", "none", "", "creating", "", "")
+	group, err := CellGroupFactory{}.Restore("group", "", "118", "sample", "feat", "  API\t実装 ", "git", "none", "", "creating", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +38,7 @@ func TestCellGroupFactoryRestoreはNoteを正規化し通知の既定値を戻�
 }
 
 func TestCellGroupFactoryRestoreは作成失敗の段階とエラーを戻す(t *testing.T) {
-	group, err := CellGroupFactory{}.Restore("group", "118", "sample", "feat", "", "git", "none", "none", "failed", "containers", "docker failed")
+	group, err := CellGroupFactory{}.Restore("group", "", "118", "sample", "feat", "", "git", "none", "none", "failed", "containers", "docker failed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +48,7 @@ func TestCellGroupFactoryRestoreは作成失敗の段階とエラーを戻す(t 
 }
 
 func TestCellGroupFactoryRestoreは失敗していないとき失敗段階を持たない(t *testing.T) {
-	group, err := CellGroupFactory{}.Restore("group", "118", "sample", "feat", "", "git", "none", "none", "ready", "", "")
+	group, err := CellGroupFactory{}.Restore("group", "", "118", "sample", "feat", "", "git", "none", "none", "ready", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +74,7 @@ func TestCellGroupFactoryRestoreは不正な値を拒否する(t *testing.T) {
 	}
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := (CellGroupFactory{}).Restore(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]); err == nil {
+			if _, err := (CellGroupFactory{}).Restore(v[0], "", v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10]); err == nil {
 				t.Fatal("invalid value accepted")
 			}
 		})
