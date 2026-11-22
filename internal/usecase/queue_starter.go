@@ -44,8 +44,8 @@ func (s queueStarter) StartReleased(ctx context.Context) ([]domain.QueueEntry, e
 }
 
 // finishCommander moves the resolved Cell to merged or abandoned and removes
-// the QueueEntry it started from in the same state update, then starts the
-// entries that were waiting for it.
+// its Review and the QueueEntry it started from in the same state update, then
+// starts the entries that were waiting for it.
 func finishCommander(ctx context.Context, cells CellPort, fork ForkCellUseCase, identifier string, change func(*domain.CommanderCell) error) (domain.CommanderCell, error) {
 	var updated domain.CommanderCell
 	if err := cells.UpdateCells(ctx, func(set CellSet) (CellSet, error) {
@@ -59,6 +59,7 @@ func finishCommander(ctx context.Context, cells CellPort, fork ForkCellUseCase, 
 		if err := set.replaceCommander(commander); err != nil {
 			return CellSet{}, err
 		}
+		set.removeReview(group.ID)
 		// An entry that is already gone has nothing left to release.
 		if group.QueueEntryID != "" {
 			if err := set.Queue.Remove(group.QueueEntryID); err != nil && !errors.Is(err, domain.ErrNotFound) {

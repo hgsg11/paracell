@@ -33,6 +33,9 @@ func (u InitProjectUseCase) Execute(ctx context.Context) (domain.Templates, erro
 	if err := u.AgentHooks.InstallStatusHooks(ctx, domain.AgentStatusHooks()); err != nil {
 		return domain.Templates{}, err
 	}
+	if err := u.AgentHooks.AllowCommands(ctx, domain.AgentAllowedCommands()); err != nil {
+		return domain.Templates{}, err
+	}
 	return cfg, nil
 }
 

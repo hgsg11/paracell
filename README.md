@@ -71,7 +71,32 @@ CommanderCell は、AI agent の稼働状況（`pending` / `ready`）とは別�
 
 - 許す遷移は図の矢印だけです。同じ段階への遷移や、merge 済み・中止からの遷移はエラーになります
 - `clean` できるのは merge 済みか中止の Cell だけです
-- PR の作成や merge は自動では検知しません。`paracell review` / `paracell implement` / `paracell merged` / `paracell abandon` か TUI で付けます
+- `providers.review` を設定しない場合、PR の作成や merge は自動では検知しません。`paracell review` / `paracell implement` / `paracell merged` / `paracell abandon` か TUI で付けます
+- `providers.review: github` を設定すると、PR の作成から merge までを paracell が受け持ちます（[PR とレビュー](#pr-とレビュー)）
+
+### PR とレビュー
+
+`providers.review: github` のとき、Cell の Claude はコードを書いて commit するだけです。push・PR の作成・レビューを待つこと・merge・キューの後ろの開始は paracell が行います。`gh` の認証は先に済ませておいてください。
+
+```text
+Claude: 実装 → commit → paracell review --title T --body-file F（バックグラウンドで実行してターンを終える）
+paracell: push → PR を作成 → Review を保存 → in_review → 次のイベントまで待つ
+   ├─ 新しいレビュー・コメント → 内容の要約を出して終了 → Claude が起こされる
+   │     Claude: paracell implement → 直す → commit → paracell review（2 回目以降は引数なし）
+   ├─ 全部の PR に Approve が付き Request changes が残っていない → merge → merged → キューの後ろを開始
+   ├─ 全部の PR が merge された → merged にする → Review を消す → キューの後ろを開始 → 終了
+   └─ 全部の PR が close された → abandoned にする → 同上
+```
+
+- 1 回目の `paracell review` は `--title` と `--body-file` が必要です。変更（base にない commit）のある target ごとに PR を作り、本文の末尾に `Closes #<issue>` を付けます。2 回目以降は引数なしで、push して待ちます（引数を渡すとエラー）
+- 未 commit の変更があるとエラーになります。変更のある target が 1 つもなくてもエラーです
+- 待っている間 Claude は動かず、トークンを使いません。paracell は 45 秒ごとに GitHub に問い合わせます。待つ時間に上限はありません
+- 届けたレビュー・コメントは二度届けません。Claude が直している間に来たものは、次の `paracell review` ですぐ返ります
+- Claude は PR にコメントを書きません（自分のコメントで自分を起こしてしまうため）。対応内容は commit メッセージに書きます
+- merge は人が判断し、実行は paracell です。`paracell merge <cell>`（`--squash` / `--rebase` も可。既定は merge commit）は、まだ merge されていない PR だけを merge し、全部が merge 済みになったら `merged` にして Review を消し、キューの後ろを開始します。何度実行しても結果は同じです。merge が失敗したら（必須のチェックが落ちているなど）エラーを返し、何も変えません
+- GitHub の画面で merge・close した場合も、待っている `paracell review` が検知して `merged` / `abandoned` にします
+- 一部の PR が merge され、残りが close された場合は自動では決めません。`paracell ls` と TUI に警告が出るので、`paracell merged <cell>` か `paracell abandon <cell>` を選んでください。どちらでも Review は消えます
+- `paracell ls` は `PR` 列にレビュー中の PR 番号を出します
 
 ### キュー: 同じファイルを触る Cell を順番に動かす
 
@@ -299,7 +324,7 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 - `j` / `k`: 移動
 - `tab`: cell 一覧と template 一覧のフォーカス切り替え
 - `l`: cell に入る
-- `m` `m`: merge 済みにする（戻せないので 2 回押して確認する）
+- `m` `m`: merge 済みにする（戻せないので 2 回押して確認する）。レビュー中の PR がある Cell では `paracell merge` と同じく PR を merge する
 - `a` `a`: 中止にする（戻せないので 2 回押して確認する）
 - `d` `d`: clean
 - template 一覧で `y` `y`: issue 番号入力モード
@@ -307,6 +332,8 @@ Paracellが作成するDocker resource名は、networkが`paracell-<project>-<ce
 - `q`: 閉じる
 
 進み具合は `impl`（実装中）、`review`（レビュー中）、`merged`（merge 済み）、`abandon`（中止）と表示します。merge 済み・中止の Cell で `m` や `a` を押すとエラーを表示します。`m` `m` / `a` `a` は `paracell merged` / `paracell abandon` と同じく、キューのエントリを消して待ちのエントリを開始します。
+
+レビュー中の Cell は行の末尾に PR 番号（`#180`）を表示します。PR の一部が merge、残りが close された Cell は `!#180,#181` と表示し、選ぶと `paracell merged` か `paracell abandon` を選ぶよう案内します。
 
 キューで待っているエントリは、cell 一覧の下に `<note か issue>  wait <待っている相手>` と表示します（選択はできません）。
 
@@ -381,8 +408,9 @@ paracell ls
 paracell clean <cell> [--force]
 paracell pending
 paracell ready
-paracell review
+paracell review [--title <title> --body-file <file>]
 paracell implement
+paracell merge <cell> [--squash|--rebase]
 paracell merged <cell>
 paracell abandon <cell>
 paracell exit
@@ -390,18 +418,19 @@ paracell version
 paracell --version
 ```
 
-- `init`: `paracell.yaml`（なければ）と `.paracell/state.db` を用意し、`.claude/settings.json` に Claude Code の `pending` / `ready` hook を入れる
+- `init`: `paracell.yaml`（なければ）と `.paracell/state.db` を用意し、`.claude/settings.json` に Claude Code の `pending` / `ready` hook と、Cell の Claude が確認なしで実行できるよう `permissions.allow` の `Bash(paracell review:*)` / `Bash(paracell implement:*)` を入れる（既存の内容は残し、あれば足さない）
 - `fork`: issue 用の cell を作る。`--command` で template に渡す初期命令、`--note` で表示用の短い説明を指定できる。option の順序は任意
 - `queue`: 変更予定のファイルを宣言して cell をキューに入れる。ぶつからなければすぐに開始し（`started <issue>`）、ぶつかれば待つ相手を出す（`waiting <issue> for <issue>, ...`）。fork と同じ option に加えて、`--modify` / `--create` を 1 つ以上、何度でも書ける
 - `planned`: 未完了のエントリが宣言しているパスを `KIND`・`PATH`・`ISSUE`・`NOTE` で一覧する。`prefix` を渡すとパスの前方一致で絞り込む
 - `dequeue`: 待ちのエントリを取り消し、待ちが解けたエントリを開始する。実行中のエントリにはエラーになる
 - `annotate`: CommanderCell ID、CellGroup ID、Issue、Name のいずれかで指定し、CellGroup の note を設定・上書きする
 - `view`: TUI で cell を操作する
-- `ls`: cell一覧と作成状態、work status、進み具合（`PROGRESS`）を出す。failed cellでは失敗工程と直近errorも1行で表示する。キューで待っているエントリがあれば、続けて `WAITING`・`NOTE`・`BLOCKED_BY` の表を出す
+- `ls`: cell一覧と作成状態、work status、進み具合（`PROGRESS`）、レビュー中の PR 番号（`PR`）を出す。PR の一部が merge、残りが close された cell には警告を出す。failed cellでは失敗工程と直近errorも1行で表示する。キューで待っているエントリがあれば、続けて `WAITING`・`NOTE`・`BLOCKED_BY` の表を出す
 - `clean`: cell の worktree / Cell のディレクトリ（コピーしたファイルを含む）/ container / session を片付ける。merge 済みか中止の cell だけを片付けられる
 - `pending` / `ready`: `PARACELL_CELL` の status を変える
-- `review` / `implement`: `PARACELL_CELL` の進み具合を、実装中からレビュー中に、レビュー中から実装中に変える
-- `merged` / `abandon`: 指定した cell を merge 済み / 中止にする。Cell の外からも使える。戻せない。キューから始まった cell なら、同じトランザクションでエントリを消し、待ちが解けたエントリを開始する
+- `review` / `implement`: `PARACELL_CELL` の進み具合を、実装中からレビュー中に、レビュー中から実装中に変える。`providers.review: github` なら `review` は push・PR の作成・レビュー待ちまで行う（[PR とレビュー](#pr-とレビュー)）
+- `merge`: 指定した cell のまだ merge されていない PR を merge し、merge 済みにする。Cell の外から使う
+- `merged` / `abandon`: 指定した cell を merge 済み / 中止にする（PR は merge しない）。Review があれば消す。Cell の外からも使える。戻せない。キューから始まった cell なら、同じトランザクションでエントリを消し、待ちが解けたエントリを開始する
 - `exit`: tmux client を detach し、`paracell` を実行した元のシェルとディレクトリに戻る
 
 note は前後・改行・tab・連続空白を単一 space に正規化した後、Unicode で1〜20文字である必要があります。`paracell ls`、tmux、TUI は note を cell 名より優先し、note 未設定時は cell 名を表示します。note は CellGroup 全体の表示専用情報であり、cell の指定には CommanderCell ID、CellGroup ID、Issue、Name を使います。branch、worktree、container、network、session 名も変わりません。
@@ -427,6 +456,8 @@ note は前後・改行・tab・連続空白を単一 space に正規化した�
 - `providers.notifications: tmux`: `paracell ready` 後に tmux message を出す
 - `providers.notifications: terminal-notifier`: macOS デスクトップに Ready 通知を出す
 - `providers.notifications: none` または省略: 通知なし
+- `providers.review: github`: PR の作成・レビュー待ち・merge を `gh` で行う
+- `providers.review: none` または省略: `paracell review` はレビュー中にするだけ。PR は Claude か人が作り、merge 済みは人が付ける
 tmux command では `{{.issue}}`、`{{.name}}`、`{{.Command}}` を使えます。`{{.Command}}` は `fork --command` で指定した初期命令へ展開されます。TUI から fork した場合は空文字列です。
 
 TargetCell の `containers` には複数の Compose service を列挙できます。同じ CellGroup 内で同じ service と同じ mount path を使う Container は CellGroup 専用のコピー Volume を共有し、別 CellGroup とは共有しません。共有する Volume のコピーは cell 作成時に 1 回だけ行います。

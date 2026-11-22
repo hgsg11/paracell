@@ -539,7 +539,7 @@ func renderCellsPane(m Model, width int, height int) []string {
 	} else {
 		nameWidth, templateWidth := cellWidths(m.Cells)
 		for _, cell := range m.Cells {
-			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), renderCellProgress(cell.Progress), renderCellStatus(cell, m.StatusFrame)))
+			lines = append(lines, fmt.Sprintf("%s %s  %s  %s  %s%s", currentCellMarker(cell, m.CurrentCell), padded(ellipsize(cell.Label, maxIssueDisplayWidth), nameWidth), padded(ellipsize(cell.Template, maxTemplateDisplayWidth), templateWidth), renderCellProgress(cell.Progress), renderCellStatus(cell, m.StatusFrame), renderCellReview(cell)))
 		}
 	}
 	// Waiting entries follow the Cells, so the selection index stays a Cell index.
@@ -677,6 +677,19 @@ func renderCellStatus(cell query.CellView, frame int) string {
 	}
 }
 
+// renderCellReview shows the pull requests of a Cell in review, marked with
+// "!" when a person has to choose merged or abandoned.
+func renderCellReview(cell query.CellView) string {
+	if len(cell.PullRequests) == 0 {
+		return ""
+	}
+	marker := ""
+	if cell.NeedsDecision {
+		marker = "!"
+	}
+	return " " + marker + "#" + strings.Join(cell.PullRequests, ",#")
+}
+
 func renderSelectedLine(value string) string {
 	return "\x1b[7m" + value + "\x1b[0m"
 }
@@ -687,6 +700,9 @@ func renderIssueInputLine(m Model) string {
 	}
 	if m.AwaitingProgress != "" {
 		return fmt.Sprintf("mark %s %s? press %s again (cannot be undone)", m.AwaitingProgressCell, m.AwaitingProgress, progressKey(m.AwaitingProgress))
+	}
+	if m.Focus == FocusCells && m.Selected >= 0 && m.Selected < len(m.Cells) && m.Cells[m.Selected].NeedsDecision {
+		return fmt.Sprintf("! %s: PRs are partly merged and partly closed; choose merged or abandon", m.Cells[m.Selected].Name)
 	}
 	return ""
 }

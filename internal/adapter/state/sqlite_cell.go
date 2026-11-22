@@ -79,6 +79,9 @@ func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func(usecase.
 	if err := applyQueueChanges(ctx, conn, current.Queue, next.Queue); err != nil {
 		return err
 	}
+	if err := applyReviewChanges(ctx, conn, current.Reviews, next.Reviews); err != nil {
+		return err
+	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return fmt.Errorf("commit state update: %w", err)
 	}
@@ -87,7 +90,7 @@ func (a SQLiteCellAdapter) UpdateCells(ctx context.Context, update func(usecase.
 }
 
 // SaveCells replaces the stored CellGroups and CommanderCells. Tests use it to
-// prepare state; it removes every Target and Dependency Cell and empties the Queue.
+// prepare state; it removes every Target and Dependency Cell and Review and empties the Queue.
 func (a SQLiteCellAdapter) SaveCells(ctx context.Context, groups []domain.CellGroup, commanders []domain.CommanderCell) error {
 	return a.UpdateCells(ctx, func(usecase.CellSet) (usecase.CellSet, error) {
 		return usecase.NewCellSet(groups, commanders, nil, nil), nil
@@ -123,7 +126,7 @@ func (a SQLiteCellAdapter) open(ctx context.Context) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("initialize state schema: %w", err)
 	}
-	for _, statement := range queueSchema {
+	for _, statement := range append(append([]string(nil), queueSchema...), reviewSchema...) {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
 			db.Close()
 			return nil, fmt.Errorf("initialize queue schema: %w", err)
@@ -203,6 +206,11 @@ func loadCells(ctx context.Context, queryer stateQueryer) (usecase.CellSet, erro
 		return usecase.CellSet{}, err
 	}
 	set.Queue = queue
+	reviews, err := loadReviews(ctx, queryer)
+	if err != nil {
+		return usecase.CellSet{}, err
+	}
+	set.Reviews = reviews
 	if err := validateCellSet(set); err != nil {
 		return usecase.CellSet{}, fmt.Errorf("validate persisted Cells: %w", err)
 	}
@@ -210,8 +218,9 @@ func loadCells(ctx context.Context, queryer stateQueryer) (usecase.CellSet, erro
 }
 
 // validateCellSet checks the associations by CellGroup: unique IDs, exactly one
-// CommanderCell per CellGroup, no Cell that refers to an unknown CellGroup, and
-// at most one CellGroup per QueueEntry.
+// CommanderCell per CellGroup, no Cell or Review that refers to an unknown
+// CellGroup, at most one Review per CellGroup, and at most one CellGroup per
+// QueueEntry.
 func validateCellSet(set usecase.CellSet) error {
 	groups := make(map[string]bool, len(set.Groups))
 	entries := make(map[string]struct{}, len(set.Groups))
@@ -267,6 +276,20 @@ func validateCellSet(set usecase.CellSet) error {
 			return fmt.Errorf("duplicate DependencyCell id %q", dependency.ID)
 		}
 		dependencies[dependency.ID] = struct{}{}
+	}
+	reviews := make(map[string]struct{}, len(set.Reviews))
+	reviewedGroups := make(map[string]struct{}, len(set.Reviews))
+	for _, review := range set.Reviews {
+		if _, exists := groups[review.CellGroupID]; !exists {
+			return fmt.Errorf("review %q has unknown CellGroup %q", review.ID, review.CellGroupID)
+		}
+		if _, exists := reviews[review.ID]; exists {
+			return fmt.Errorf("duplicate review id %q", review.ID)
+		}
+		if _, exists := reviewedGroups[review.CellGroupID]; exists {
+			return fmt.Errorf("CellGroup %q has more than one review", review.CellGroupID)
+		}
+		reviews[review.ID], reviewedGroups[review.CellGroupID] = struct{}{}, struct{}{}
 	}
 	return nil
 }
@@ -400,6 +423,7 @@ func requireOneRow(result sql.Result, operation string, id string, version domai
 func cloneCellSet(set usecase.CellSet) (usecase.CellSet, error) {
 	cloned := usecase.NewCellSet(set.Groups, set.Commanders, nil, nil)
 	cloned.Queue = cloneQueue(set.Queue)
+	cloned.Reviews = cloneReviews(set.Reviews)
 	for i := range cloned.Commanders {
 		cloned.Commanders[i].Workspace = domain.NewWorkspace(cloned.Commanders[i].Workspace.Driver, cloned.Commanders[i].Workspace.Windows)
 	}

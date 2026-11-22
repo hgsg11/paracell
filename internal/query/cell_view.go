@@ -20,6 +20,13 @@ type CellView struct {
 	// FailedStage and LastError are set only when the creation failed.
 	FailedStage string
 	LastError   string
+	// PullRequests is the provider's numbers of the pull requests in review,
+	// empty when the Cell has no Review.
+	PullRequests []string
+	// NeedsDecision is true when the pull requests are partly merged and partly
+	// closed, so a person chooses merged or abandoned. The provider tells it,
+	// not the state, so the state query leaves it false.
+	NeedsDecision bool
 }
 
 // CellViewQuery lists Cells in their persisted order without restoring domain models.

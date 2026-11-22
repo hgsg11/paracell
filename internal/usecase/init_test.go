@@ -107,7 +107,7 @@ func TestInitは新しいProjectで設定の保存の後にAgentのHookを入れ
 		t.Fatalf("initでエラーが返った: %v", err)
 	}
 
-	wantCalls := []string{"ConfigExists", "Initialize", "SaveConfig", "InstallStatusHooks"}
+	wantCalls := []string{"ConfigExists", "Initialize", "SaveConfig", "InstallStatusHooks", "AllowCommands"}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", ports.calls, wantCalls)
 	}
@@ -124,7 +124,7 @@ func TestInitは既存設定があっても設定を保存せずにAgentのHook�
 		t.Fatalf("initでエラーが返った: %v", err)
 	}
 
-	wantCalls := []string{"ConfigExists", "Initialize", "InstallStatusHooks"}
+	wantCalls := []string{"ConfigExists", "Initialize", "InstallStatusHooks", "AllowCommands"}
 	if !reflect.DeepEqual(ports.calls, wantCalls) {
 		t.Fatalf("calls = %v, want %v", ports.calls, wantCalls)
 	}
@@ -168,6 +168,7 @@ type fakeInitPorts struct {
 	initializeErr error
 	installErr    error
 	installed     [][]domain.AgentStatusHook
+	allowed       [][]string
 	calls         []string
 }
 
@@ -186,6 +187,12 @@ func (f *fakeInitPorts) Initialize(ctx context.Context) error {
 	f.calls = append(f.calls, "Initialize")
 	f.initialized = true
 	return f.initializeErr
+}
+
+func (f *fakeInitPorts) AllowCommands(ctx context.Context, commands []string) error {
+	f.calls = append(f.calls, "AllowCommands")
+	f.allowed = append(f.allowed, commands)
+	return nil
 }
 
 func (f *fakeInitPorts) InstallStatusHooks(ctx context.Context, hooks []domain.AgentStatusHook) error {

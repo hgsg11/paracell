@@ -14,7 +14,9 @@ type Templates struct {
 	ContainerDriverType    ContainerDriverType
 	SourceDriverType       SourceDriverType
 	NotificationDriverType NotificationDriverType
-	Prefixes               map[string]string
+	// ReviewDriverType is set from providers.review; empty means none.
+	ReviewDriverType ReviewDriverType
+	Prefixes         map[string]string
 	// WorkspaceCopy lists the paths, relative to the workspace, that are copied
 	// into the Cell directory after its worktrees are created.
 	WorkspaceCopy []string

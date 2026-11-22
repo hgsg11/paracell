@@ -5,6 +5,7 @@ import (
 
 	"github.com/hgsg11/paracell/internal/adapter/container"
 	"github.com/hgsg11/paracell/internal/adapter/notification"
+	"github.com/hgsg11/paracell/internal/adapter/review"
 	"github.com/hgsg11/paracell/internal/adapter/session"
 	"github.com/hgsg11/paracell/internal/adapter/source"
 	"github.com/hgsg11/paracell/internal/adapter/system"
@@ -60,5 +61,14 @@ func (f Factory) Notification(driver domain.NotificationDriverType) (usecase.Not
 		return notification.NewTerminalNotifier(f.Runner), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification driver %q", driver)
+	}
+}
+
+func (f Factory) Review(driver domain.ReviewDriverType) (usecase.ReviewPort, error) {
+	switch driver {
+	case domain.GitHubReview:
+		return review.NewGitHubAdapter(f.Runner, f.Root), nil
+	default:
+		return nil, fmt.Errorf("unsupported review driver %q", driver)
 	}
 }

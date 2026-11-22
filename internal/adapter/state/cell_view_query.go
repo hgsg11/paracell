@@ -10,7 +10,8 @@ import (
 var _ query.CellViewQuery = SQLiteCellAdapter{}
 
 // ListCellViews reads the Cell list in its persisted order directly from SQLite,
-// for every record format, without restoring the domain aggregates.
+// for every record format, with the pull request numbers of the Cells in
+// review, without restoring the domain aggregates.
 func (a SQLiteCellAdapter) ListCellViews(ctx context.Context) ([]query.CellView, error) {
 	db, err := a.open(ctx)
 	if err != nil {
@@ -21,9 +22,15 @@ func (a SQLiteCellAdapter) ListCellViews(ctx context.Context) ([]query.CellView,
 	if err != nil {
 		return nil, err
 	}
+	numbers, err := pullRequestNumbersByGroup(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	views := make([]query.CellView, 0, len(rows))
 	for _, row := range rows {
-		views = append(views, newCellView(row.Record))
+		view := newCellView(row.Record)
+		view.PullRequests = numbers[row.Record.CellGroup.ID]
+		views = append(views, view)
 	}
 	return views, nil
 }
