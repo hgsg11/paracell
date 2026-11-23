@@ -1,5 +1,5 @@
 project:
-    name: ""
+    name: "paracell"
 providers:
     source: git
     container: none
@@ -8,13 +8,14 @@ providers:
 prefixes:
     feat: feat/
     fix: fix/
+    update: update/
 templates:
-    feat:
+    self:
         commanderCell:
             name: workspace
             workspace:
                 windows:
-                    - name: claude
+                    - name: agent
                       command: |-
                         { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
@@ -24,52 +25,15 @@ templates:
             repository:
                 source:
                     path: .
-                    base: main
-    fix:
+                    base: origin/main
+    requirements:
         commanderCell:
             name: workspace
             workspace:
                 windows:
-                    - name: claude
+                    - name: agent
                       command: |-
                         { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
                         {{.Command}}
                         PARACELL_EOF
                         )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
-    review:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows:
-                    - name: claude
-                      command: |-
-                        { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
-                        {{.Command}}
-                        PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main
-    update:
-        commanderCell:
-            name: workspace
-            workspace:
-                windows:
-                    - name: claude
-                      command: |-
-                        { code-review-graph build --repo . || true; } && PARACELL_PROMPT="$(cat <<'PARACELL_EOF'
-                        {{.Command}}
-                        PARACELL_EOF
-                        )" nvim -c "lua require('aibo.command.aibo').call(vim.list_extend({'claude','--model','opus'}, vim.env.PARACELL_PROMPT ~= '' and {vim.env.PARACELL_PROMPT} or {}), {opener='edit'})"
-        targets:
-            repository:
-                source:
-                    path: .
-                    base: main

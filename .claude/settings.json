@@ -23,6 +23,26 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -z \"$PARACELL_CELL\" ] || paracell pending"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -z \"$PARACELL_CELL\" ] || paracell ready"
+          }
+        ]
+      }
     ]
   }
 }
