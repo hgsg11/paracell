@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,11 +42,6 @@ var (
 			WorkspaceFactory: factory,
 		}
 		return uc.Execute(ctx)
-	}
-	runMarkInReview = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
-		uc := usecase.MarkCellInReviewUseCase{Cells: cells}
-		_, err := uc.Execute(ctx, usecase.MarkCellInReviewInput{Cell: cellName})
-		return err
 	}
 	runMarkInProgress = func(ctx context.Context, cells usecase.CellPort, cellName string) error {
 		uc := usecase.MarkCellInProgressUseCase{Cells: cells}
@@ -132,6 +128,7 @@ const (
 	CommandQueue     CommandKind = "queue"
 	CommandPlanned   CommandKind = "planned"
 	CommandDequeue   CommandKind = "dequeue"
+	CommandMerge     CommandKind = "merge"
 	CommandMerged    CommandKind = "merged"
 	CommandAbandon   CommandKind = "abandon"
 	CommandRoot      CommandKind = "root"
@@ -141,12 +138,14 @@ const (
 	CommandHelp      CommandKind = "help"
 )
 
-const usage = "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
+const usage = "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merge|merged|abandon|exit|version|help]\n"
 
 const (
 	forkUsage     = "usage: paracell fork <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>]"
 	queueUsage    = "usage: paracell queue <issue> --template <template> [--prefix <prefix>] [--command <command>] [--note <note>] [--modify <path>]... [--create <path>]..."
 	annotateUsage = "usage: paracell annotate <cell> --note <note>"
+	reviewUsage   = "usage: paracell review [--title <title> --body-file <file>]"
+	mergeUsage    = "usage: paracell merge <cell> [--squash|--rebase]"
 )
 
 var (
@@ -169,6 +168,11 @@ type Command struct {
 	Create []string
 	// PathPrefix filters the paths listed by planned.
 	PathPrefix string
+	// Title and BodyFile open the pull requests on the first review.
+	Title    *string
+	BodyFile *string
+	// MergeMethod is how merge merges the pull requests; empty means a merge commit.
+	MergeMethod usecase.MergeMethod
 }
 
 func ParseCommand(args []string) (Command, error) {
@@ -212,10 +216,9 @@ func ParseCommand(args []string) (Command, error) {
 		}
 		return Command{Kind: CommandReady}, nil
 	case "review":
-		if len(args) != 1 {
-			return Command{}, errors.New("usage: paracell review")
-		}
-		return Command{Kind: CommandReview}, nil
+		return parseReviewCommand(args)
+	case "merge":
+		return parseMergeCommand(args)
 	case "implement":
 		if len(args) != 1 {
 			return Command{}, errors.New("usage: paracell implement")
@@ -309,6 +312,54 @@ func parseForkCommand(args []string) (Command, error) {
 	}
 	if cmd.Template == "" {
 		return Command{}, errors.New(forkUsage)
+	}
+	return cmd, nil
+}
+
+// parseReviewCommand reads --title and --body-file once each. Both or neither
+// must be given.
+func parseReviewCommand(args []string) (Command, error) {
+	if (len(args)-1)%2 != 0 {
+		return Command{}, errors.New(reviewUsage)
+	}
+	cmd := Command{Kind: CommandReview}
+	for i := 1; i < len(args); i += 2 {
+		value := args[i+1]
+		switch args[i] {
+		case "--title":
+			if cmd.Title != nil || value == "" {
+				return Command{}, errors.New(reviewUsage)
+			}
+			cmd.Title = &value
+		case "--body-file":
+			if cmd.BodyFile != nil || value == "" {
+				return Command{}, errors.New(reviewUsage)
+			}
+			cmd.BodyFile = &value
+		default:
+			return Command{}, errors.New(reviewUsage)
+		}
+	}
+	if (cmd.Title == nil) != (cmd.BodyFile == nil) {
+		return Command{}, errors.New(reviewUsage)
+	}
+	return cmd, nil
+}
+
+func parseMergeCommand(args []string) (Command, error) {
+	if len(args) < 2 || len(args) > 3 || args[1] == "" {
+		return Command{}, errors.New(mergeUsage)
+	}
+	cmd := Command{Kind: CommandMerge, Cell: args[1]}
+	if len(args) == 3 {
+		switch args[2] {
+		case "--squash":
+			cmd.MergeMethod = usecase.MergeSquash
+		case "--rebase":
+			cmd.MergeMethod = usecase.MergeRebase
+		default:
+			return Command{}, errors.New(mergeUsage)
+		}
 	}
 	return cmd, nil
 }
@@ -410,6 +461,11 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			return err
 		}
 		list := output.FormatCellList(cells)
+		undecided, err := undecidedReviews(ctx, configAdapter, cellsAdapter, provider.NewFactory(quietRunner, workdir))
+		if err != nil {
+			list += fmt.Sprintf("WARNING: could not check pull requests: %v\n", err)
+		}
+		list += output.FormatUndecidedReviews(undecided)
 		if waiting := output.FormatWaitingQueue(queue); waiting != "" {
 			list += "\n" + waiting
 		}
@@ -464,7 +520,32 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		return runMarkInReview(ctx, cellsAdapter, cellName)
+		input := usecase.RequestReviewInput{Cell: cellName, Title: cmd.Title}
+		if cmd.BodyFile != nil {
+			body, err := os.ReadFile(resolvePath(invocationWorkdir, *cmd.BodyFile))
+			if err != nil {
+				return fmt.Errorf("read --body-file: %w", err)
+			}
+			text := string(body)
+			input.Body = &text
+		}
+		uc := usecase.RequestReviewUseCase{
+			Config:        configAdapter,
+			Cells:         cellsAdapter,
+			ReviewFactory: provider.NewFactory(quietRunner, workdir),
+			IDs:           id.RandomGenerator{},
+			Fork:          newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(quietRunner, workdir), workdir),
+			Report: func(line string) {
+				_ = writeCLIOutput(logger, line+"\n")
+			},
+		}
+		message, err := uc.Execute(ctx, input)
+		if err != nil || message == "" {
+			return err
+		}
+		return writeCLIOutput(logger, message+"\n")
+	case CommandMerge:
+		return runMerge(ctx, configAdapter, cellsAdapter, provider.NewFactory(runner, workdir), workdir, cmd.Cell, cmd.MergeMethod)
 	case CommandImplement:
 		cellName, err := currentCell(invocationWorkdir)
 		if err != nil {
@@ -496,8 +577,12 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 		if err != nil {
 			return err
 		}
-		_, err = runView(viewContext, cells, names, os.Getenv("PARACELL_CELL"), func() ([]query.CellView, error) {
-			return cellsAdapter.ListCellViews(ctx)
+		reviews := newReviewWatch(func() ([]string, error) {
+			return undecidedReviews(ctx, configAdapter, cellsAdapter, provider.NewFactory(viewRunner, workdir))
+		})
+		_, err = runView(viewContext, reviews.mark(cells), names, os.Getenv("PARACELL_CELL"), func() ([]query.CellView, error) {
+			cells, err := cellsAdapter.ListCellViews(ctx)
+			return reviews.mark(cells), err
 		}, func() ([]query.QueueView, error) {
 			return cellsAdapter.ListQueueViews(ctx)
 		}, func(cellName string) tea.Cmd {
@@ -512,7 +597,13 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 			factory := provider.NewFactory(viewRunner, workdir)
 			return runClean(ctx, configAdapter, factory, factory, factory, cellsAdapter, cellName, workdir)
 		}, func(cellName string) error {
-			return runMarkMerged(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(viewRunner, workdir), workdir), cellName)
+			// A Cell in review is merged on the provider, like paracell merge.
+			factory := provider.NewFactory(viewRunner, workdir)
+			err := runMerge(ctx, configAdapter, cellsAdapter, factory, workdir, cellName, "")
+			if !errors.Is(err, usecase.ErrNoReview) {
+				return err
+			}
+			return runMarkMerged(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, factory, workdir), cellName)
 		}, func(cellName string) error {
 			return runMarkAbandoned(ctx, cellsAdapter, newForkCellUseCase(configAdapter, cellsAdapter, provider.NewFactory(viewRunner, workdir), workdir), cellName)
 		}, func(issue string, template string) tea.Cmd {
@@ -550,6 +641,35 @@ func Run(ctx context.Context, args []string, workdir string) (runErr error) {
 	default:
 		return fmt.Errorf("unsupported command %q", cmd.Kind)
 	}
+}
+
+// runMerge merges the pull requests of a Cell in review. It fails with
+// usecase.ErrNoReview when the Cell has no Review.
+var runMerge = func(ctx context.Context, cfg usecase.ConfigPort, cells usecase.CellPort, factory provider.Factory, root string, cellName string, method usecase.MergeMethod) error {
+	uc := usecase.MergeCellUseCase{Config: cfg, Cells: cells, ReviewFactory: factory, Fork: newForkCellUseCase(cfg, cells, factory, root)}
+	_, err := uc.Execute(ctx, usecase.MergeCellInput{Cell: cellName, Method: method})
+	return err
+}
+
+// undecidedReviews returns the Cells, in name order, whose pull requests are
+// partly merged and partly closed. Without Cells in review it reads no config.
+func undecidedReviews(ctx context.Context, cfg usecase.ConfigPort, cells usecase.CellPort, factory usecase.ReviewProviderFactory) ([]string, error) {
+	outcomes, err := (usecase.CheckReviewsUseCase{Config: cfg, Cells: cells, ReviewFactory: factory}).Execute(ctx)
+	var names []string
+	for name, outcome := range outcomes {
+		if outcome == domain.ReviewMixed {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, err
+}
+
+func resolvePath(workdir string, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(workdir, path)
 }
 
 func formatVersion() string {

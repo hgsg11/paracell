@@ -21,6 +21,12 @@ type LoggingRunner struct {
 	Stderr io.Writer
 }
 
+// InDir returns a copy of the runner that runs commands from dir.
+func (r LoggingRunner) InDir(dir string) Runner {
+	r.Dir = dir
+	return r
+}
+
 func (r LoggingRunner) Run(ctx context.Context, name string, args ...string) error {
 	_, err := r.execute(ctx, false, name, args...)
 	return err

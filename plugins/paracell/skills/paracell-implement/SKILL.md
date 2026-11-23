@@ -23,9 +23,28 @@ Before reading the ticket, find out where you are and what the cell contains. Us
 1. Confirm the current cell context and identify the supplied ticket. Read the full ticket through its provider integration. Paracell's current CLI may expose the identifier using the legacy `issue` argument or `{{.issue}}` variable; treat it as an arbitrary string identifier, not necessarily a number.
 2. Read the repository instructions and inspect the relevant code before editing. Implement only the ticket's scope; ask a focused question only when an unresolved requirement materially blocks safe implementation.
 3. Run the relevant tests and checks, review the diff for unrelated changes, and report any verification that could not be completed.
-4. Unless the user requests a different delivery, commit and push the intended changes, then create or update a review-ready PR against the appropriate base branch. Reference or close the ticket using the provider's supported syntax. For GitHub Issues, use the appropriate GitHub closing keyword such as `Closes #123`; do not use GitHub syntax for other providers. Right after creating the PR, run `paracell review` to move the cell to in review.
-5. Report the PR URL and verification results. Do not claim completion after tests alone when the requested/default delivery includes a PR. If repository access or push is blocked, preserve local work and report the blocker.
+4. Unless the user requests a different delivery, hand the work to review as described in "Deliver Through Review" below.
+5. Report the PR and verification results. Do not claim completion after tests alone when the requested/default delivery includes a PR. If repository access or push is blocked, preserve local work and report the blocker.
 
-When review comments send you back to fix the change, run `paracell implement` before editing, and run `paracell review` again after pushing the fixes. Do not run `paracell merged` or `paracell abandon` from inside the cell; a person marks those from outside.
+## Deliver Through Review
+
+Check `providers.review` in `PARACELL_ROOT/paracell.yaml`.
+
+When it is `github`, Paracell pushes, opens the PRs, waits for the review, and merges; do not push or create PRs with `gh` yourself:
+
+1. Commit every change. `paracell review` fails while any worktree has uncommitted changes.
+2. Write the PR body to a file outside the worktrees (for example in a temporary directory). Paracell appends the ticket closing reference (`Closes #<issue>` on GitHub), so you do not need to add it.
+3. Run `paracell review --title "<title>" --body-file <file>` **in the background** (for example with Bash `run_in_background`), then end your turn. It opens one PR per target that has commits, moves the cell to in review, and waits without using tokens. Claude Code wakes you with its output when it exits.
+4. When you are woken, follow the output:
+   - New reviews or comments: read them with `gh` (for example `gh pr view <number> --comments`), run `paracell implement`, fix, commit, and run `paracell review` (no arguments after the first time) in the background again. Describe what you addressed in the commit messages.
+   - Merged, closed, or a merge failure: report the result. After a merge failure, fix the cause, commit, and run `paracell review` again.
+   - Partly merged and partly closed: stop; a person decides with `paracell merged` or `paracell abandon`.
+5. If the background command is cut off by a time limit, run `paracell review` (no arguments) in the background again; it resumes waiting without delivering an event twice.
+
+Never write comments, reviews, or replies on the PRs yourself: Paracell treats every new comment as review feedback, so your own comment would wake you again in a loop. Put responses in commit messages instead.
+
+When `providers.review` is `none` or omitted, commit and push the intended changes, then create or update a review-ready PR against the appropriate base branch with the provider's tools. Reference or close the ticket using the provider's supported syntax. For GitHub Issues, use the appropriate GitHub closing keyword such as `Closes #123`; do not use GitHub syntax for other providers. Right after creating the PR, run `paracell review` to move the cell to in review. When review comments send you back, run `paracell implement` before editing and `paracell review` again after pushing the fixes.
+
+Do not run `paracell merge`, `paracell merged`, or `paracell abandon` from inside the cell; a person decides those from outside.
 
 Honor explicit requests for local changes only, no PR, or another delivery artifact. Do not automatically create another ticket or cell from inside the current cell.

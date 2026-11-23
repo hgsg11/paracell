@@ -59,6 +59,49 @@ func (a ClaudeSettingsAdapter) InstallStatusHooks(ctx context.Context, hooks []d
 	return a.writeAtomically(encodeSettings(root), mode)
 }
 
+// AllowCommands adds a Bash permission rule for each command to
+// permissions.allow, keeping the existing rules and never adding one twice.
+func (a ClaudeSettingsAdapter) AllowCommands(ctx context.Context, commands []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, mode, err := a.read()
+	if err != nil {
+		return err
+	}
+	root, err := parseSettings(data)
+	if err != nil {
+		return fmt.Errorf("claude settings %s: parse: %w", a.Path, err)
+	}
+	permissions, ok := root.getOrAdd("permissions", &jsonObject{}).(*jsonObject)
+	if !ok {
+		return fmt.Errorf(`claude settings %s: "permissions" is not an object`, a.Path)
+	}
+	allow, ok := permissions.getOrAdd("allow", &jsonArray{}).(*jsonArray)
+	if !ok {
+		return fmt.Errorf(`claude settings %s: "permissions.allow" is not an array`, a.Path)
+	}
+	changed := false
+	for _, command := range commands {
+		rule := "Bash(" + command + ":*)"
+		found := false
+		for _, item := range allow.items {
+			if item == rule {
+				found = true
+				break
+			}
+		}
+		if !found {
+			allow.items = append(allow.items, rule)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return a.writeAtomically(encodeSettings(root), mode)
+}
+
 // read returns the current content and permission bits; a missing file reads as empty.
 func (a ClaudeSettingsAdapter) read() ([]byte, os.FileMode, error) {
 	info, err := os.Stat(a.Path)

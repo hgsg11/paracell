@@ -488,3 +488,94 @@ func assertOnlySettingsFile(t *testing.T, path string) {
 		t.Fatalf("files in %s = %v, want only %s", filepath.Dir(path), names, filepath.Base(path))
 	}
 }
+
+func TestClaudeSettingsは既存の内容を残してpermissionsのallowにCommandを足す(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := `{
+  "permissions": {
+    "allow": [
+      "Bash(paracell review:*)",
+      "Bash(go test:*)"
+    ]
+  },
+  "model": "opus"
+}
+`
+	if err := os.WriteFile(path, []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	adapter := NewClaudeSettingsAdapter(path)
+	if err := adapter.AllowCommands(context.Background(), domain.AgentAllowedCommands()); err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "permissions": {
+    "allow": [
+      "Bash(paracell review:*)",
+      "Bash(go test:*)",
+      "Bash(paracell implement:*)"
+    ]
+  },
+  "model": "opus"
+}
+`
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != want {
+		t.Fatalf("settings =\n%s\nwant\n%s", data, want)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.AllowCommands(context.Background(), domain.AgentAllowedCommands()); err != nil {
+		t.Fatal(err)
+	}
+	again, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !again.ModTime().Equal(info.ModTime()) || info.Mode().Perm() != 0o600 {
+		t.Fatalf("second run rewrote the file or changed its mode: %v %v", info, again)
+	}
+}
+
+func TestClaudeSettingsはファイルがないとpermissionsだけのファイルを作る(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude", "settings.json")
+	if err := NewClaudeSettingsAdapter(path).AllowCommands(context.Background(), domain.AgentAllowedCommands()); err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Permissions struct {
+			Allow []string `json:"allow"`
+		} `json:"permissions"`
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"Bash(paracell review:*)", "Bash(paracell implement:*)"}; !reflect.DeepEqual(settings.Permissions.Allow, want) {
+		t.Fatalf("allow = %v, want %v", settings.Permissions.Allow, want)
+	}
+}
+
+func TestClaudeSettingsはallowが配列でなければ書き換えない(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"permissions": {"allow": "x"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewClaudeSettingsAdapter(path).AllowCommands(context.Background(), domain.AgentAllowedCommands()); err == nil {
+		t.Fatal("no error")
+	}
+	if data, _ := os.ReadFile(path); string(data) != `{"permissions": {"allow": "x"}}` {
+		t.Fatalf("file changed: %s", data)
+	}
+}

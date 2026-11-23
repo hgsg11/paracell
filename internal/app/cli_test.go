@@ -339,7 +339,10 @@ func Test進み具合のコマンドを解析できる(t *testing.T) {
 		cell string
 	}{
 		{[]string{"review"}, CommandReview, ""},
+		{[]string{"review", "--title", "T", "--body-file", "body.md"}, CommandReview, ""},
 		{[]string{"implement"}, CommandImplement, ""},
+		{[]string{"merge", "123"}, CommandMerge, "123"},
+		{[]string{"merge", "123", "--squash"}, CommandMerge, "123"},
 		{[]string{"merged", "123"}, CommandMerged, "123"},
 		{[]string{"abandon", "123"}, CommandAbandon, "123"},
 	} {
@@ -351,7 +354,12 @@ func Test進み具合のコマンドを解析できる(t *testing.T) {
 			t.Fatalf("%v: command = %#v", tc.args, cmd)
 		}
 	}
-	for _, args := range [][]string{{"review", "123"}, {"implement", "123"}, {"merged"}, {"merged", ""}, {"merged", "1", "2"}, {"abandon"}} {
+	for _, args := range [][]string{
+		{"review", "123"}, {"review", "--title", "T"}, {"review", "--body-file", "b"}, {"review", "--title", "T", "--title", "U"},
+		{"review", "--title", "", "--body-file", "b"}, {"review", "--other", "x"},
+		{"implement", "123"}, {"merged"}, {"merged", ""}, {"merged", "1", "2"}, {"abandon"},
+		{"merge"}, {"merge", ""}, {"merge", "1", "--fast"}, {"merge", "1", "--squash", "--rebase"},
+	} {
 		if _, err := ParseCommand(args); err == nil {
 			t.Fatalf("%v returned no error", args)
 		}
@@ -390,7 +398,7 @@ func TestRunはHelpでUsageを出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merged|abandon|exit|version|help]\n"
+	want := "usage: paracell [init|fork|queue|planned|dequeue|annotate|ls|view|clean|pending|ready|review|implement|merge|merged|abandon|exit|version|help]\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -485,7 +493,7 @@ func TestRunはLsでStateのCell一覧を出力する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\nPostgreSQL案\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tPR\tFAILED_STAGE\tLAST_ERROR\nPostgreSQL案\tdefault\tready\tready\tin_progress\t-\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -532,7 +540,7 @@ func TestRunはLsでStateがなくてもヘッダーだけ出力する(t *testin
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tPR\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -560,7 +568,7 @@ func TestRunはCellSource内からLsしてもProjectRootのStateを読む(t *tes
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tPR\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -582,7 +590,7 @@ func TestRunはPARACELLROOTがあればProject外からLsしてもProjectRootの
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tPR\tFAILED_STAGE\tLAST_ERROR\n123\tdefault\tready\tready\tin_progress\t-\t-\t-\n456\twebapp\tready\tready\tin_progress\t-\t-\t-\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -599,7 +607,7 @@ func TestRunはLsでPdevYmlがなくても成功する(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Runでエラーが返った: %v", err)
 	}
-	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tFAILED_STAGE\tLAST_ERROR\n"
+	want := "CELL\tTEMPLATE\tCREATION\tSTATUS\tPROGRESS\tPR\tFAILED_STAGE\tLAST_ERROR\n"
 	if output != want {
 		t.Fatalf("output = %q, want %q", output, want)
 	}
@@ -1468,6 +1476,11 @@ func TestRunはReviewとImplementでPARACELL_CELLの進み具合を更新する(
 	dir := t.TempDir()
 	t.Setenv("PARACELL_CELL", "456")
 	t.Setenv("PARACELL_ROOT", "")
+	// Without providers.review, review only marks the Cell in review.
+	config := []byte("project:\n  name: myapp\nproviders:\n  source: git\n  workspace: tmux\ntemplates: {}\n")
+	if err := os.WriteFile(filepath.Join(dir, "paracell.yaml"), config, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	store := state.SQLiteCellAdapter{Path: filepath.Join(dir, ".paracell", "state.db")}
 	if err := saveAppCells(store, appTestCell("cell-1", "123", "default"), appTestCell("cell-2", "456", "webapp")); err != nil {
 		t.Fatal(err)
@@ -1765,4 +1778,27 @@ func joinArgs(args []string) string {
 		out += " " + arg
 	}
 	return out
+}
+
+func TestParseCommandはReviewのTitleとBodyFileとMergeの方法を読む(t *testing.T) {
+	cmd, err := ParseCommand([]string{"review", "--body-file", "body.md", "--title", "feat: x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmd.Title == nil || *cmd.Title != "feat: x" || cmd.BodyFile == nil || *cmd.BodyFile != "body.md" {
+		t.Fatalf("command = %#v", cmd)
+	}
+	for args, want := range map[string]usecase.MergeMethod{"": "", "--squash": usecase.MergeSquash, "--rebase": usecase.MergeRebase} {
+		input := []string{"merge", "123"}
+		if args != "" {
+			input = append(input, args)
+		}
+		cmd, err := ParseCommand(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cmd.MergeMethod != want {
+			t.Fatalf("%v: method = %q, want %q", input, cmd.MergeMethod, want)
+		}
+	}
 }

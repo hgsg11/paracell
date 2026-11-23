@@ -5,6 +5,7 @@ import (
 
 	"github.com/hgsg11/paracell/internal/adapter/container"
 	"github.com/hgsg11/paracell/internal/adapter/notification"
+	"github.com/hgsg11/paracell/internal/adapter/review"
 	"github.com/hgsg11/paracell/internal/adapter/session"
 	"github.com/hgsg11/paracell/internal/adapter/source"
 	"github.com/hgsg11/paracell/internal/domain"
@@ -31,5 +32,13 @@ func TestFactoryはDriverTypeからAdapterを作る(t *testing.T) {
 		t.Fatal(err)
 	} else if _, ok := got.(notification.NoopNotifier); !ok {
 		t.Fatalf("notification = %T", got)
+	}
+	if got, err := factory.Review(domain.GitHubReview); err != nil {
+		t.Fatal(err)
+	} else if _, ok := got.(review.GitHubAdapter); !ok {
+		t.Fatalf("review = %T", got)
+	}
+	if _, err := factory.Review(domain.NoReview); err == nil {
+		t.Fatal("review none returned an adapter")
 	}
 }

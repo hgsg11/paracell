@@ -255,6 +255,10 @@ func copyCellSet(set CellSet) CellSet {
 		entry.Plan = domain.ChangePlan{Modify: append([]domain.WorkspacePath(nil), entry.Plan.Modify...), Create: append([]domain.WorkspacePath(nil), entry.Plan.Create...)}
 		copied.Queue.Entries = append(copied.Queue.Entries, entry)
 	}
+	for _, review := range set.Reviews {
+		review.PullRequests = append([]domain.PullRequestRef(nil), review.PullRequests...)
+		copied.Reviews = append(copied.Reviews, review)
+	}
 	for i := range copied.Commanders {
 		copied.Commanders[i].Workspace = domain.NewWorkspace(copied.Commanders[i].Workspace.Driver, copied.Commanders[i].Workspace.Windows)
 	}

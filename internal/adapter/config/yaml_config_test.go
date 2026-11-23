@@ -349,3 +349,27 @@ func TestYAMLConfigは不正なWorkspaceCopyを拒否する(t *testing.T) {
 		})
 	}
 }
+
+func TestYAMLConfigはprovidersのreviewを読み省略をnoneにする(t *testing.T) {
+	for value, want := range map[string]domain.ReviewDriverType{"": domain.NoReview, "  review: none\n": domain.NoReview, "  review: github\n": domain.GitHubReview} {
+		path := filepath.Join(t.TempDir(), "paracell.yaml")
+		data := "project:\n  name: sample\nproviders:\n  source: git\n  workspace: tmux\n" + value + "templates: {}\n"
+		if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		templates, err := NewYAMLConfigAdapter(path).Load(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if templates.ReviewDriverType != want {
+			t.Fatalf("%q: review = %q, want %q", value, templates.ReviewDriverType, want)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "paracell.yaml")
+	if err := os.WriteFile(path, []byte("providers:\n  source: git\n  workspace: tmux\n  review: gitlab\ntemplates: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewYAMLConfigAdapter(path).Load(context.Background()); err == nil || !strings.Contains(err.Error(), "review") {
+		t.Fatalf("error = %v", err)
+	}
+}

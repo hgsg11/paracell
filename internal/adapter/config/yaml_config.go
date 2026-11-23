@@ -23,6 +23,7 @@ type yamlProviders struct {
 	Container     string `yaml:"container,omitempty"`
 	Workspace     string `yaml:"workspace"`
 	Notifications string `yaml:"notifications,omitempty"`
+	Review        string `yaml:"review,omitempty"`
 }
 
 type yamlConfig struct {
@@ -180,6 +181,10 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 	if err != nil {
 		return domain.Templates{}, err
 	}
+	reviewDriver, err := domain.NewReviewDriverType(raw.Providers.Review)
+	if err != nil {
+		return domain.Templates{}, err
+	}
 	items := make([]domain.Template, 0, len(raw.Templates))
 	for _, name := range sortedMapKeys(raw.Templates) {
 		domainTemplate, err := raw.Templates[name].toDomain(name)
@@ -196,6 +201,7 @@ func (a YAMLConfigAdapter) Load(ctx context.Context) (domain.Templates, error) {
 	if err != nil {
 		return domain.Templates{}, err
 	}
+	templates.ReviewDriverType = reviewDriver
 	return templates, nil
 }
 
@@ -316,6 +322,9 @@ func (a YAMLConfigAdapter) SaveConfig(ctx context.Context, cfg domain.Templates)
 		Prefixes:  cfg.Prefixes,
 	}
 	raw.Project.Name = cfg.ProjectName
+	if cfg.ReviewDriverType.Enabled() {
+		raw.Providers.Review = string(cfg.ReviewDriverType)
+	}
 	if len(cfg.WorkspaceCopy) > 0 {
 		raw.Workspace = &rawWorkspaceConfig{Copy: append([]string(nil), cfg.WorkspaceCopy...)}
 	}
